@@ -21,6 +21,9 @@
  *   node tools/accept-lifecycle.mjs <url> [outputDir]
  */
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { createRecorder } from './recorder.mjs'
 
 const NODE = process.env.QC_NODE ?? 'D:\\Programs_Apps\\nodejs\\node.exe'
@@ -102,6 +105,16 @@ async function evaluate(fn) {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const recorder = createRecorder({ call }, OUT_DIR)
+
+/**
+ * Hash of the shipped artifact under test.
+ *
+ * A pass is only meaningful for a specific build. Without recording which one, a report says
+ * "21/21 passed" without saying passed for what, and a later rebuild makes it unverifiable.
+ */
+const ARTIFACT = join(import.meta.dirname, '..', 'client.js')
+const ARTIFACT_SHA256 = createHash('sha256').update(readFileSync(ARTIFACT)).digest('hex')
+console.log(`artifact: client.js sha256:${ARTIFACT_SHA256.slice(0, 16)}…`)
 
 const results = []
 const check = (step, ok, detail = '') => {
@@ -370,6 +383,17 @@ try {
   check('the lifecycle ran without throwing', false, String(error).slice(0, 300))
 } finally {
   const video = await recorder.finish()
+  // Persist the run record next to the video, stamped with the artifact it validated.
+  try {
+    writeFileSync(join(OUT_DIR, 'result.json'), JSON.stringify({
+      artifactSha256: ARTIFACT_SHA256,
+      viewport: '1280x800',
+      passed: results.filter((item) => item.ok).length,
+      total: results.length,
+      checks: results,
+      recording: video,
+    }, null, 2))
+  } catch { /* the run already reported its outcome on stdout */ }
   child.kill()
   const passed = results.filter((item) => item.ok).length
   console.log('')

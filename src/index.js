@@ -73,6 +73,42 @@ const CARD_EXIT_MS = 130
 
 // ── implementation ────────────────────────────────────────────────────────────
 
+import { bindPlatform, getReact, getReactDom } from './platform.js'
+
+export { bindPlatform }
+
+/**
+ * React, read through the platform seam.
+ *
+ * The Host supplies React through the factory's `require`, which runs after module
+ * evaluation — so a top-level import would resolve too early. Every use below goes through
+ * this proxy, which defers the read to the moment of use.
+ */
+const React = new Proxy({}, {
+  get(_target, key) {
+    const value = getReact()[key]
+    return typeof value === 'function' ? value.bind(getReact()) : value
+  },
+})
+
+/**
+ * Shorthand for React.createElement; the whole UI is written as plain calls.
+ *
+ * A function rather than a captured reference: `React.createElement` cannot be read at module
+ * evaluation time, because the Host supplies React only when it calls the factory.
+ */
+const h = (type, props, ...children) => getReact().createElement(type, props, ...children)
+
+/** ReactDOM.createPortal, likewise deferred. */
+const createPortal = (children, container) => getReactDom().createPortal(children, container)
+import { zh, en } from './locales.js'
+import { elementOf, cssEscape } from './dom.js'
+import {
+  rangeAt, captureAnchor, resolveAnchor, locateText, textOf, nodePath, nodeAtPath,
+  squishText, sameText, textOfWithin, FLOW_SELECTOR, BLOCK_SELECTOR,
+} from './text-ranges.js'
+
+
 
     /** This package's locale namespace. */
     const NS = 'quoteChat'
@@ -81,130 +117,12 @@ const CARD_EXIT_MS = 130
     const TAB_ID = 'dsh-quote-chat:side'
     const TAB_KIND = 'dsh-quote-chat'
 
-    /** The chat flow container: a selection outside it is not an answer passage. */
-    const FLOW_SELECTOR = '[data-slot="conversation.chat.flow"]'
-
-    /**
-     * Block-level elements a bubble can use as its containing block.
-     *
-     * Each is its own box with a well-defined top edge, so the bubble can sit at
-     * top:0 without any measured offset.
-     */
-    const BLOCK_SELECTOR = 'p, li, h1, h2, h3, h4, h5, h6, pre, blockquote, table, figure'
-
     /** Surfaces a selection must never come from. */
     const NON_ANSWER_SELECTOR = 'textarea, input, [contenteditable="true"], [data-slot="conversation.composer"]'
 
     /** Elements a card must not replay. */
     const UNSAFE_IN_CARD = 'script, style, iframe, object, embed, link, meta'
 
-    // #region locales
-
-    /** Simplified Chinese dictionary. */
-    const zh = {
-      'popup.annotate': '添加注释',
-      'popup.askInSide': '在侧边聊天中提问',
-      'popup.tooLong': '选中的内容太长（最多 {max} 字）',
-      'popup.unavailable': '这段内容无法写入输入框',
-
-      'compose.title': '添加注释',
-      'compose.placeholder': '写下你的评价，可留空…',
-      'compose.selected': '已选 {count} 字',
-      'compose.table': '整张表格 · {rows} 行',
-      'compose.confirm': '添加注释',
-      'compose.cancel': '取消',
-      'compose.hint': 'Enter 添加 · Esc 取消',
-
-      'card.content': '注释 {n}',
-      'card.remove': '删除注释',
-      'card.count': '{n} 条注释',
-      'card.clear': '全部清除',
-      'card.missing': '这条注释对应的内容已不在当前对话中',
-      'card.limit': '最多 {max} 条注释',
-
-      'bubble.edit': '编辑注释',
-      'bubble.comment': '评价',
-      'bubble.saved': '已保存',
-      'bubble.deleted': '已删除',
-      'bubble.placeholder': '补充这条注释的说明…',
-      'bubble.save': '保存',
-      'bubble.delete': '删除',
-
-      'marker.jump': '跳到注释内容：内容 {n}',
-
-      'table.add': '添加到对话',
-
-      'side.title': '侧边提问',
-      'side.guide': '就选中的一段回答单独提问，不影响主对话。',
-      'side.empty': '就这段引文提问，例如：这里的假设成立吗？',
-      'side.quote': '引文',
-      'side.expandQuote': '展开引文',
-      'side.collapseQuote': '收起引文',
-      'side.send': '发送',
-      'side.stop': '停止',
-      'side.addToChat': '加入当前对话',
-      'side.added': '已加入当前对话',
-      'side.clear': '新对话',
-      'side.placeholder': '就这段引文提问…',
-      'side.errorPrefix': '回答失败：',
-      'side.you': '你',
-      'side.assistant': '助手',
-      'side.noQuote': '从一个回答里划选一段文字，再点“在侧边聊天中提问”。',
-    }
-
-    /** English dictionary, keyed identically. */
-    const en = {
-      'popup.annotate': 'Add annotation',
-      'popup.askInSide': 'Ask in side chat',
-      'popup.tooLong': 'Selection is too long (max {max} characters)',
-      'popup.unavailable': 'This passage cannot be written into the composer',
-
-      'compose.title': 'Add annotation',
-      'compose.placeholder': 'Add your evaluation, or leave it blank…',
-      'compose.selected': '{count} characters selected',
-      'compose.table': 'Whole table · {rows} rows',
-      'compose.confirm': 'Add annotation',
-      'compose.cancel': 'Cancel',
-      'compose.hint': 'Enter to add · Esc to cancel',
-
-      'card.content': 'Note {n}',
-      'card.remove': 'Remove annotation',
-      'card.count': '{n} annotation(s)',
-      'card.clear': 'Clear all',
-      'card.missing': 'The passage for this annotation is no longer in this conversation',
-      'card.limit': 'At most {max} annotations',
-
-      'bubble.edit': 'Edit annotation',
-      'bubble.comment': 'Comment',
-      'bubble.saved': 'Saved',
-      'bubble.deleted': 'Deleted',
-      'bubble.placeholder': 'Add a note about this annotation…',
-      'bubble.save': 'Save',
-      'bubble.delete': 'Delete',
-
-      'marker.jump': 'Jump to the passage: Content {n}',
-
-      'table.add': 'Add to chat',
-
-      'side.title': 'Side chat',
-      'side.guide': 'Ask about one quoted passage without touching the main conversation.',
-      'side.empty': 'Ask about this quote — for example: does this assumption hold?',
-      'side.quote': 'Quote',
-      'side.expandQuote': 'Expand quote',
-      'side.collapseQuote': 'Collapse quote',
-      'side.send': 'Send',
-      'side.stop': 'Stop',
-      'side.addToChat': 'Add to current chat',
-      'side.added': 'Added to the current chat',
-      'side.clear': 'New chat',
-      'side.placeholder': 'Ask about this quote…',
-      'side.errorPrefix': 'The answer failed: ',
-      'side.you': 'You',
-      'side.assistant': 'Assistant',
-      'side.noQuote': 'Select a passage in an answer, then choose “Ask in side chat”.',
-    }
-
-    // #endregion
 
     // #region styles
 
@@ -695,16 +613,6 @@ const CARD_EXIT_MS = 130
       return Array.isArray(picked) ? picked : empty
     }
 
-    /**
-     * The element an endpoint node belongs to.
-     * @param node - a DOM node.
-     * @returns its element, or null.
-     */
-    function elementOf(node) {
-      if (node === null || node === undefined) return null
-      return node.nodeType === 1 ? node : node.parentElement
-    }
-
     /** Drop the visible selection so the toolbar does not immediately reopen. */
     function clearSelection() {
       if (typeof window === 'undefined') return
@@ -712,323 +620,8 @@ const CARD_EXIT_MS = 130
       if (selection !== null && selection.rangeCount > 0) selection.removeAllRanges()
     }
 
-    /**
-     * Escape one string for a CSS attribute selector.
-     * @param value - the raw attribute value.
-     * @returns the escaped form.
-     */
-    function cssEscape(value) {
-      const registry = typeof window === 'undefined' ? undefined : window.CSS
-      if (typeof registry === 'object' && registry !== null && typeof registry.escape === 'function') {
-        return registry.escape(value)
-      }
-      return value.replace(/["\\]/g, '\\$&')
-    }
-
     // #endregion
 
-    // #region text ranges
-
-    /**
-     * Build a DOM range from a character offset inside one element.
-     * @param root - the containing element.
-     * @param offset - start offset in `root.textContent`.
-     * @param length - number of characters to cover.
-     * @returns the range, or null when the offsets fall outside the element.
-     */
-    function rangeAt(root, offset, length) {
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-      let consumed = 0
-      let startNode = null
-      let startOffset = 0
-      let endNode = null
-      let endOffset = 0
-      for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-        // Skip plugin chrome. The comment panel and the gutter bubble live inside the
-        // paragraph, so their labels are text nodes too. Counting them shifts every
-        // offset, and the range then lands past the passage - which is how the
-        // fluorescent highlight ended up painting over the editor's own buttons.
-        if (node.parentElement?.closest('[data-qc-ignore]') != null) continue
-        const next = consumed + node.data.length
-        if (startNode === null && offset < next) {
-          startNode = node
-          startOffset = offset - consumed
-        }
-        if (startNode !== null && offset + length <= next) {
-          endNode = node
-          endOffset = offset + length - consumed
-          break
-        }
-        consumed = next
-      }
-      if (startNode === null || endNode === null) return null
-      const range = document.createRange()
-      range.setStart(startNode, Math.max(0, Math.min(startOffset, startNode.data.length)))
-      range.setEnd(endNode, Math.max(0, Math.min(endOffset, endNode.data.length)))
-      return range
-    }
-
-    /**
-     * The child-index path from an ancestor down to a node.
-     * @param host - the ancestor element.
-     * @param node - the descendant to locate.
-     * @returns the index list, or null when `node` is not inside `host`.
-     */
-    function nodePath(host, node) {
-      const path = []
-      let current = node
-      while (current !== null && current !== host) {
-        const parent = current.parentNode
-        if (parent === null) return null
-        path.unshift([...parent.childNodes].indexOf(current))
-        current = parent
-      }
-      return current === host ? path : null
-    }
-
-    /**
-     * Walk a child-index path back to a node.
-     * @param host - the ancestor element.
-     * @param path - the index list.
-     * @returns the node, or null when the tree no longer matches.
-     */
-    function nodeAtPath(host, path) {
-      let current = host
-      for (const index of path) {
-        const next = current?.childNodes?.[index]
-        if (next === undefined) return null
-        current = next
-      }
-      return current ?? null
-    }
-
-    /**
-     * Describe where a selection starts, in a form that survives a re-render.
-     *
-     * The anchor is a pair of DOM points (child-index path plus offset), not a
-     * character count: `Range.toString()` inserts newlines across block
-     * boundaries while `textContent` does not, so any offset measured one way and
-     * replayed the other silently misses on a multi-paragraph selection.
-     *
-     * Paths are taken **relative to the flow**, not to the row: a selection that
-     * starts in one paragraph and ends in the next produced an `endPath` that was
-     * not a descendant of the start row, so it came back `null` and the whole
-     * path branch was skipped — which is why a single-paragraph jump worked while
-     * a longer one reported "no longer in this conversation". `nodeKey` still
-     * rides along to scroll the right row into view and to prefer a row-local
-     * match first.
-     * @param range - the live selection range.
-     * @param flow - the chat flow container.
-     * @returns the anchor record.
-     */
-    function captureAnchor(range, flow) {
-      const row = elementOf(range.startContainer)?.closest('[data-chat-node-key]') ?? null
-      return {
-        nodeKey: row?.getAttribute('data-chat-node-key') ?? '',
-        startPath: nodePath(flow, range.startContainer),
-        startOffset: range.startOffset,
-        endPath: nodePath(flow, range.endContainer),
-        endOffset: range.endOffset,
-        quote: range.toString(),
-      }
-    }
-
-    /**
-     * Rebuild the range one anchor describes.
-     *
-     * Four things can go wrong between capture and click, and each used to fail
-     * silently:
-     *
-     * - the row is not in the DOM at all (the flow virtualizes long
-     *   conversations), handled by resolving against the flow instead;
-     * - the subtree was rebuilt (a settled stream, a rendered formula, a
-     *   collapsed tool row), so the recorded path now points at different text —
-     *   handled by validating the rebuilt range against the quote instead of
-     *   trusting it because it is non-empty;
-     * - the two ends live in different rows, which a row-scoped path could not
-     *   express;
-     * - the passage moved, handled by the text fallback.
-     * @param flow - the chat flow container.
-     * @param anchor - the stored anchor.
-     * @returns the range, or null when the passage is gone.
-     */
-    function resolveAnchor(flow, anchor) {
-      if (flow === null || anchor.quote === '') return null
-
-      // Preferred path: the exact DOM points recorded at capture time — but only
-      // if they still resolve to the quoted text. A rebuilt subtree can leave the
-      // path structurally valid and semantically wrong, and returning that would
-      // scroll to an unrelated sentence.
-      if (Array.isArray(anchor.startPath) && Array.isArray(anchor.endPath)) {
-        const startNode = nodeAtPath(flow, anchor.startPath)
-        const endNode = nodeAtPath(flow, anchor.endPath)
-        if (startNode !== null && endNode !== null) {
-          try {
-            const range = document.createRange()
-            range.setStart(startNode, Math.min(anchor.startOffset, (startNode.textContent ?? '').length))
-            range.setEnd(endNode, Math.min(anchor.endOffset, (endNode.textContent ?? '').length))
-            // Compare against the filtered text: the bubble lives inside this
-            // subtree, so a raw range.toString() would include its ordinal and the
-            // passage would never match - which silently pushed every anchor onto the
-            // slow full-text path.
-            if (sameText(textOfWithin(range, anchor.quote), anchor.quote)) return range
-          } catch {
-            // The tree moved under us; fall through to the text search.
-          }
-        }
-      }
-
-      // The owning row first: it is the tightest match and keeps a phrase that
-      // appears several times in the answer on the row it came from.
-      const row = anchor.nodeKey === ''
-        ? null
-        : flow.querySelector(`[data-chat-node-key="${cssEscape(anchor.nodeKey)}"]`)
-      if (row !== null) {
-        const local = locateText(row, anchor.quote)
-        if (local !== null) {
-          const range = rangeAt(row, local.offset, local.length)
-          if (range !== null) return range
-        }
-      }
-
-      // Last resort: the whole flow. This is what makes a row that unmounted
-      // (virtualization), a passage that re-rendered elsewhere, or a selection
-      // spanning two rows still reachable.
-      const anywhere = locateText(flow, anchor.quote)
-      return anywhere === null ? null : rangeAt(flow, anywhere.offset, anywhere.length)
-    }
-
-    /**
-     * Whitespace characters beyond `\s` that rich-text markup can contain.
-     *
-     * Kept as one definition shared by `sameText` and `locateText`. When the two
-     * had their own idea of whitespace they disagreed about whether a stored
-     * anchor matched the live text, and both the path check and the text search
-     * would reject the same passage — which read as "the annotation is gone".
-     */
-    const EXTRA_SPACE = '\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000'
-
-    /** Zero-width characters that are invisible and must not affect matching. */
-    const ZERO_WIDTH = '\u200b-\u200d\ufeff'
-
-    /**
-     * Collapse a passage to a canonical form for comparison.
-     *
-     * Drops zero-width characters and folds every space-like character (including
-     * NBSP and the ideographic space) to a single ASCII space.
-     * @param value - the text to normalise.
-     * @returns the canonical form.
-     */
-    function squishText(value) {
-      return value
-        .replace(new RegExp(`[${ZERO_WIDTH}]`, 'g'), '')
-        .replace(new RegExp(`[\\s${EXTRA_SPACE}]+`, 'g'), ' ')
-        .trim()
-    }
-
-    /**
-     * Whether two passages say the same thing, ignoring whitespace differences.
-     * @param left - the first passage.
-     * @param right - the second passage.
-     * @returns true when they match after normalising whitespace.
-     */
-    function sameText(left, right) {
-      return squishText(left) === squishText(right)
-    }
-
-    /**
-     * Find a quoted passage inside one element's text.
-     *
-     * Both sides are whitespace-collapsed before comparing, so a brief that spans
-     * a paragraph break still matches the row's flat text.
-     * @param host - the element to search.
-     * @param quote - the captured text.
-     * @returns the offset and length in `host`'s raw text, or null.
-     */
-    /**
-     * The text a range covers, with plugin-owned nodes removed.
-     *
-     * A Range that spans a paragraph includes the bubble mounted inside it, so its
-     * toString() carries the bubble's ordinal. That digit makes the recorded quote
-     * unmatchable, and every anchor silently degrades to a text search.
-     * @param range - the candidate range.
-     * @param quote - the text being matched, used to bound the work.
-     * @returns the range's text without plugin nodes.
-     */
-    function textOfWithin(range, quote) {
-      const raw = range.toString()
-      if (raw === '' || raw.length < quote.length) return raw
-      // Fast path: if no plugin node sits inside the range, the raw text is correct.
-      const start = elementOf(range.startContainer)
-      const box = start?.closest(BLOCK_SELECTOR) ?? start
-      if (box === null || box === undefined) return raw
-      if (box.querySelector('[data-qc-ignore]') === null) return raw
-      return textOf(box)
-    }
-
-    /**
-     * The text of a subtree, ignoring nodes this plugin owns.
-     *
-     * A bubble is mounted INSIDE the paragraph it marks, so its ordinal joins the
-     * paragraph's textContent - "需要留意的取舍气泡现在对齐到1段落顶部". That single
-     * stray digit broke anchoring in two ways at once: the recorded path no longer
-     * ended on the quoted text (so the bubble fell back to a text search, which could
-     * land elsewhere and made it jump), and the passage it resolved to was wrong (so
-     * clicking the bubble edited nothing).
-     *
-     * @param host - the element to read.
-     * @returns its text with plugin-owned nodes removed.
-     */
-    function textOf(host) {
-      if (host === null || host === undefined) return ''
-      const ignored = host.querySelectorAll('[data-qc-ignore]')
-      if (ignored.length === 0) return host.textContent ?? ''
-      const copy = host.cloneNode(true)
-      for (const node of copy.querySelectorAll('[data-qc-ignore]')) node.remove()
-      return copy.textContent ?? ''
-    }
-
-    function locateText(host, quote) {
-      const raw = textOf(host)
-      const exact = raw.indexOf(quote)
-      if (exact >= 0) return { offset: exact, length: quote.length }
-      // Whitespace-insensitive retry: collapse the needle and the haystack in
-      // lockstep, remembering where each collapsed character came from.
-      //
-      // The character classes come from the same definitions `sameText` uses, or
-      // the two disagree about what counts as whitespace: an NBSP would survive
-      // the collapse here while `sameText` treats it as a space, so the path check
-      // and the text search would each reject the other's answer.
-      const spaceRe = new RegExp(`[\\s${EXTRA_SPACE}]`)
-      const zeroRe = new RegExp(`[${ZERO_WIDTH}]`)
-      const needle = squishText(quote)
-      if (needle === '') return null
-      const starts = []
-      let flat = ''
-      let pendingSpace = false
-      for (let index = 0; index < raw.length; index += 1) {
-        const char = raw[index]
-        if (zeroRe.test(char)) continue
-        if (spaceRe.test(char)) {
-          pendingSpace = flat !== ''
-          continue
-        }
-        if (pendingSpace) {
-          starts.push(index - 1)
-          flat += ' '
-          pendingSpace = false
-        }
-        starts.push(index)
-        flat += char
-      }
-      const at = flat.indexOf(needle)
-      if (at < 0) return null
-      const from = starts[at]
-      const to = starts[at + needle.length - 1]
-      return { offset: from, length: (to - from) + 1 }
-    }
-
-    // #endregion
 
     // #region selection reading
 
@@ -2668,7 +2261,7 @@ function escapeHtml(text) {
       h('textarea', {
         ref: areaRef,
         value: text,
-        placeholder: labels.placeholder,
+        placeholder: labels.bubblePlaceholder,
         spellCheck: false,
         onChange: (event) => setText(event.target.value),
         onKeyDown: (event) => {
@@ -3941,7 +3534,10 @@ function escapeHtml(text) {
           comment: t('bubble.comment'),
           saved: t('bubble.saved'),
           deleted: t('bubble.deleted'),
-          placeholder: t('bubble.placeholder'),
+          /** Bubble-editor placeholder. The compose box keeps `placeholder`;
+           * a duplicate key here silently overrode it, so the compose box was showing
+           * the bubble's hint. */
+          bubblePlaceholder: t('bubble.placeholder'),
           save: t('bubble.save'),
           delete: t('bubble.delete'),
         }), [t])

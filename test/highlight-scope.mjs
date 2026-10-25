@@ -1,4 +1,5 @@
-﻿/**
+﻿import { readSourceBundle } from './source.mjs'
+/**
  * Prove the fluorescent highlight never covers plugin chrome.
  *
  * The comment panel is a child of the annotated paragraph, so it sits inside the very
@@ -19,7 +20,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const source = await readFile(join(here, '..', 'src', 'index.js'), 'utf8')
+const source = await readSourceBundle()
 
 const cases = []
 const check = (name, ok, detail) => cases.push({ name, ok, detail })
@@ -187,7 +188,19 @@ function makeDocument() {
  * exercises the shipped implementation rather than a copy of it.
  */
 function bodyOf(name) {
-  const at = source.indexOf(`    function ${name}(`)
+  // Modules now carry real \`export\` keywords, and indentation depends on which module a
+  // function lives in. Match either form and start at the \`function\` keyword.
+  const patterns = [
+    `    export function ${name}(`,
+    `    function ${name}(`,
+    `export function ${name}(`,
+    `function ${name}(`,
+  ]
+  let at = -1
+  for (const pattern of patterns) {
+    const found = source.indexOf(pattern)
+    if (found >= 0) { at = source.indexOf(`function ${name}(`, found); break }
+  }
   if (at < 0) throw new Error(`function ${name} not found`)
   let depth = 0
   let opened = false

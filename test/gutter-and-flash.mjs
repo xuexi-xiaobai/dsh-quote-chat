@@ -1,3 +1,4 @@
+﻿import { readSourceBundle } from './source.mjs'
 /**
  * Guard the gutter marker and the jump highlight.
  *
@@ -15,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const source = await readFile(join(here, '..', 'src', 'index.js'), 'utf8')
+const source = await readSourceBundle()
 const css = /const (?:CSS|STYLESHEET) = `([\s\S]*?)`\n/.exec(source)?.[1] ?? ''
 
 const cases = []

@@ -95,8 +95,8 @@ cannot be. Hence: author in modules, ship one file.
 
 ```sh
 node build.mjs          # regenerate client.js from src/
-node build.mjs --check  # exit 1 when client.js drifted from src/
-node test/boot.mjs      # evaluates the SHIPPED client.js under a React stub
+node build.mjs --check  # exit 1 when client.js drifted from src/, prints the artifact hash
+node test/boot.mjs      # boots the SHIPPED client.js under a React stub
 ```
 
 `npm run verify` runs the drift check, a syntax check and every suite.
@@ -106,45 +106,27 @@ node test/boot.mjs      # evaluates the SHIPPED client.js under a React stub
 - Edit `src/` only. `client.js` is regenerated and committed so existing installs keep
   working without a build.
 - Minification is intentionally off: the artifact is meant to be read.
-- `test/boot.mjs` reads `client.js` on purpose — it validates the shipped artifact.
-  Every other suite reads `src/index.js`, because they match source shape and the bundle
-  re-indents every line.
+- **Source is real ES modules.** Each file imports what it uses and exports what it offers, and
+  a missing or misspelled export fails the build. Nothing may rely on one shared scope: the
+  bundler does not create one.
+- **React is reached through `src/platform.js`.** A top-level `import React from 'react'` cannot
+  work — module evaluation happens before the Host calls the factory, and only the factory
+  receives `require`. `bindPlatform(require)` captures it; everything else reads it through
+  `getReact()` / `getReactDom()`. `h` is therefore a function, not a captured reference.
+- `test/boot.mjs` boots the shipped `client.js`; that is the artifact test. Its structural
+  assertions read the authored modules instead, because they describe how the code is written
+  and must not break when the bundler re-formats its output.
+- Suites that extract a function body read through `test/source.mjs`, which concatenates every
+  module. Whole-package scanning is the right granularity for claims like "there is exactly one
+  whitespace definition"; a direct import is used when a test targets a single unit.
 
-The Host serves exactly one browser resource per plugin (`<pkg>/client.js`) and hands the
-factory a **synchronous** `require` whose table holds only platform seed words and
-already-materialized packages:
-
-```js
-const require = (spec) => {
-  if (this.seed.has(spec)) return this.seed.get(spec)
-  const id = stripClientSuffix(spec)
-  if (this.loadCache.has(id)) return this.loadCache.get(id).exports
-  if (this.factories.has(id)) return this.materialize(id).exports
-  throw new Error(`client-modules: require("${spec}") missed the module table …`)
-}
-```
-
-So `require('./lib/x.js')` throws at materialization, and `require.async()` —
-which *does* support `./client.<name>.js` chunks — would make assembly asynchronous,
-which `apply` cannot be. Hence: author in modules, ship one file.
-
-`react` and `react-dom` stay external; the bundle never inlines them.
-
-## Commands
+## Acceptance
 
 ```sh
-node build.mjs          # regenerate client.js from src/
-node build.mjs --check  # exit 1 when client.js drifted from src/
-node test/boot.mjs      # evaluates the SHIPPED client.js under a React stub
+node tools/verify-web-build.mjs --url "<tokenised base>"
+node tools/accept-lifecycle.mjs "<tokenised base>"
 ```
 
-`npm run verify` runs the drift check, a syntax check and every suite.
-
-## Rules
-
-- Edit `src/` only. `client.js` is regenerated and committed so existing installs keep
-  working without a build.
-- Minification is intentionally off: the artifact is meant to be read.
-- `test/boot.mjs` reads `client.js` on purpose — it validates the shipped artifact.
-  Every other suite reads `src/index.js`, because they match source shape and the bundle
-  re-indents every line.
+The lifecycle run drives real pointer and keyboard input through Playwright MCP, asserts 21
+observable behaviours, and writes `result.json` next to its recording. That file records the
+**artifact sha256 it validated**, so a pass is always attributable to a specific build.

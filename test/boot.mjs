@@ -25,9 +25,13 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import vm from 'node:vm'
+import { readSourceBundle } from './source.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const source = await readFile(join(here, '..', 'client.js'), 'utf8')
+// Structural assertions read the authored modules: they describe how the code is written,
+// and the bundler is free to re-format its output.
+const bundleSource = await readSourceBundle()
 
 const cases = []
 const check = (name, ok, detail) => cases.push({ name, ok, detail })
@@ -341,18 +345,60 @@ check('rendering the dock runs its effects without throwing',
 // A refactor left the mount target as an undefined `parent`, which threw during
 // render: the bubbles never appeared and could not be clicked. `node --check`
 // passes on an undefined identifier, so this is checked structurally.
-const markerRender = /const nodes = \[\]\s*\n\s*for \(const position of positions\)[\s\S]*?\}\),\s*(\w+)\)\)/.exec(source)
+// The bubble is portaled into a row element. Rather than matching one call layout, assert
+// that a portal call exists AND that its container is one of the row variables the render
+// defines. Formatting-independent, same property.
+// Several portals exist (toolbar, composer, chip cross, table button). The one under test is
+// the gutter bubble, identified by its marker class; match from there so the assertion cannot
+// accidentally read a different portal's container.
+/**
+ * Find the container argument of the bubble portal.
+ *
+ * The call is `createPortal(h('button', {…}), row)`: nested closures mean no single regex can
+ * bound it. So locate the marker-only attribute, walk back to its `createPortal(`, count parens
+ * to the CALL'S closing paren, then read the identifier just before it. Layout-independent.
+ * @param text - concatenated authored source.
+ * @returns the container identifier, or null.
+ */
+function bubblePortalContainer(text) {
+  const anchor = text.indexOf("'data-qc-for': position.id")
+  if (anchor < 0) return null
+  const marker = text.lastIndexOf('createPortal(', anchor)
+  if (marker < 0) return null
+  const openParen = text.indexOf('(', marker)
+  let depth = 0
+  for (let index = openParen; index < text.length; index += 1) {
+    const character = text[index]
+    if (character === '(' || character === '{' || character === '[') depth += 1
+    else if (character === ')' || character === '}' || character === ']') {
+      depth -= 1
+      if (depth === 0) {
+        const tail = text.slice(Math.max(openParen, index - 60), index)
+        const match = /([\w.]+)\s*$/.exec(tail)
+        return match === null ? null : match[1]
+      }
+    }
+  }
+  return null
+}
+const containerName = bubblePortalContainer(bundleSource)
 check('the bubble mounts into a variable the render actually defines',
-  markerRender !== null && ['row', 'position.row'].includes(markerRender[1]),
-  markerRender === null
-    ? 'the mount target could not be read'
-    : 'the mount target is "' + markerRender[1] + '", which the render does not define')
+  containerName !== null && /^(?:row|position\.row)$/.test(containerName),
+  containerName === null
+    ? 'no createPortal call with a readable container was found'
+    : 'the mount target is "' + containerName + '", which the render does not define')
+// The ordinal must be painted by CSS from an attribute, never emitted as text: a real text
+// node inside the paragraph joins textContent and gets covered by the passage highlight.
+// Both halves are checked independently of quoting style and whitespace.
+const writesNumberAttr = /data-qc-number['"]?\s*:\s*String\(\s*position\.number\s*\)/.test(source)
+const paintsFromAttr = /\.qc-marker::after\s*\{\s*content\s*:\s*attr\(\s*data-qc-number\s*\)/.test(source)
 check('the ordinal is CSS-generated, not a text node',
-  /'data-qc-number': String\(position\.number\)/.test(source)
-    && /\.qc-marker::after\{content:attr\(data-qc-number\)/.test(source),
-  'a real text node inside the paragraph joins textContent and gets painted by the highlight')
-check('the mount target is the measured row',
-  /setEditing\(already \? null : \{ id: position\.id, row \}\)/.test(source),
+  writesNumberAttr && paintsFromAttr,
+  'data-qc-number=' + writesNumberAttr + ' ::after content=attr()=' + paintsFromAttr)
+// The click handler must store the row it actually measured, otherwise reopening the editor
+// targets a node that was never mounted into.
+const storesRow = /setEditing\([^)]*\{[^}]*\bid\s*:\s*position\.id[^}]*\brow\b[^}]*\}/.test(source)
+check('the mount target is the measured row', storesRow,
   'the click handler stores a different node than the one it mounted into')
 let failed = 0
 for (const item of cases) {
