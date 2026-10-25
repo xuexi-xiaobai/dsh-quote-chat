@@ -322,6 +322,35 @@ check('a keyboard selection falls back to the passage right edge',
   /left: box\.right, top: box\.top/.test(source),
   'a keyboard selection has no sensible anchor')
 
+// --- The panel lines up with the bubble it belongs to ----------------------
+// The user's specification, verbatim: right edge parallel and collinear with the bubble's
+// right edge; bottom edge above the bubble's top edge with a gap; and it must ride with
+// the bubble on scroll, not with the viewport.
+check('the panel anchors to the bubble, not the paragraph',
+  /row\.querySelector\('\.qc-marker\[data-qc-for="/.test(source),
+  'the panel is placed against the paragraph, so it ignores where the bubble is')
+check('a bubble carries a stable annotation id',
+  /'data-qc-for': position\.id,/.test(source),
+  'the bubble cannot be located for the annotation being edited')
+check('the panel is anchored by its RIGHT edge',
+  /right: \`\${rightEdge}px\`/.test(source),
+  'a left offset cannot align to the bubble at an unknown panel width')
+check('the panel position comes from a bubble-relative helper',
+  /function anchorAboveBubble\(flow, bubble, size\)/.test(source)
+    && /anchorAboveBubble\(flow, box, \{/.test(source),
+  'the panel is not anchored relative to the bubble')
+check('the bubble-relative anchor travels with the scroll container',
+  /bubble\.top - rect\.top \+ scroller\.scrollTop/.test(source)
+    && /bubble\.right - rect\.left \+ scroller\.scrollLeft/.test(source),
+  'the panel tracks the viewport instead of the content')
+check('the panel keeps a gap above the bubble',
+  /const PANEL_BUBBLE_GAP = \d+/.test(source)
+    && /rel\.bubbleTop - rel\.gap - /.test(source),
+  'the panel touches or overlaps the bubble')
+check('the panel bottom edge uses its own measured height',
+  /const measured = height > 0 \? height : 0/.test(source),
+  'the bottom edge is computed from a guessed height')
+
 let failed = 0
 for (const item of cases) {
   if (!item.ok) failed += 1

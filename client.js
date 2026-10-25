@@ -2365,6 +2365,71 @@ function escapeHtml(text) {
       return { scroller, position: { top, left } }
     }
 
+    /** Gap between the bubble's top edge and the panel's bottom edge, in px. */
+    const PANEL_BUBBLE_GAP = 10
+
+    /**
+     * Place the comment panel above a gutter bubble, right edges flush.
+     *
+     * The bubble is the thing the user clicked, so the panel is positioned against IT
+     * rather than against the paragraph: the panel's right edge lines up with the
+     * bubble's right edge, and its bottom edge sits a fixed gap above the bubble's top.
+     *
+     * Offsets are expressed in the scroll container's coordinate space, so the panel
+     * rides with the marker on scroll instead of tracking the viewport - the same
+     * mechanism the bubble itself uses.
+     *
+     * @param flow - the chat flow anchor.
+     * @param bubble - the bubble's viewport box.
+     * @param size - the panel's measured (or assumed) size.
+     * @returns the mount target plus container-relative position, or null.
+     */
+    function anchorAboveBubble(flow, bubble, size) {
+      const scroller = containerFor(flow)
+      if (scroller === null || scroller === undefined || bubble === null) return null
+      if (scroller.dataset.qcPositioned !== '1') {
+        if (getComputedStyle(scroller).position === 'static') {
+          scroller.style.position = 'relative'
+        }
+        scroller.dataset.qcPositioned = '1'
+      }
+      const rect = scroller.getBoundingClientRect()
+      const width = size.width || 0
+      const height = size.height || 0
+      // The readable band, in container coordinates, so the panel cannot slide under the
+      // composer or over the top bar.
+      const area = visibleChatArea(scroller)
+      const bandTop = area.top - rect.top + scroller.scrollTop
+      const bandBottom = bandTop + area.height
+      // The bubble, in the same space.
+      const bubbleTop = bubble.top - rect.top + scroller.scrollTop
+      const bubbleRight = bubble.right - rect.left + scroller.scrollLeft
+      // EXACT right-edge alignment: the panel is anchored by its RIGHT edge, so its own
+      // width never enters the arithmetic. `left` is only a fallback for the first paint,
+      // before the panel has reported a width.
+      const right = Math.max(ANCHOR_INSET, (rect.width + scroller.scrollLeft) - bubbleRight)
+      // The panel finishes the vertical arithmetic itself, using its MEASURED height:
+      // only it knows how tall it actually is, and the bottom edge has to clear the
+      // bubble exactly.
+      const maxTop = Math.max(bandTop + ANCHOR_INSET, bandBottom - height - ANCHOR_INSET)
+      const maxLeft = Math.max(ANCHOR_INSET, scroller.clientWidth - width - ANCHOR_INSET)
+      const left = Math.min(Math.max(ANCHOR_INSET, bubbleRight - width), maxLeft)
+      return {
+        scroller,
+        position: {
+          // Fallback top, for the first paint before the panel has measured itself.
+          top: Math.min(Math.max(bandTop + ANCHOR_INSET, bubbleTop - PANEL_BUBBLE_GAP - height), maxTop),
+          right,
+          left,
+          // Everything the panel needs to place its own bottom edge.
+          bubbleTop,
+          gap: PANEL_BUBBLE_GAP,
+          bandTop: bandTop + ANCHOR_INSET,
+          bandBottom: bandBottom - ANCHOR_INSET,
+        },
+      }
+    }
+
     const containerCache = new WeakMap()
     function containerFor(flow) {
       const hit = containerCache.get(flow)
@@ -2509,6 +2574,9 @@ function escapeHtml(text) {
       //
       // Otherwise (no paragraph to attach to) it falls back to viewport coordinates,
       // clamped to stay on screen.
+      // A `right` offset wins: it aligns to the bubble's right edge exactly, at any panel
+      // width, without the anchor needing to know that width.
+      const rightEdge = rel !== null && rel.right !== undefined ? rel.right : null
       const left = rel !== null
         ? rel.left
         : inFlow
@@ -2523,8 +2591,16 @@ function escapeHtml(text) {
       // paragraph's top edge - which is where the bubble also sits. Shifting up by the
       // bubble's own height plus a gap keeps the two from overlapping, and leaves the
       // annotated passage itself fully visible.
+      // Bottom edge sits a fixed gap above the bubble, measured against the panel's OWN
+      // height. Until it has measured, the anchor's assumption is used.
+      const measured = height > 0 ? height : 0
       const top = rel !== null
-        ? rel.top
+        ? (rel.bubbleTop === undefined
+          ? rel.top
+          : Math.min(
+            Math.max(rel.bandTop, rel.bubbleTop - rel.gap - (measured || rel.gap)),
+            Math.max(rel.bandTop, rel.bandBottom - (measured || rel.gap)),
+          ))
         : inFlow
         ? -(height + BUBBLE_CLEARANCE)
         : Math.min(
@@ -2551,11 +2627,19 @@ function escapeHtml(text) {
         className: 'qc-bubble-panel',
         role: 'dialog',
         'aria-label': labels.edit,
-        style: {
-          left: `${left}px`,
-          top: `${top}px`,
-          visibility: size.width === 0 ? 'hidden' : 'visible',
-        },
+        style: rightEdge !== null
+          // Anchored by its RIGHT edge, so the panel lines up with the bubble exactly
+          // whatever width the panel turns out to have.
+          ? {
+            right: `${rightEdge}px`,
+            top: `${top}px`,
+            visibility: size.width === 0 ? 'hidden' : 'visible',
+          }
+          : {
+            left: `${left}px`,
+            top: `${top}px`,
+            visibility: size.width === 0 ? 'hidden' : 'visible',
+          },
       },
       // No passage preview and no jump button: the passage is already lit in the
       // transcript behind this panel, which is a better answer than a truncated
@@ -2912,6 +2996,9 @@ function escapeHtml(text) {
           // painted by CSS.highlights when the passage is lit - which is how the
           // fluorescent marker ended up covering the bubble's own number.
           'data-qc-number': String(position.number),
+          // Stable handle for the annotation this bubble stands for. The editor is
+          // positioned against this exact bubble.
+          'data-qc-for': position.id,
           className: 'qc-marker ' + position.tone
             + (editing !== null && editing.id === position.id ? ' qc-marker-active' : ''),
           title: position.title,
@@ -2938,17 +3025,25 @@ function escapeHtml(text) {
         // CSS.highlights covers every text node a range spans, and a range reaching the
         // paragraph's end covers anything mounted inside it.
         const flow = findFlow()
-        const box = (row !== undefined && row !== null && row.isConnected)
-          ? row.getBoundingClientRect()
+        // Anchor to the BUBBLE, not to the paragraph: the panel lines up with the marker
+        // the user just clicked. Its right edge is flush with the bubble's right edge and
+        // its bottom clears the bubble's top by a fixed gap. Both offsets derive from the
+        // bubble's own box, so the panel travels with the marker as the transcript
+        // scrolls - no scroll listener is involved.
+        const bubble = (row !== undefined && row !== null && row.isConnected)
+          ? row.querySelector('.qc-marker[data-qc-for="' + editing.id + '"]')
           : null
-        // Opened ABOVE the passage so the annotated text stays readable underneath.
+        const box = bubble === null || bubble === undefined
+          ? (row !== undefined && row !== null && row.isConnected ? row.getBoundingClientRect() : null)
+          : bubble.getBoundingClientRect()
         const anchored = flow === null || box === null
           ? null
-          : anchorInTranscript(
-            flow, box,
-            { width: BUBBLE_PANEL_WIDTH, height: BUBBLE_PANEL_HEIGHT },
-            'above',
-          )
+          : anchorAboveBubble(flow, box, {
+            width: BUBBLE_PANEL_WIDTH,
+            // Assumed height for the first paint. The panel reports its real size after
+            // mounting, and the bottom-edge offset uses that measurement from then on.
+            height: BUBBLE_PANEL_HEIGHT,
+          })
         return createPortal(h(BubblePanel, {
           annotation,
           rel: anchored === null ? null : anchored.position,
