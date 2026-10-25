@@ -294,6 +294,9 @@ window.__ModuleLoader__.load({
    adding a bubble never re-wraps the text and never changes the measured height. */
 .qc-hosts-bubble{padding-right:28px}
 .qc-marker{position:absolute;right:2px;top:0;z-index:2;
+  /* The ordinal is CSS-generated, not a text node: a real node inside the paragraph
+     would both join its textContent and be painted by the passage highlight. */
+  content:"";
   display:flex;align-items:center;justify-content:center;
   min-width:19px;height:19px;padding:0 5px;
   border-radius:9.5px 9.5px 9.5px 3px;border:0;cursor:pointer;
@@ -301,7 +304,8 @@ window.__ModuleLoader__.load({
   background:#2f7df6;
   box-shadow:0 1px 4px rgba(0,0,0,.22);
   transform-origin:left center;
-  transition:transform .12s ease,background .12s ease,box-shadow .12s ease}.qc-marker:hover{transform:scale(1.16);background:#1f6ae0}
+  transition:transform .12s ease,background .12s ease,box-shadow .12s ease}.qc-marker::after{content:attr(data-qc-number);line-height:1}
+.qc-marker:hover{transform:scale(1.16);background:#1f6ae0}
 .qc-marker:active{transform:scale(1.04)}
 /* Tables keep a distinct hue so a glance tells the two kinds apart. */
 .qc-marker-table{background:#17a673}
@@ -2759,6 +2763,11 @@ function escapeHtml(text) {
           key: position.id,
           type: 'button',
           'data-qc-ignore': '1',
+          // The ordinal is drawn by CSS from this attribute rather than being a text
+          // node. A real text node inside the paragraph joins its textContent AND gets
+          // painted by CSS.highlights when the passage is lit - which is how the
+          // fluorescent marker ended up covering the bubble's own number.
+          'data-qc-number': String(position.number),
           className: 'qc-marker ' + position.tone
             + (editing !== null && editing.id === position.id ? ' qc-marker-active' : ''),
           title: position.title,
@@ -2771,7 +2780,7 @@ function escapeHtml(text) {
             if (!already) onHighlight(annotation, true)
             else onHighlight(annotation, false)
           },
-        }, String(position.number)), row))
+        }), row))
       }
       // The editor is a separate portal into document.body: it must not be
       // clipped by the transcript.
@@ -2985,10 +2994,51 @@ function escapeHtml(text) {
      * @param ms - how long the flash lasts.
      * @param resolve - optional re-resolution, called once after paint settles.
      */
+    /**
+     * A copy of a range that stops before any plugin-owned node.
+     *
+     * The bubble is mounted INSIDE the paragraph it marks, so a range that ends at the
+     * paragraph's end also covers the bubble's ordinal - and CSS.highlights paints
+     * every character a range covers, including that digit. Shrinking the end back to
+     * the paragraph's own text keeps the marker out of the fluorescent paint.
+     *
+     * @param range - the range to sanitise.
+     * @returns a range covering the same prose, minus plugin nodes.
+     */
+    function paintSafeRange(range) {
+      try {
+        const startNode = range.startContainer
+        const endNode = range.endContainer
+        const endElement = elementOf(endNode)
+        const box = endElement?.closest(BLOCK_SELECTOR)
+        if (box === null || box === undefined) return range
+        // Nothing of ours sits in this block: the range is already clean.
+        if (box.querySelector('[data-qc-ignore]') === null) return range
+        const clean = document.createRange()
+        clean.setStart(startNode, range.startOffset)
+        // Clamp the end to the last text node BEFORE any plugin-owned node.
+        let lastText = null
+        const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT)
+        for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+          // Skip text that lives inside one of our own nodes (the bubble's ordinal).
+          if (node.parentElement?.closest('[data-qc-ignore]') != null) continue
+          // Stop once the walk passes the range's end.
+          if (range.comparePoint(node, 0) > 0) break
+          if ((node.textContent ?? '').trim() !== '') lastText = node
+        }
+        if (lastText === null) return range
+        clean.setEnd(lastText, (lastText.textContent ?? '').length)
+        return clean
+      } catch {
+        return range
+      }
+    }
+
     function flashRange(range, ms = FLASH_MS, resolve = null) {
       if (!canPaintHighlight()) return
       try {
-        let highlight = new Highlight(range)
+        // Strip plugin-owned nodes: the bubble's ordinal must never be painted.
+        let highlight = new Highlight(paintSafeRange(range))
         window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight)
         const deadline = Date.now() + ms
 
@@ -3046,7 +3096,7 @@ function escapeHtml(text) {
     function holdRange(range, resolve = null) {
       if (!canPaintHighlight()) return
       try {
-        let highlight = new Highlight(range)
+        let highlight = new Highlight(paintSafeRange(range))
         window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight)
         if (resolve === null) return
         setTimeout(() => {

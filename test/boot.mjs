@@ -341,12 +341,16 @@ check('rendering the dock runs its effects without throwing',
 // A refactor left the mount target as an undefined `parent`, which threw during
 // render: the bubbles never appeared and could not be clicked. `node --check`
 // passes on an undefined identifier, so this is checked structurally.
-const markerRender = /const nodes = \[\]\s*\n\s*for \(const position of positions\)[\s\S]*?String\(position\.number\)\),\s*(\w+)\)\)/.exec(source)
+const markerRender = /const nodes = \[\]\s*\n\s*for \(const position of positions\)[\s\S]*?\}\),\s*(\w+)\)\)/.exec(source)
 check('the bubble mounts into a variable the render actually defines',
   markerRender !== null && ['row', 'position.row'].includes(markerRender[1]),
   markerRender === null
     ? 'the mount target could not be read'
     : 'the mount target is "' + markerRender[1] + '", which the render does not define')
+check('the ordinal is CSS-generated, not a text node',
+  /'data-qc-number': String\(position\.number\)/.test(source)
+    && /\.qc-marker::after\{content:attr\(data-qc-number\)/.test(source),
+  'a real text node inside the paragraph joins textContent and gets painted by the highlight')
 check('the mount target is the measured row',
   /setEditing\(already \? null : \{ id: position\.id, row \}\)/.test(source),
   'the click handler stores a different node than the one it mounted into')

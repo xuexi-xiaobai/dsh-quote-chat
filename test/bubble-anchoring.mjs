@@ -35,8 +35,11 @@ check('the bubble is not given an inline x/y',
   !/qc-marker[\\s\\S]{0,400}style: \\{ left:/.test(source),
   'the bubble still receives computed coordinates')
 check('the bubble is mounted into its row',
-  /String\(position\.number\)\), row\)\)/.test(source),
+  /\}\), row\)\)/.test(source),
   'the bubble is not mounted inside the row element')
+check('the bubble carries no text node of its own',
+  !/\}, String\(position\.number\)\), row\)\)/.test(source),
+  'a text node inside the paragraph gets painted by the passage highlight')
 check('rows hosting a bubble become positioning contexts',
   /getComputedStyle\(row\)\.position === 'static'/.test(source)
     && /row\.style\.position = 'relative'/.test(source),
