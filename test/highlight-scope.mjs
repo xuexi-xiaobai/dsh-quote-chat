@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Prove the fluorescent highlight never covers plugin chrome.
  *
  * The comment panel is a child of the annotated paragraph, so it sits inside the very
@@ -294,7 +294,19 @@ const scope = buildScope(document)
     'a range ending on prose was rebuilt, which can only widen it')
 }
 
-// ── 3. Every highlight paint site sanitises its range ───────────────────
+// ── 3. The panel must sit OUTSIDE the annotated paragraph ───────────────
+// This is the structural guarantee. Filtering the range could never be enough:
+// CSS.highlights paints every text node a range covers, and a range that ends at the
+// paragraph's end covers everything mounted inside it. Only being a sibling of the
+// paragraph puts the panel outside the range.
+{
+  const mountLine = /\}\),\s*(mount|row \?\? document\.body)\)/.exec(source)
+  check('the comment panel mounts to a sibling of the paragraph',
+    mountLine !== null && mountLine[1] === 'mount',
+    'the panel is mounted inside the paragraph, inside the highlight range')
+}
+
+// ── 3b. Every highlight paint site sanitises its range ───────────────────
 // The first fix only covered the two immediate paints; the delayed re-resolve paths
 // kept using the raw range, so the marker still landed on the panel a second time.
 {

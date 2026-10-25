@@ -206,9 +206,16 @@ check('the gutter is applied once, behind the host flag',
 // The panel must ride with its passage rather than float over the viewport: it is
 // mounted inside the paragraph and positioned against that box, so scrolling needs
 // no reposition listener at all.
-check('the comment panel is mounted into the passage',
-  /inFlow: true/.test(source) && /\}\), row \?\? document\.body\)/.test(source),
-  'the panel floats over the viewport and drifts away from its passage')
+// The panel must NOT be inside the paragraph: CSS.highlights paints every text node a
+// range covers, and the passage range ends at the paragraph's end. Anything inside the
+// paragraph is therefore inside the range, which is why the fluorescent marker kept
+// appearing over the editor's labels no matter how it was tagged.
+check('the comment panel is mounted outside the passage',
+  /\}\), mount\)/.test(source) && !/\}\), row \?\? document\.body\)/.test(source),
+  'the panel is inside the paragraph, so the highlight paints over it')
+check('the panel anchors to the paragraph sibling container',
+  /parent !== null && parent\.isConnected \? parent : document\.body/.test(source),
+  'the panel has no stable parent-relative coordinate space')
 check('the panel is positioned in flow, not fixed',
   /\.qc-bubble-panel\{position:absolute/.test(css),
   'a fixed panel cannot ride with the passage')
@@ -240,8 +247,11 @@ check('no bare light surface literal remains on a themed surface',
 // --- The panel must not sit on the passage, nor be highlighted -------------
 // It opens ABOVE the paragraph (negative offset), clear of the gutter bubble.
 check('the panel opens above the passage',
-  /const top = inFlow\s*\n\s*\? -\(height \+ BUBBLE_CLEARANCE\)/.test(source),
+  /rel\.top - height - BUBBLE_CLEARANCE/.test(source),
   'the panel covers the passage or the bubble')
+check('the panel hugs the paragraph right edge',
+  /Math\.max\(0, rel\.right - width\)/.test(source),
+  'the panel is not aligned to the text column')
 check('the clearance is a named constant',
   /const BUBBLE_CLEARANCE = \d+/.test(source),
   'the clearance is a magic number')
@@ -256,6 +266,24 @@ check('the bubble is excluded from the passage highlight',
     return at > 0 && source.slice(at - 500, at).includes("'data-qc-ignore'")
   })(),
   'the highlight paints over the bubble')
+// --- The add-annotation popover must also ride with the passage ------------
+// It used to be position:fixed at a viewport coordinate, so scrolling left it
+// hovering over unrelated text. It is mounted as a sibling of the annotated block
+// and positioned from that block's offset.
+check('the compose popover is positioned from the annotated block',
+  /const block = source\.block \?\? null/.test(source)
+    && /block\.offsetTop \?\? 0\) - height - BUBBLE_CLEARANCE/.test(source),
+  'the popover is placed by viewport coordinate and drifts on scroll')
+check('the compose popover switches to absolute when anchored',
+  /position: inFlow \? 'absolute' : 'fixed'/.test(source),
+  'a fixed popover cannot ride with the passage')
+check('the compose popover mounts beside the block, not at body',
+  /host !== null && host\.isConnected \? host : document\.body/.test(source),
+  'the popover has no parent-relative coordinate space')
+check('the selection records the block it came from',
+  /block: startElement\.closest\(BLOCK_SELECTOR\) \?\? flow/.test(source),
+  'the selected block is not known, so the popover cannot anchor to it')
+
 let failed = 0
 for (const item of cases) {
   if (!item.ok) failed += 1

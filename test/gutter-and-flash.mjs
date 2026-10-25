@@ -140,6 +140,20 @@ check('centring is gone',
 check('the top gap is a named constant',
   /const ANCHOR_TOP_GAP = \d+/.test(source),
   'the gap is a magic number')
+// --- Only the chip jumps; the bubble must not move the view -----------------
+// Clicking a bubble asks to edit a comment, not to relocate. The highlight still
+// appears in place, but scrollTop is left alone.
+const onHighlightBody = /const onHighlight = React\.useCallback\(\(annotation, on\) => \{([\s\S]*?)\n        \}, \[\]\)/.exec(source)?.[1] ?? ''
+check('clicking a bubble never scrolls the transcript',
+  onHighlightBody !== '' && !/revealWithSearch|scrollToRange|scrollIntoView/.test(onHighlightBody),
+  'opening the comment editor yanks the page to the passage')
+check('clicking a bubble still lights the passage',
+  /holdRange\(range/.test(onHighlightBody),
+  'the passage is no longer highlighted on bubble click')
+check('the chip still jumps',
+  /revealWithSearch\(flow, annotation\)/.test(source),
+  'the composer chip lost its jump behaviour')
+
 let failed = 0
 for (const item of cases) {
   if (!item.ok) failed += 1

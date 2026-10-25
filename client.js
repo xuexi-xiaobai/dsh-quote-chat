@@ -1083,6 +1083,9 @@ window.__ModuleLoader__.load({
         previewHtml: fragmentHtml(range.cloneContents()),
         previewText: text.trim(),
         rect,
+        // The block that holds the selection. The popover mounts beside it (not against
+        // the viewport), so it stays pinned to the passage while the page scrolls.
+        block: startElement.closest(BLOCK_SELECTOR) ?? flow,
         anchor: captureAnchor(range, flow),
       }
     }
@@ -1657,10 +1660,27 @@ window.__ModuleLoader__.load({
         inputRef.current?.focus()
       }, [])
 
-      const position = placeNear(source.rect, {
-        width: size.width || 420,
-        height: size.height || 170,
-      })
+      // Pinned to the annotated block, not to the viewport.
+      //
+      // The popover used to be position:fixed at a viewport coordinate, so scrolling the
+      // page left it hovering over unrelated text. It now mounts as a SIBLING of the
+      // annotated block and is positioned from that block's own offset, so it travels
+      // with the passage. Being a sibling also keeps it outside the paragraph, and
+      // therefore outside any passage highlight.
+      const width = size.width || 420
+      const height = size.height || 170
+      const block = source.block ?? null
+      const host = block?.parentElement ?? null
+      const inFlow = host !== null && host.isConnected
+      const position = inFlow
+        ? {
+          left: Math.max(0, Math.min(
+            (block.offsetLeft ?? 0) + (block.offsetWidth ?? 0) - width,
+            Math.max(0, (host.clientWidth ?? 0) - width),
+          )),
+          top: Math.max(0, (block.offsetTop ?? 0) - height - BUBBLE_CLEARANCE),
+        }
+        : placeNear(source.rect, { width, height })
 
       return createPortal(
         h('div', {
@@ -1668,7 +1688,11 @@ window.__ModuleLoader__.load({
           className: 'qc-compose',
           role: 'dialog',
           'aria-label': labels.title,
-          style: { left: `${position.left}px`, top: `${position.top}px` },
+          style: {
+            left: `${position.left}px`,
+            top: `${position.top}px`,
+            position: inFlow ? 'absolute' : 'fixed',
+          },
           onMouseDown: (event) => event.stopPropagation(),
           onKeyDown: (event) => {
             if (event.key === 'Escape') {
@@ -1715,7 +1739,9 @@ window.__ModuleLoader__.load({
           }, h(IconCheck, null), h('span', { className: 'qc-compose-confirm-text' }, labels.confirm)),
         ),
         ),
-        document.body,
+        // A sibling of the annotated block, so parent-relative offsets apply and the
+        // popover stays outside the paragraph (and outside any highlight).
+        host !== null && host.isConnected ? host : document.body,
       )
     }
 
@@ -2347,7 +2373,7 @@ function escapeHtml(text) {
      * @param props - the annotation, the anchor point, labels, and the handlers.
      */
     function BubblePanel(props) {
-      const { annotation, anchor, labels, onSave, onDelete, onClose, inFlow = false } = props
+      const { annotation, anchor, labels, onSave, onDelete, onClose, inFlow = false, rel = null } = props
       const [text, setText] = React.useState(annotation.comment)
       const [flash, setFlash] = React.useState('')
       const ref = React.useRef(null)
@@ -2392,7 +2418,9 @@ function escapeHtml(text) {
       //
       // Otherwise (no paragraph to attach to) it falls back to viewport coordinates,
       // clamped to stay on screen.
-      const left = inFlow
+      const left = rel !== null
+        ? Math.max(0, rel.right - width)
+        : inFlow
         ? Math.max(0, anchor.width - width)
         : Math.min(
           Math.max(VIEWPORT_MARGIN, anchor.left),
@@ -2404,7 +2432,9 @@ function escapeHtml(text) {
       // paragraph's top edge - which is where the bubble also sits. Shifting up by the
       // bubble's own height plus a gap keeps the two from overlapping, and leaves the
       // annotated passage itself fully visible.
-      const top = inFlow
+      const top = rel !== null
+        ? rel.top - height - BUBBLE_CLEARANCE
+        : inFlow
         ? -(height + BUBBLE_CLEARANCE)
         : Math.min(
           Math.max(VIEWPORT_MARGIN, anchor.top),
@@ -2814,8 +2844,30 @@ function escapeHtml(text) {
         const box = (row !== undefined && row.isConnected)
           ? row.getBoundingClientRect()
           : { left: 0, top: 0, right: window.innerWidth, bottom: 0 }
+        // Mount the panel as a SIBLING of the paragraph, never inside it.
+        //
+        // CSS.highlights paints every text node the range covers, and the passage range
+        // ends at the paragraph's end. Anything mounted inside the paragraph is inside
+        // that range no matter how it is tagged, which is why data-qc-ignore alone
+        // never stopped the marker reaching the editor's own labels. A sibling is
+        // outside the range entirely, so there is nothing left to sanitise.
+        //
+        // Position is expressed relative to that sibling container using the
+        // paragraph's own offset, so the panel still travels with the text.
+        const parent = (row ?? null)?.parentElement ?? null
+        const mount = parent !== null && parent.isConnected ? parent : document.body
+        const rel = parent !== null && parent.isConnected
+          ? {
+            // The paragraph's own box, parent-relative. The panel combines this with its
+            // measured size, so it sits just above the paragraph and hugs its right edge
+            // without any hard-coded dimension.
+            top: row.offsetTop ?? 0,
+            right: row.offsetWidth ?? 0,
+          }
+          : null
         return createPortal(h(BubblePanel, {
           annotation,
+          rel,
           // The panel rides with the passage instead of floating over the viewport.
           //
           // It is mounted INSIDE the paragraph (like the bubble) and positioned with
@@ -2850,7 +2902,7 @@ function escapeHtml(text) {
             setEditing(null)
             onHighlight(annotation, false)
           },
-        }), row ?? document.body)
+        }), mount)
       })()
       return h(React.Fragment, null, ...nodes, editor)
     }
@@ -3892,13 +3944,19 @@ function escapeHtml(text) {
             clearFlashRange()
             return
           }
-          revealWithSearch(flow, annotation).then((range) => {
-            if (range === null) return
-            holdRange(range, () => {
-              const live = findFlow()
-              return live === null ? null : resolveAnchor(live, annotation.anchor)
-            })
-          }, () => { /* a miss just means no glow; the editor still works */ })
+          // Light the passage WITHOUT moving the view.
+          //
+          // Opening the bubble's editor used to scroll the transcript, which yanked the
+          // page away from wherever the user was reading. Only the composer chip is
+          // allowed to jump; clicking the bubble is a request to edit a comment, not to
+          // relocate. So this resolves the passage in place and paints it, and leaves
+          // scrollTop alone.
+          const range = resolveAnchor(flow, annotation.anchor)
+          if (range === null) return
+          holdRange(range, () => {
+            const live = findFlow()
+            return live === null ? null : resolveAnchor(live, annotation.anchor)
+          })
         }, [])
 
         const onJump = React.useCallback((annotation) => {
