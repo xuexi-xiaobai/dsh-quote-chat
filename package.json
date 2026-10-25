@@ -20,6 +20,12 @@
     "icon.svg",
     "README.md"
   ],
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "node build.mjs --check",
+    "test": "node test/boot.mjs && node test/chip-dom-guard.mjs && node test/chip-interaction.mjs && node test/numbering.mjs && node test/hover-card.mjs && node test/gutter-and-flash.mjs && node test/bubble-editor.mjs && node test/bubble-anchoring.mjs && node test/highlight-scope.mjs && node test/host-selftest.mjs",
+    "verify": "node build.mjs --check && node --check client.js && npm run test"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
