@@ -217,7 +217,7 @@ window.__ModuleLoader__.load({
      * painted at all.
      */
     const STYLESHEET = `
-.qc-popup{position:fixed;z-index:2147483000;display:flex;align-items:stretch;gap:2px;padding:3px;
+.qc-popup{position:fixed;z-index:60;display:flex;align-items:stretch;gap:2px;padding:3px;
   border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-overlay);
   box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:12.5px;line-height:1.2;color:var(--dsw-alias-label-primary);
   animation:qc-pop .1s ease-out;box-sizing:border-box}
@@ -229,7 +229,7 @@ window.__ModuleLoader__.load({
 .qc-popup button+button{box-shadow:inset 1px 0 0 var(--dsw-alias-border-l1)}
 .qc-popup svg{flex:none;opacity:.8}
 
-.qc-compose{position:fixed;z-index:2147483000;width:min(420px,92vw);box-sizing:border-box;
+.qc-compose{width:min(420px,92vw);box-sizing:border-box;
   border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:12px;
   background:var(--dsw-alias-bg-overlay);
   box-shadow:0 16px 40px rgba(0,0,0,.32),0 2px 8px rgba(0,0,0,.18);
@@ -387,7 +387,7 @@ window.__ModuleLoader__.load({
   75%{opacity:1;transform:translateY(0)}
   100%{opacity:0;transform:translateY(-3px)}}
 
-.qc-table-add{position:fixed;z-index:2147482000;appearance:none;border:1px solid var(--dsw-alias-border-l2);
+.qc-table-add{position:fixed;z-index:55;appearance:none;border:1px solid var(--dsw-alias-border-l2);
   background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;
   border-radius:8px;padding:4px 9px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.14);
   display:flex;align-items:center;gap:5px;white-space:nowrap}
@@ -498,7 +498,7 @@ window.__ModuleLoader__.load({
    sign inherits the font's baseline and side bearings, which made it sit high and
    look undersized no matter how it was nudged; two strokes give exact geometry
    and scale with the button. */
-.qc-chip-remove{position:fixed;z-index:2147482100;
+.qc-chip-remove{position:fixed;z-index:45;
   appearance:none;box-sizing:border-box;margin:0;padding:0;border:0;
   border-radius:999px;background:#e8291c;
   cursor:pointer;display:flex;align-items:center;justify-content:center;
@@ -517,7 +517,7 @@ window.__ModuleLoader__.load({
    it, width:max-content lets it stay small.
 
    No ordinal and no removal control inside — the chip carries both. */
-.qc-card{position:fixed;z-index:2147482000;
+.qc-card{position:fixed;z-index:50;
   width:max-content;max-width:min(380px,80vw);box-sizing:border-box;
   border:1px solid var(--dsw-alias-border-l3, rgba(0,0,0,.07));border-radius:12px;
   background:var(--dsw-alias-bg-overlay, #fff);
@@ -587,7 +587,7 @@ window.__ModuleLoader__.load({
 .qc-card-body th{background:#fafafa;font-weight:600}
 .qc-card-md{margin:0;white-space:pre-wrap;font:inherit;font-size:12px;line-height:1.55}
 
-.qc-notice{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:2147483000;
+.qc-notice{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:70;
   padding:6px 12px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);
   background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-state-warn-primary);
   font-size:12px;max-width:min(32em,90vw);text-align:center}
@@ -1617,7 +1617,20 @@ window.__ModuleLoader__.load({
         setSize({ width: rect.width, height: rect.height })
       }, [])
 
-      const position = placeNear(anchor, { width: size.width || 210, height: size.height || 34 })
+      // Anchor inside the transcript so the container clips this popup against the chat
+      // chrome (composer, top bar) and so it rides with the passage on scroll. Without a
+      // transcript to attach to it falls back to viewport placement.
+      const flow = findFlow()
+      const scroller = flow === null ? null : containerFor(flow)
+      const anchored = scroller !== null
+      let position = placeNear(anchor, { width: size.width || 210, height: size.height || 34 })
+      if (anchored) {
+        const box = scroller.getBoundingClientRect()
+        position = {
+          left: Math.max(8, anchor.left - box.left + scroller.scrollLeft),
+          top: Math.max(8, anchor.top - box.top + scroller.scrollTop - (size.height || 34) - 6),
+        }
+      }
       return createPortal(
         h('div', {
           ref,
@@ -1626,6 +1639,7 @@ window.__ModuleLoader__.load({
           style: {
             left: `${position.left}px`,
             top: `${position.top}px`,
+            position: anchored ? 'absolute' : 'fixed',
             visibility: size.width === 0 ? 'hidden' : 'visible',
           },
           // The selection must survive the click that chooses an action.
@@ -1636,7 +1650,7 @@ window.__ModuleLoader__.load({
         h('button', { type: 'button', disabled: !canAsk, onClick: onAsk },
           h(IconSideChat, null), labels.askInSide),
         ),
-        document.body,
+        anchored ? scroller : document.body,
       )
     }
 
@@ -1669,18 +1683,34 @@ window.__ModuleLoader__.load({
       // therefore outside any passage highlight.
       const width = size.width || 420
       const height = size.height || 170
+      // Mount INSIDE the transcript's scroll container, not on <body>.
+      //
+      // Two things follow from that, and both were reported: the popover must ride
+      // with the passage instead of tracking the viewport, and it must never paint over
+      // the composer or the top bar. A body-mounted, very-high z-index overlay can do
+      // neither - the chat chrome is outside the transcript, so nothing can clip an
+      // overlay that lives beside it. Inside the scroll container the container's own
+      // overflow clips it, exactly like the gutter bubbles.
+      const flow = findFlow()
+      const scroller = flow === null ? null : containerFor(flow)
       const block = source.block ?? null
-      const host = block?.parentElement ?? null
-      const inFlow = host !== null && host.isConnected
-      const position = inFlow
-        ? {
-          left: Math.max(0, Math.min(
-            (block.offsetLeft ?? 0) + (block.offsetWidth ?? 0) - width,
-            Math.max(0, (host.clientWidth ?? 0) - width),
-          )),
-          top: Math.max(0, (block.offsetTop ?? 0) - height - BUBBLE_CLEARANCE),
+      const anchored = scroller !== null && block !== null && block.isConnected
+      let position = placeNear(source.rect, { width, height })
+      if (anchored) {
+        // The block's box in scroll-container coordinates, so a scroll needs no update:
+        // the browser moves the popover together with the content.
+        const box = scroller.getBoundingClientRect()
+        const target = block.getBoundingClientRect()
+        const scrollTop = scroller.scrollTop
+        const scrollLeft = scroller.scrollLeft
+        const topInScroller = target.top - box.top + scrollTop
+        const leftInScroller = target.right - box.left + scrollLeft
+        position = {
+          // Above the passage, clear of the gutter bubble, and never off the left edge.
+          top: Math.max(8, topInScroller - height - BUBBLE_CLEARANCE),
+          left: Math.max(8, leftInScroller - width),
         }
-        : placeNear(source.rect, { width, height })
+      }
 
       return createPortal(
         h('div', {
@@ -1691,7 +1721,7 @@ window.__ModuleLoader__.load({
           style: {
             left: `${position.left}px`,
             top: `${position.top}px`,
-            position: inFlow ? 'absolute' : 'fixed',
+            position: anchored ? 'absolute' : 'fixed',
           },
           onMouseDown: (event) => event.stopPropagation(),
           onKeyDown: (event) => {
@@ -1739,9 +1769,9 @@ window.__ModuleLoader__.load({
           }, h(IconCheck, null), h('span', { className: 'qc-compose-confirm-text' }, labels.confirm)),
         ),
         ),
-        // A sibling of the annotated block, so parent-relative offsets apply and the
-        // popover stays outside the paragraph (and outside any highlight).
-        host !== null && host.isConnected ? host : document.body,
+        // Inside the scroll container so its overflow clips this against the chat chrome;
+        // on <body> when there is no transcript to attach to.
+        anchored ? scroller : document.body,
       )
     }
 
