@@ -743,6 +743,11 @@ window.__ModuleLoader__.load({
       let endNode = null
       let endOffset = 0
       for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+        // Skip plugin chrome. The comment panel and the gutter bubble live inside the
+        // paragraph, so their labels are text nodes too. Counting them shifts every
+        // offset, and the range then lands past the passage - which is how the
+        // fluorescent highlight ended up painting over the editor's own buttons.
+        if (node.parentElement?.closest('[data-qc-ignore]') != null) continue
         const next = consumed + node.data.length
         if (startNode === null && offset < next) {
           startNode = node
@@ -3032,27 +3037,68 @@ function escapeHtml(text) {
      */
     function paintSafeRange(range) {
       try {
-        const startNode = range.startContainer
-        const endNode = range.endContainer
-        const endElement = elementOf(endNode)
-        const box = endElement?.closest(BLOCK_SELECTOR)
+        const endElement = elementOf(range.endContainer)
+        // If the range already ends on prose, leave it exactly alone: extending the end
+        // to the block's last text node (the previous version) made the range LONGER and
+        // painted over whatever sat beside the passage.
+        if (endElement === null || endElement.closest('[data-qc-ignore]') === null) {
+          const startElement = elementOf(range.startContainer)
+          if (startElement === null || startElement.closest('[data-qc-ignore]') === null) {
+            return range
+          }
+        }
+        // The range touches plugin chrome. Rebuild it over prose only, preserving the
+        // original end offset when that offset is in prose.
+        const box = (endElement?.closest(BLOCK_SELECTOR)
+          ?? elementOf(range.startContainer)?.closest(BLOCK_SELECTOR))
         if (box === null || box === undefined) return range
-        // Nothing of ours sits in this block: the range is already clean.
-        if (box.querySelector('[data-qc-ignore]') === null) return range
         const clean = document.createRange()
-        clean.setStart(startNode, range.startOffset)
-        // Clamp the end to the last text node BEFORE any plugin-owned node.
-        let lastText = null
+        // Prose text nodes of the block, in document order, skipping plugin subtrees.
+        const texts = []
         const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT)
         for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-          // Skip text that lives inside one of our own nodes (the bubble's ordinal).
           if (node.parentElement?.closest('[data-qc-ignore]') != null) continue
-          // Stop once the walk passes the range's end.
-          if (range.comparePoint(node, 0) > 0) break
-          if ((node.textContent ?? '').trim() !== '') lastText = node
+          texts.push(node)
         }
-        if (lastText === null) return range
-        clean.setEnd(lastText, (lastText.textContent ?? '').length)
+        if (texts.length === 0) return range
+        const startIn = texts.findIndex((node) => node === range.startContainer)
+        const endIn = texts.findIndex((node) => node === range.endContainer)
+        // A start that sat in chrome: begin at the first prose node instead.
+        const startNode = startIn >= 0 ? texts[startIn] : texts[0]
+        const startOffset = startIn >= 0 ? range.startOffset : 0
+        let endNode
+        let endOffset
+        if (endIn >= 0) {
+          endNode = texts[endIn]
+          endOffset = range.endOffset
+        } else {
+          // The end sat inside a plugin node. Stop at the LAST prose node that comes
+          // BEFORE the range's end point - using the block's final text node would
+          // sweep up any chrome that follows the passage, which is exactly the bug this
+          // guard exists to prevent.
+          // Because the end sits inside chrome, the range's end point is inside a
+          // subtree that is excluded from `texts`. The correct stop is the last PROSE
+          // node that appears before the excluded node in document order - comparing
+          // against comparePoint() cannot work here, since every prose node is inside
+          // the range's span and would report "inside".
+          const chromeNode = range.endContainer
+          const proseNodesBefore = []
+          const docWalker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT)
+          for (let node = docWalker.nextNode(); node !== null; node = docWalker.nextNode()) {
+            if (node === chromeNode) break
+            if (node.parentElement?.closest('[data-qc-ignore]') != null) continue
+            proseNodesBefore.push(node)
+          }
+          if (proseNodesBefore.length === 0) return range
+          endNode = proseNodesBefore[proseNodesBefore.length - 1]
+          endOffset = (endNode.textContent ?? '').length
+        }
+        // Guarantee a non-inverted range.
+        if (endNode === startNode && endOffset < startOffset) {
+          endOffset = startOffset
+        }
+        clean.setStart(startNode, startOffset)
+        clean.setEnd(endNode, endOffset)
         return clean
       } catch {
         return range
@@ -3082,7 +3128,7 @@ function escapeHtml(text) {
           if (resolve !== null) {
             const live = resolve()
             if (live !== null) {
-              highlight = new Highlight(live)
+              highlight = new Highlight(paintSafeRange(live))
               window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight)
             }
           }
@@ -3128,7 +3174,7 @@ function escapeHtml(text) {
           if (window.CSS.highlights.get(FLASH_HIGHLIGHT) !== highlight) return
           const live = resolve()
           if (live === null) return
-          highlight = new Highlight(live)
+          highlight = new Highlight(paintSafeRange(live))
           window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight)
         }, 90)
       } catch (failure) {
