@@ -252,6 +252,18 @@ async function streamAnswer(ctx, request, res, signal) {
 }
 
 /**
+ * Required Host services.
+ *
+ * `webServer` carries the streaming route, and `connection` provides the same-origin /
+ * authentication fence the handler applies before reading a byte of the body. Declaring
+ * them is what makes the Host wait for those services and permit the access; without the
+ * declaration `ctx.webServer` throws "cannot get property without inject" on any profile
+ * that has not already materialised the HTTP carrier for some other reason. The desktop
+ * profile masked the omission; a plain `dsh --profile web` does not.
+ */
+export const inject = ['webServer', 'connection']
+
+/**
  * Host plugin body: one streaming route, registered for the fiber's lifetime.
  * @param ctx - Host context carrying `webServer`, `connection`, `llm`, and
  * `agentDefaultModel`.
