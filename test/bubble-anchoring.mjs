@@ -109,15 +109,21 @@ check('the bubble never mounts into the boxless flow anchor',
   /if \(!==?"? ?flow && ancestor\.getClientRects\(\)\.length > 0\)/.test(source)
     || /ancestor !== flow && ancestor\.getClientRects\(\)\.length > 0/.test(source),
   'the bubble can mount into a display:contents element and never be visible')
-check('the bubble carries a vertical offset inside its row',
-  /offset/.test(source) && /rangeBox\.top - rowBox\.top/.test(source),
-  'the bubble sits at the row top instead of at the annotated passage')
-check('the offset is a distance inside the row, not a viewport coordinate',
-  /rangeBox\.top - rowBox\.top/.test(source),
-  'the offset is computed against the viewport and will go stale')
-check('the offset participates in the identity diff',
-  /a\.offset !== b\.offset/.test(source),
-  'a changed offset would not repaint')
+// The bubble must anchor to its own PARAGRAPH, not to the surrounding chat row.
+// Anchoring to the row forces a per-frame measurement of "how far into this row
+// does the passage begin", and that measurement twitches at fractional pixel
+// offsets while a pane is dragged. Anchoring to the block removes the measurement
+// entirely: top:0 is already the passage's first line.
+check('the bubble anchors to a block element, not the chat row',
+  /const BLOCK_SELECTOR = 'p, li, h1/.test(source)
+    && /element\.closest\(BLOCK_SELECTOR\)/.test(source),
+  'the bubble still anchors to the whole chat row')
+check('no vertical offset is measured at all',
+  !/rangeBox\.top - rowBox\.top/.test(source),
+  'a per-frame vertical measurement survives, which jitters under a pane drag')
+check('the bubble relies on top:0 inside its block',
+  /right:4px;top:0/.test(css),
+  'the bubble still needs a computed top')
 let failed = 0
 for (const item of cases) {
   if (!item.ok) failed += 1

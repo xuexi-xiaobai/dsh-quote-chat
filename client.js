@@ -77,6 +77,14 @@ window.__ModuleLoader__.load({
     /** The chat flow container: a selection outside it is not an answer passage. */
     const FLOW_SELECTOR = '[data-slot="conversation.chat.flow"]'
 
+    /**
+     * Block-level elements a bubble can use as its containing block.
+     *
+     * Each is its own box with a well-defined top edge, so the bubble can sit at
+     * top:0 without any measured offset.
+     */
+    const BLOCK_SELECTOR = 'p, li, h1, h2, h3, h4, h5, h6, pre, blockquote, table, figure'
+
     /** Surfaces a selection must never come from. */
     const NON_ANSWER_SELECTOR = 'textarea, input, [contenteditable="true"], [data-slot="conversation.composer"]'
 
@@ -2364,7 +2372,6 @@ function escapeHtml(text) {
         const a = left[index]
         const b = right[index]
         if (a.id !== b.id || a.row !== b.row || a.number !== b.number) return false
-        if (a.offset !== b.offset) return false
       }
       return true
     }
@@ -2380,16 +2387,32 @@ function escapeHtml(text) {
      * @param flow - the chat flow anchor, used when no row wrapper exists.
      * @returns the row element, or null.
      */
+    /**
+     * The block element that contains a resolved passage.
+     *
+     * The bubble is mounted INTO this element and positioned with top:0 and
+     * right:4px, so layout puts it at the top-right of its own paragraph. That is
+     * the whole trick: because the containing block IS the paragraph, there is no
+     * vertical offset to compute and therefore nothing that can wobble while a pane
+     * is dragged. Mounting to the surrounding chat ROW instead would force a
+     * per-frame measurement of "how far into this row does the passage start", and
+     * that measurement is what jittered at fractional pixel offsets.
+     *
+     * @param range - the resolved passage range.
+     * @param flow - the chat flow anchor, used only to exclude the boxless wrapper.
+     * @returns the containing block element, or null.
+     */
     function rowOf(range, flow) {
       const element = elementOf(range.startContainer)
       if (element === null) return null
-      // The row is the nearest element carrying a chat node key. That row is a real
-      // box, so an absolutely positioned child anchors to it.
+      // A block-level element is its own containing block: top:0 aligns exactly with
+      // its first line, which is where the passage starts.
+      const block = element.closest(BLOCK_SELECTOR)
+      if (block !== null && block !== flow && flow.contains(block)) return block
+      // Inline or unwrapped content: fall back to the chat row, which is still a real
+      // box (unlike the flow anchor, which is display:contents and has no box).
       const row = element.closest('[data-chat-node-key]')
       if (row !== null) return row
-      // No row wrapper. The flow anchor itself is display:contents and has NO box,
-      // so mounting into it would place the bubble in a zero-sized container and it
-      // would never be visible. Climb to the nearest ancestor that actually paints.
       let ancestor = element
       while (ancestor !== null) {
         if (ancestor !== flow && ancestor.getClientRects().length > 0) return ancestor
@@ -2457,22 +2480,12 @@ function escapeHtml(text) {
             // scrolling, zoom and reflow. No coordinates are computed here at all.
             const row = rowOf(range, flow)
             if (row === null) continue
-            // Vertical offset WITHIN the row, computed once here.
-            //
-            // The row can hold several paragraphs, so top:0 would put the bubble by
-            // the first line of the whole row rather than by the annotated passage.
-            // This offset is a distance inside the row's own box, so it survives
-            // scrolling, zoom and reflow untouched - unlike a viewport coordinate,
-            // it does not go stale when the row moves.
-            const rowBox = row.getBoundingClientRect()
-            const rangeBox = range.getBoundingClientRect()
-            const offset = rowBox.height > 0
-              ? Math.max(0, Math.round(rangeBox.top - rowBox.top))
-              : 0
+            // No vertical offset is computed: the bubble mounts INSIDE its own
+            // paragraph, so top:0 already sits on the passage's first line. Nothing
+            // is measured per frame, so nothing can jitter while a pane is dragged.
             next.push({
               id: annotation.id,
               row,
-              offset,
               // The base class is already the blue bubble; only tables recolour.
               tone: annotation.kind === 'table' ? 'qc-marker-table' : '',
               number,
@@ -2645,8 +2658,6 @@ function escapeHtml(text) {
           type: 'button',
           className: 'qc-marker ' + position.tone
             + (editing !== null && editing.id === position.id ? ' qc-marker-active' : ''),
-          // A distance inside the row, so it tracks the passage without measuring.
-          style: { top: (position.offset || 0) + 'px' },
           title: position.title,
           'aria-label': position.title,
           onClick: () => {
