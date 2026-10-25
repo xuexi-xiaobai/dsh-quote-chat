@@ -2507,6 +2507,17 @@ function escapeHtml(text) {
          */
         const onColumnResize = () => { schedule() }
         schedule()
+        /**
+         * Coalesce transcript mutations.
+         *
+         * Rows mount and unmount as the virtualiser pages, which is the only event
+         * that can change which annotations have a bubble mounted. Debouncing keeps
+         * a burst of paging churn to one pass.
+         */
+        const debounced = () => {
+          clearTimeout(timer)
+          timer = setTimeout(schedule, 80)
+        }
         const observer = new MutationObserver(debounced)
         const flow = findFlow()
         // `childList` only, and NOT `characterData`. The virtualiser mounting or
