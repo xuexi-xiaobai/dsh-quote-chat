@@ -260,9 +260,19 @@ window.__ModuleLoader__.load({
 /* Hovering hides the kind glyph: the × takes its place in the same slot. */
 [data-composer-chip="quote-chat"]:hover::before,
 [data-composer-chip="quote-chat"]:focus-within::before{opacity:0;visibility:hidden}
-/* The label truncates rather than wrapping. */
-[data-composer-chip="quote-chat"] > span:last-child{overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap;min-width:0}
+/*
+ * The ordinal, drawn here rather than relying on the host's label.
+ *
+ * The host renders its label inside a child span, and that text was not reaching
+ * the screen: the chip showed a glyph and nothing else. A pseudo-element is
+ * rendered by CSS from an attribute the plugin sets, so it cannot be lost to the
+ * editor's own rendering.
+ */
+[data-composer-chip="quote-chat"]::after{content:attr(data-qc-label);
+  order:1;margin-left:0;font-size:12.5px;line-height:1.5;
+  color:#181818;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Keep the host's own label out of the way so the ordinal is the only text. */
+[data-composer-chip="quote-chat"] > span:last-child{display:none}
 
 /* The removal control. Position comes from the chip's rectangle (inline style), so
    it lands in the pill's left slot where the kind glyph sits; the glyph fades out
@@ -864,6 +874,23 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Renumber a list so the visible numbers are always 1, 2, 3 … in order.
+     *
+     * The number is a position, not an identity. A monotonic counter was wrong in
+     * the way the user described: after deleting an annotation the next one keeps
+     * climbing (1, 2, 3 → delete 2 → 4), and a session that already had
+     * annotations pushes the first new one past 1. Renumbering on every mutation
+     * keeps each draft's numbering starting at 1.
+     * @param list - the annotations in insertion order.
+     * @returns the same annotations with fresh `number` values.
+     */
+    function renumber(list) {
+      return list.map((item, index) => (item.number === index + 1
+        ? item
+        : { ...item, number: index + 1 }))
+    }
+
+    /**
      * Add one annotation to a session.
      * @param sessionId - the session key.
      * @param draft - the annotation draft (without id or number).
@@ -873,8 +900,8 @@ window.__ModuleLoader__.load({
       const store = storeFor(sessionId)
       if (store.list.length >= MAX_ANNOTATIONS) return null
       store.seq += 1
-      const annotation = { ...draft, id: `qc-${Date.now()}-${store.seq}`, number: store.seq }
-      publish(store, [...store.list, annotation])
+      const annotation = { ...draft, id: `qc-${Date.now()}-${store.seq}`, number: store.list.length + 1 }
+      publish(store, renumber([...store.list, annotation]))
       return annotation
     }
 
@@ -885,7 +912,7 @@ window.__ModuleLoader__.load({
      */
     function removeAnnotation(sessionId, id) {
       const store = storeFor(sessionId)
-      publish(store, store.list.filter((item) => item.id !== id))
+      publish(store, renumber(store.list.filter((item) => item.id !== id)))
     }
 
     /**
@@ -1413,6 +1440,7 @@ function ChipCards(props) {
     const unmark = (chip) => {
       delete chip.dataset.qcNum
       delete chip.dataset.qcKind
+      delete chip.dataset.qcLabel
       marked.delete(chip)
     }
 
@@ -1447,6 +1475,9 @@ function ChipCards(props) {
         // Attributes only: the number badge is drawn by CSS from this value.
         chip.dataset.qcNum = String(annotation.number)
         chip.dataset.qcKind = annotation.kind === 'table' ? 'table' : 'text'
+        // The ordinal shown on the chip. CSS renders it via ::after, so the text
+        // is guaranteed to appear even though the host's own label span does not.
+        chip.dataset.qcLabel = labels.content.replace('{n}', String(annotation.number))
         marked.add(chip)
       }
       for (const chip of [...marked]) {
