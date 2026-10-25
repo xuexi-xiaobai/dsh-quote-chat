@@ -49,8 +49,9 @@ check('the column is measured from rows, not the box-less anchor',
 check('the marker does not use flow.getBoundingClientRect',
   !/const flowRect = flow\.getBoundingClientRect\(\)/.test(source),
   'the marker is still framed by the box-less anchor')
-check('the visibility gate uses the scroll container band',
-  /centre < viewTop - 40 \|\| centre > viewBottom \+ 40/.test(source),
+check('visibility is derived from the container band',
+  /const visible = measured\.filter\(\(item\) => \{[\s\S]{0,120}viewTop/.test(source)
+    || /centre >= viewTop - 40 && centre <= viewBottom \+ 40/.test(source),
   'the gate does not use the container band')
 
 // The bubble must show the same number as the chip. The chip number is the

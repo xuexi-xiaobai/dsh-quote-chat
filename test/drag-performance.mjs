@@ -123,6 +123,42 @@ check('a drag frame is at least 10x cheaper than before',
 check('a drag frame does a bounded amount of layout work',
   after <= 40, `cost is ${after}`)
 
+// ── 7. Nothing may observe the whole document ─────────────────────────────
+// These run ONLY once an annotation exists (the components render nothing
+// otherwise), which is why the slowdown appeared after the first annotation.
+check('nothing observes document.body with subtree',
+  !/observer\.observe\(document\.body/.test(source),
+  'a body-wide MutationObserver re-runs on every app re-render')
+check('the chip watcher is scoped to the composer',
+  /composerContainer\(\)/.test(source)
+    && /observer\.observe\(composerHost/.test(source),
+  'the chip watcher still watches the whole document')
+check('the chip watcher ignores its own dataset writes',
+  /record\.attributeName\?\.startsWith\('data-qc'\)/.test(source),
+  'dataset writes re-trigger the watcher')
+check('the chip watcher ignores unrelated mutations',
+  /data-composer-chip="quote-chat"/.test(source)
+    && /addedNodes/.test(source) && /removedNodes/.test(source),
+  'any mutation wakes the chip watcher')
+
+// ── 8. Scrolling and text edits must not resolve anchors ─────────────────
+check('the flow observer does not watch characterData',
+  !/observe\(flow, \{ childList: true, subtree: true, characterData: true \}/.test(source),
+  'every streamed token schedules a full anchor pass')
+check('scrolling takes a cheap path',
+  /addEventListener\('scroll', scheduleScroll, true\)/.test(source),
+  'scrolling runs a full anchor pass')
+const repositionBody = /const repositionFromCached = \(\) => \{([\s\S]*?)\n        \}/.exec(source)?.[1] ?? ''
+check('the scroll path resolves no anchors',
+  repositionBody !== '' && !/resolveAnchor/.test(repositionBody),
+  'the scroll path resolves anchors')
+check('the scroll path re-derives visibility from cached coordinates',
+  /measured\.filter/.test(repositionBody),
+  'the scroll path does not cull from cached positions')
+check('a full pass keeps the uncelled set',
+  /measured = next/.test(source),
+  'the full pass discards bubbles that are merely scrolled away')
+
 let failed = 0
 for (const item of cases) {
   if (!item.ok) failed += 1

@@ -1713,8 +1713,53 @@ function ChipCards(props) {
       timer = setTimeout(schedule, 70)
     }
     schedule()
-    const observer = new MutationObserver(debounced)
-    observer.observe(document.body, { childList: true, subtree: true })
+    /**
+     * Watch only what this component actually reacts to.
+     *
+     * The first version observed `document.body` with `subtree`, so EVERY DOM
+     * change anywhere — including the app's own re-render during a pane drag —
+     * woke it up and ran `apply()`, which queries every chip and writes dataset
+     * attributes. That is invisible when there are no annotations (the component
+     * renders nothing and the effect never runs) and expensive the moment one
+     * exists, which is exactly the "only slow after adding an annotation" report.
+     *
+     * The observer is scoped to the composer instead, and a mutation is ignored
+     * unless it touches a chip or an attribute this component owns.
+     */
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.type === 'attributes') {
+          // Our own dataset writes; there is nothing to recompute from them.
+          if (record.attributeName?.startsWith('data-qc')) continue
+          if (record.target instanceof Element
+            && record.target.closest('[data-composer-chip="quote-chat"]') !== null) {
+            debounced()
+            return
+          }
+          continue
+        }
+        for (const node of record.addedNodes) {
+          if (node instanceof Element
+            && (node.matches?.('[data-composer-chip="quote-chat"]')
+              || node.querySelector?.('[data-composer-chip="quote-chat"]') !== null)) {
+            debounced()
+            return
+          }
+        }
+        for (const node of record.removedNodes) {
+          if (node instanceof Element
+            && (node.matches?.('[data-composer-chip="quote-chat"]')
+              || node.querySelector?.('[data-composer-chip="quote-chat"]') !== null)) {
+            debounced()
+            return
+          }
+        }
+      }
+    })
+    const composerHost = composerContainer()
+    if (composerHost !== null) {
+      observer.observe(composerHost, { childList: true, subtree: true })
+    }
 
     /** The chip under a pointer event, or null. */
     const chipOf = (event) => (event.target instanceof Element
@@ -2059,6 +2104,35 @@ function escapeHtml(text) {
      * @param flow - the chat flow anchor.
      * @returns the scroll container, or null.
      */
+    /**
+     * The subtree that can contain annotation chips.
+     *
+     * Scoping the composer watcher to this instead of `document.body` is what keeps
+     * a pane drag from waking it on every frame: the transcript re-renders
+     * constantly during a drag, but the composer does not.
+     * @returns the element to observe, or null when there is no composer yet.
+     */
+    function composerContainer() {
+      if (typeof document === 'undefined') return null
+      const selectors = [
+        '[data-slot="conversation.composer.dock"]',
+        '[data-slot="conversation.input.dock"]',
+        '[data-composer-root]',
+        '[contenteditable="true"]',
+      ]
+      for (const selector of selectors) {
+        for (const element of document.querySelectorAll(selector)) {
+          if (element.closest('[data-sidebar-right-tab]') !== null) continue
+          if (element.getClientRects().length > 0) {
+            // Climb to the nearest ancestor that also holds the chips, so a chip
+            // inserted next to the editor is still seen.
+            return element.closest('[data-composer-root]') ?? element.parentElement ?? element
+          }
+        }
+      }
+      return null
+    }
+
     const containerCache = new WeakMap()
     function containerFor(flow) {
       const hit = containerCache.get(flow)
@@ -2409,12 +2483,6 @@ function escapeHtml(text) {
             // arithmetic here means a scroll does not have to re-measure — the
             // browser moves them with the content.
             const topInScroller = rect.top - scrollerRect.top + scroller.scrollTop
-            // Culling is done in container coordinates against the visible band,
-            // so a row that is mounted but scrolled far above gets no bubble.
-            const viewTop = scroller.scrollTop
-            const viewBottom = viewTop + scroller.clientHeight
-            const centre = topInScroller + Math.min(rect.height, 20) / 2
-            if (centre < viewTop - 40 || centre > viewBottom + 40) continue
             next.push({
               id: annotation.id,
               // Centre the bubble on the passage's first line.
@@ -2425,8 +2493,15 @@ function escapeHtml(text) {
               title: labels.jump.replace('{n}', String(number)),
             })
           }
+          // Keep the FULL set, not the culled one: a scroll re-derives visibility
+          // from these coordinates without repeating the anchor work.
           measured = next
-          publish(next, leftInScroller)
+          const viewTop = scroller.scrollTop
+          const viewBottom = viewTop + scroller.clientHeight
+          publish(next.filter((item) => {
+            const centre = item.top + 9
+            return centre >= viewTop - 40 && centre <= viewBottom + 40
+          }), leftInScroller)
         }
         /**
          * Push a measured set into state.
@@ -2481,12 +2556,49 @@ function escapeHtml(text) {
           clearTimeout(timer)
           timer = setTimeout(schedule, 80)
         }
+        /**
+         * Recompute vertical offsets from cached absolute positions.
+         *
+         * A scroll cannot change WHERE a passage is in the container — the bubbles
+         * are absolutely positioned inside it, so the browser already moved them
+         * with the content. What a scroll changes is which of them fall inside the
+         * visible band. Re-deriving that from stored container coordinates costs one
+         * arithmetic step per bubble, so scrolling never has to resolve an anchor.
+         */
+        const repositionFromCached = () => {
+          frame = 0
+          const scroller = cachedHost
+          if (scroller === null || measured.length === 0) return
+          const flow = findFlow()
+          if (flow === null) return
+          const column = flowColumn(flow)
+          if (column === null) return
+          const rect = scroller.getBoundingClientRect()
+          const gutter = Math.min(column.right + 4, window.innerWidth - 28)
+          const left = Math.round(gutter - rect.left + scroller.scrollLeft)
+          const viewTop = scroller.scrollTop
+          const viewBottom = viewTop + scroller.clientHeight
+          const visible = measured.filter((item) => {
+            const centre = item.top + 9
+            return centre >= viewTop - 40 && centre <= viewBottom + 40
+          })
+          publish(visible, left)
+        }
+        const scheduleScroll = () => {
+          if (frame !== 0) return
+          frame = requestAnimationFrame(repositionFromCached)
+        }
         schedule()
-        document.addEventListener('scroll', schedule, true)
+        document.addEventListener('scroll', scheduleScroll, true)
         window.addEventListener('resize', schedule)
         const observer = new MutationObserver(debounced)
         const flow = findFlow()
-        if (flow !== null) observer.observe(flow, { childList: true, subtree: true, characterData: true })
+        // `childList` only, and NOT `characterData`. The virtualiser mounting or
+        // unmounting a row is the event that matters; a text edit inside a row does
+        // not move a bubble, because bubble coordinates are container-absolute and
+        // the browser reflows them. Watching characterData made every streamed token
+        // — and every reflow during a pane drag — schedule a full anchor pass.
+        if (flow !== null) observer.observe(flow, { childList: true, subtree: true })
         // Follow the text column's width. Resizing the transcript (dragging a
         // pane edge, toggling a side panel) does not fire `resize` on the window
         // and does not mutate the flow's children, so without this the bubble
