@@ -210,12 +210,12 @@ check('the gutter is applied once, behind the host flag',
 // range covers, and the passage range ends at the paragraph's end. Anything inside the
 // paragraph is therefore inside the range, which is why the fluorescent marker kept
 // appearing over the editor's labels no matter how it was tagged.
-check('the comment panel is mounted outside the passage',
-  /\}\), mount\)/.test(source) && !/\}\), row \?\? document\.body\)/.test(source),
-  'the panel is inside the paragraph, so the highlight paints over it')
-check('the panel anchors to the paragraph sibling container',
-  /parent !== null && parent\.isConnected \? parent : document\.body/.test(source),
-  'the panel has no stable parent-relative coordinate space')
+check('the comment panel mounts into the transcript container',
+  /\}\), anchored === null \? document\.body : anchored\.scroller\)/.test(source),
+  'the panel is not clipped by the transcript, so it can cover the composer')
+check('the panel uses the shared transcript anchor',
+  /anchorInTranscript\(/.test(source),
+  'the panel is placed by its own rules and drifts from the other surfaces')
 check('the panel is positioned in flow, not fixed',
   /\.qc-bubble-panel\{position:absolute/.test(css),
   'a fixed panel cannot ride with the passage')
@@ -225,9 +225,9 @@ check('the panel needs no scroll listener of its own',
     return body !== '' && !/addEventListener\('scroll'/.test(body)
   })(),
   'the panel is repositioned on every scroll event instead of riding the text')
-check('the panel receives the passage bottom edge',
-  /bottom: box\.bottom/.test(source),
-  'the panel cannot tell where the passage ends')
+check('the panel measures the passage box',
+  /row\.getBoundingClientRect\(\)/.test(source),
+  'the panel has no box to anchor against')
 // --- Dark mode -------------------------------------------------------------
 check('the chip surface comes from a theme token',
   /data-composer-chip="quote-chat"\][\s\S]{0,320}--dsw-alias-bg-layer-2/.test(css),
@@ -247,11 +247,11 @@ check('no bare light surface literal remains on a themed surface',
 // --- The panel must not sit on the passage, nor be highlighted -------------
 // It opens ABOVE the paragraph (negative offset), clear of the gutter bubble.
 check('the panel opens above the passage',
-  /rel\.top - height - BUBBLE_CLEARANCE/.test(source),
-  'the panel covers the passage or the bubble')
-check('the panel hugs the paragraph right edge',
-  /Math\.max\(0, rel\.right - width\)/.test(source),
-  'the panel is not aligned to the text column')
+  /'above'/.test(source),
+  'the panel covers the annotated passage')
+check('the panel is clamped inside the readable band',
+  /bandBottom - height - ANCHOR_INSET/.test(source),
+  'the panel can be pushed under the composer or clipped at an edge')
 check('the clearance is a named constant',
   /const BUBBLE_CLEARANCE = \d+/.test(source),
   'the clearance is a magic number')
@@ -277,13 +277,13 @@ check('the bubble is excluded from the passage highlight',
 //     edge cannot push them into the clipped region and make them vanish.
 // Every earlier attempt satisfied one constraint and broke the other.
 check('a shared anchoring helper exists',
-  /function anchorInTranscript\(flow, box, size, preferAbove\)/.test(source),
-  'the two surfaces anchor independently and can drift apart')
+  /function anchorInTranscript\(flow, box, size, prefer\)/.test(source),
+  'the surfaces anchor independently and can drift apart')
 check('the selection toolbar is anchored inside the transcript',
-  /anchorInTranscript\(flow, anchor, measured, true\)/.test(source),
+  /anchorInTranscript\(flow, anchor, measured, 'below'\)/.test(source),
   'the toolbar is placed against the viewport and follows the screen')
 check('the compose popover is anchored inside the transcript',
-  /anchorInTranscript\(flow, source\.rect, \{ width, height \}, true\)/.test(source),
+  /anchorInTranscript\(flow, source\.rect, \{ width, height \}, 'below'\)/.test(source),
   'the popover is placed against the viewport and follows the screen')
 check('both surfaces mount into the transcript when anchored',
   /anchored === null \? document\.body : anchored\.scroller/.test(source),

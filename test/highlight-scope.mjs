@@ -300,9 +300,9 @@ const scope = buildScope(document)
 // paragraph's end covers everything mounted inside it. Only being a sibling of the
 // paragraph puts the panel outside the range.
 {
-  const mountLine = /\}\),\s*(mount|row \?\? document\.body)\)/.exec(source)
-  check('the comment panel mounts to a sibling of the paragraph',
-    mountLine !== null && mountLine[1] === 'mount',
+  const mountLine = /\}\),\s*(anchored === null \? document\.body : anchored\.scroller)\)/.exec(source)
+  check('the comment panel is mounted outside the paragraph',
+    mountLine !== null && mountLine[1] === 'anchored === null ? document.body : anchored.scroller',
     'the panel is mounted inside the paragraph, inside the highlight range')
 }
 

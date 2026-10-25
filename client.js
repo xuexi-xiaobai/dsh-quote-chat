@@ -42,6 +42,10 @@ const ANCHOR_GAP = 8
 /** Breathing room between the top bar and a jumped-to passage, in px. */
 const ANCHOR_TOP_GAP = 28
 
+/** Assumed comment-panel size, used until it reports its own. */
+const BUBBLE_PANEL_WIDTH = 320
+const BUBBLE_PANEL_HEIGHT = 200
+
 /** Clearance so the comment panel never overlaps the gutter bubble, in px. */
 const BUBBLE_CLEARANCE = 30
 
@@ -1621,7 +1625,7 @@ window.__ModuleLoader__.load({
       // clamped to the visible band (so it is never cut off at an edge).
       const flow = findFlow()
       const measured = { width: size.width || 210, height: size.height || 34 }
-      const anchored = flow === null ? null : anchorInTranscript(flow, anchor, measured, true)
+      const anchored = flow === null ? null : anchorInTranscript(flow, anchor, measured, 'below')
       const position = anchored === null
         ? placeNear(anchor, measured)
         : anchored.position
@@ -1683,7 +1687,7 @@ window.__ModuleLoader__.load({
       const flow = findFlow()
       const anchored = flow === null
         ? null
-        : anchorInTranscript(flow, source.rect, { width, height }, true)
+        : anchorInTranscript(flow, source.rect, { width, height }, 'below')
       const position = anchored === null
         ? placeNear(source.rect, { width, height })
         : anchored.position
@@ -2278,28 +2282,32 @@ function escapeHtml(text) {
      */
     const columnCache = new WeakMap()
 
-    /** Never let an anchored surface touch the edges of the visible band. */
-    const ANCHOR_INSET = 6
+    /** Never let an anchored surface touch the edges of the readable band. */
+    const ANCHOR_INSET = 8
 
     /**
-     * Place a surface inside the transcript, clamped to the visible band.
+     * Place a surface against the selection, inside the readable chat area.
      *
-     * The surface is mounted INSIDE the scroll container so the container's own overflow
-     * clips it - that is what keeps it from ever painting over the composer or the top
-     * bar. It is also clamped so a passage near an edge does not push the surface into
-     * the clipped region and make it disappear.
+     * Mounted INSIDE the transcript scroll container, so the container's overflow and the
+     * chat chrome both bound it. Positioned relative to that container, so it travels with
+     * the content instead of tracking the viewport.
+     *
+     * Placement follows the pointer: the surface opens just below the selection, and is
+     * only flipped above when there is no room below. Both axes are clamped to the
+     * READABLE band - the area between the top bar and the composer, which
+     * visibleChatArea() already derives - so a surface can never be pushed under the
+     * composer or over the top bar, and can never be clipped out of sight at an edge.
      *
      * @param flow - the chat flow anchor.
-     * @param box - the reference box in viewport coordinates ({ left, top, right }).
+     * @param box - the selection's viewport box ({ left, top, right, bottom }).
      * @param size - the surface's measured size.
-     * @param preferAbove - true to sit above the box, false to sit below it.
-     * @returns the mount target and container-relative position, or null.
+     * @param prefer - 'below' to sit under the selection first.
+     * @returns the mount target plus container-relative position, or null.
      */
-    function anchorInTranscript(flow, box, size, preferAbove) {
+    function anchorInTranscript(flow, box, size, prefer) {
       const scroller = containerFor(flow)
       if (scroller === null || scroller === undefined || box === null) return null
-      // An absolutely positioned child needs a containing block. The container is
-      // `position: static` by default, so it is made relative once.
+      // Absolute children need a containing block; the container is static by default.
       if (scroller.dataset.qcPositioned !== '1') {
         if (getComputedStyle(scroller).position === 'static') {
           scroller.style.position = 'relative'
@@ -2309,20 +2317,28 @@ function escapeHtml(text) {
       const rect = scroller.getBoundingClientRect()
       const width = size.width || 0
       const height = size.height || 0
-      // Container-relative coordinates for the reference box.
+      // The readable band, expressed in container coordinates.
+      const area = visibleChatArea(scroller)
+      const bandTop = area.top - rect.top + scroller.scrollTop
+      const bandBottom = bandTop + area.height
+      // The selection, in the same coordinates.
       const localTop = box.top - rect.top + scroller.scrollTop
+      const localBottom = (box.bottom ?? box.top) - rect.top + scroller.scrollTop
       const localLeft = box.left - rect.left + scroller.scrollLeft
-      const localRight = localLeft + Math.max(0, (box.right ?? box.left) - box.left)
-      // The visible band, in the same coordinate space.
-      const bandTop = scroller.scrollTop
-      const bandBottom = bandTop + scroller.clientHeight
-      let top = preferAbove ? localTop - height - 8 : localTop + 8
-      // Clamp inside the band, so the container's overflow cannot eat the surface.
-      top = Math.min(Math.max(bandTop + ANCHOR_INSET, top),
-        Math.max(bandTop + ANCHOR_INSET, bandBottom - height - ANCHOR_INSET))
-      // Horizontally: right-align to the reference box, then pull back inside the band.
+      const localRight = (box.right ?? box.left) - rect.left + scroller.scrollLeft
+
+      const fitsBelow = localBottom + 8 + height + ANCHOR_INSET <= bandBottom
+      const wantAbove = prefer === 'above' || !fitsBelow
+      let top = wantAbove ? localTop - height - 8 : localBottom + 8
+      // Clamp INSIDE the band: this is what stops a surface from being clipped away at an
+      // edge, and equally what stops it from covering the composer.
+      const maxTop = Math.max(bandTop + ANCHOR_INSET, bandBottom - height - ANCHOR_INSET)
+      top = Math.min(Math.max(bandTop + ANCHOR_INSET, top), maxTop)
+
+      // Horizontally: start at the pointer's left edge, then pull back inside.
       const maxLeft = Math.max(ANCHOR_INSET, scroller.clientWidth - width - ANCHOR_INSET)
-      const left = Math.min(Math.max(ANCHOR_INSET, localRight - width), maxLeft)
+      const left = Math.min(Math.max(ANCHOR_INSET, localLeft), maxLeft)
+
       return { scroller, position: { top, left } }
     }
 
@@ -2471,7 +2487,7 @@ function escapeHtml(text) {
       // Otherwise (no paragraph to attach to) it falls back to viewport coordinates,
       // clamped to stay on screen.
       const left = rel !== null
-        ? Math.max(0, rel.right - width)
+        ? rel.left
         : inFlow
         ? Math.max(0, anchor.width - width)
         : Math.min(
@@ -2485,7 +2501,7 @@ function escapeHtml(text) {
       // bubble's own height plus a gap keeps the two from overlapping, and leaves the
       // annotated passage itself fully visible.
       const top = rel !== null
-        ? rel.top - height - BUBBLE_CLEARANCE
+        ? rel.top
         : inFlow
         ? -(height + BUBBLE_CLEARANCE)
         : Math.min(
@@ -2893,46 +2909,32 @@ function escapeHtml(text) {
         const annotation = annotations.find((item) => item.id === editing.id)
         if (annotation === undefined) return null
         const row = editing.row
-        const box = (row !== undefined && row.isConnected)
+        // Mounted into the transcript container, so the container clips it (it can never
+        // cover the composer) and it sits OUTSIDE the annotated paragraph - which is what
+        // keeps the passage highlight from painting over the editor's own labels.
+        // CSS.highlights covers every text node a range spans, and a range reaching the
+        // paragraph's end covers anything mounted inside it.
+        const flow = findFlow()
+        const box = (row !== undefined && row !== null && row.isConnected)
           ? row.getBoundingClientRect()
-          : { left: 0, top: 0, right: window.innerWidth, bottom: 0 }
-        // Mount the panel as a SIBLING of the paragraph, never inside it.
-        //
-        // CSS.highlights paints every text node the range covers, and the passage range
-        // ends at the paragraph's end. Anything mounted inside the paragraph is inside
-        // that range no matter how it is tagged, which is why data-qc-ignore alone
-        // never stopped the marker reaching the editor's own labels. A sibling is
-        // outside the range entirely, so there is nothing left to sanitise.
-        //
-        // Position is expressed relative to that sibling container using the
-        // paragraph's own offset, so the panel still travels with the text.
-        const parent = (row ?? null)?.parentElement ?? null
-        const mount = parent !== null && parent.isConnected ? parent : document.body
-        const rel = parent !== null && parent.isConnected
-          ? {
-            // The paragraph's own box, parent-relative. The panel combines this with its
-            // measured size, so it sits just above the paragraph and hugs its right edge
-            // without any hard-coded dimension.
-            top: row.offsetTop ?? 0,
-            right: row.offsetWidth ?? 0,
-          }
           : null
+        // Opened ABOVE the passage so the annotated text stays readable underneath.
+        const anchored = flow === null || box === null
+          ? null
+          : anchorInTranscript(
+            flow, box,
+            { width: BUBBLE_PANEL_WIDTH, height: BUBBLE_PANEL_HEIGHT },
+            'above',
+          )
         return createPortal(h(BubblePanel, {
           annotation,
-          rel,
-          // The panel rides with the passage instead of floating over the viewport.
-          //
-          // It is mounted INSIDE the paragraph (like the bubble) and positioned with
-          // CSS against that paragraph's box, so scrolling the transcript carries it
-          // along and no scroll listener has to reposition it. `box` is still passed
-          // for the first paint, where the panel measures itself before anchoring.
-          inFlow: true,
+          rel: anchored === null ? null : anchored.position,
+          // Fallback geometry for the case where there is no transcript to anchor to.
           anchor: {
-            left: Math.min(box.right, window.innerWidth - 40),
-            top: box.top,
-            bottom: box.bottom,
-            // Width of the paragraph, so the in-flow panel can align to its right edge.
-            width: box.width,
+            left: box === null ? 0 : Math.min(box.right, window.innerWidth - 40),
+            top: box === null ? 0 : box.top,
+            bottom: box === null ? 0 : box.bottom,
+            width: box === null ? 0 : box.width,
           },
           labels,
           onJump: () => {
@@ -2954,7 +2956,7 @@ function escapeHtml(text) {
             setEditing(null)
             onHighlight(annotation, false)
           },
-        }), mount)
+        }), anchored === null ? document.body : anchored.scroller)
       })()
       return h(React.Fragment, null, ...nodes, editor)
     }
