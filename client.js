@@ -104,7 +104,7 @@ window.__ModuleLoader__.load({
       'popup.unavailable': '这段内容无法写入输入框',
 
       'compose.title': '添加注释',
-      'compose.placeholder': '添加可选评论…',
+      'compose.placeholder': '写下你的评价，可留空…',
       'compose.selected': '已选 {count} 字',
       'compose.table': '整张表格 · {rows} 行',
       'compose.confirm': '添加注释',
@@ -119,7 +119,7 @@ window.__ModuleLoader__.load({
       'card.limit': '最多 {max} 条注释',
 
       'bubble.edit': '编辑注释',
-      'bubble.comment': '评论',
+      'bubble.comment': '评价',
       'bubble.saved': '已保存',
       'bubble.deleted': '已删除',
       'bubble.placeholder': '补充这条注释的说明…',
@@ -156,7 +156,7 @@ window.__ModuleLoader__.load({
       'popup.unavailable': 'This passage cannot be written into the composer',
 
       'compose.title': 'Add annotation',
-      'compose.placeholder': 'Add an optional comment…',
+      'compose.placeholder': 'Add your evaluation, or leave it blank…',
       'compose.selected': '{count} characters selected',
       'compose.table': 'Whole table · {rows} rows',
       'compose.confirm': 'Add annotation',
@@ -246,9 +246,19 @@ window.__ModuleLoader__.load({
 .qc-compose-row{display:flex;align-items:center;gap:8px;margin-top:8px}
 .qc-compose-hint{flex:1;min-width:0;font-size:11px;color:var(--dsw-alias-label-secondary);opacity:.85;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.qc-compose-confirm{appearance:none;border:0;border-radius:999px;width:26px;height:26px;flex:none;
+.qc-compose-confirm{appearance:none;border:0;border-radius:999px;min-width:26px;height:26px;
+  padding:0 10px;flex:none;font:inherit;font-size:12px;font-weight:600;
   display:flex;align-items:center;justify-content:center;cursor:pointer;
-  background:var(--dsw-alias-brand-primary);color:#fff}
+  /* A solid accent with white ink. The theme token alone was too pale against the
+     popover surface in dark mode, leaving the button barely visible. */
+  background:#1f6ae0;color:#fff;
+  box-shadow:0 1px 3px rgba(0,0,0,.28);
+  transition:background .12s ease}
+.qc-compose-confirm svg{margin-right:5px}
+.qc-compose-confirm-text{white-space:nowrap}
+.qc-compose-confirm:hover{background:#1a5cc4}
+.qc-compose-confirm:active{background:#1550ac}
+.qc-compose-cancel:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
 .qc-compose-cancel{appearance:none;border:1px solid var(--dsw-alias-border-l2);background:transparent;
   color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;border-radius:7px;
   padding:4px 10px;cursor:pointer;flex:none}
@@ -841,7 +851,11 @@ window.__ModuleLoader__.load({
             const range = document.createRange()
             range.setStart(startNode, Math.min(anchor.startOffset, (startNode.textContent ?? '').length))
             range.setEnd(endNode, Math.min(anchor.endOffset, (endNode.textContent ?? '').length))
-            if (sameText(range.toString(), anchor.quote)) return range
+            // Compare against the filtered text: the bubble lives inside this
+            // subtree, so a raw range.toString() would include its ordinal and the
+            // passage would never match - which silently pushed every anchor onto the
+            // slow full-text path.
+            if (sameText(textOfWithin(range, anchor.quote), anchor.quote)) return range
           } catch {
             // The tree moved under us; fall through to the text search.
           }
@@ -915,8 +929,51 @@ window.__ModuleLoader__.load({
      * @param quote - the captured text.
      * @returns the offset and length in `host`'s raw text, or null.
      */
+    /**
+     * The text a range covers, with plugin-owned nodes removed.
+     *
+     * A Range that spans a paragraph includes the bubble mounted inside it, so its
+     * toString() carries the bubble's ordinal. That digit makes the recorded quote
+     * unmatchable, and every anchor silently degrades to a text search.
+     * @param range - the candidate range.
+     * @param quote - the text being matched, used to bound the work.
+     * @returns the range's text without plugin nodes.
+     */
+    function textOfWithin(range, quote) {
+      const raw = range.toString()
+      if (raw === '' || raw.length < quote.length) return raw
+      // Fast path: if no plugin node sits inside the range, the raw text is correct.
+      const start = elementOf(range.startContainer)
+      const box = start?.closest(BLOCK_SELECTOR) ?? start
+      if (box === null || box === undefined) return raw
+      if (box.querySelector('[data-qc-ignore]') === null) return raw
+      return textOf(box)
+    }
+
+    /**
+     * The text of a subtree, ignoring nodes this plugin owns.
+     *
+     * A bubble is mounted INSIDE the paragraph it marks, so its ordinal joins the
+     * paragraph's textContent - "需要留意的取舍气泡现在对齐到1段落顶部". That single
+     * stray digit broke anchoring in two ways at once: the recorded path no longer
+     * ended on the quoted text (so the bubble fell back to a text search, which could
+     * land elsewhere and made it jump), and the passage it resolved to was wrong (so
+     * clicking the bubble edited nothing).
+     *
+     * @param host - the element to read.
+     * @returns its text with plugin-owned nodes removed.
+     */
+    function textOf(host) {
+      if (host === null || host === undefined) return ''
+      const ignored = host.querySelectorAll('[data-qc-ignore]')
+      if (ignored.length === 0) return host.textContent ?? ''
+      const copy = host.cloneNode(true)
+      for (const node of copy.querySelectorAll('[data-qc-ignore]')) node.remove()
+      return copy.textContent ?? ''
+    }
+
     function locateText(host, quote) {
-      const raw = host.textContent ?? ''
+      const raw = textOf(host)
       const exact = raw.indexOf(quote)
       if (exact >= 0) return { offset: exact, length: quote.length }
       // Whitespace-insensitive retry: collapse the needle and the haystack in
@@ -1640,7 +1697,7 @@ window.__ModuleLoader__.load({
             title: labels.confirm,
             'aria-label': labels.confirm,
             onClick: () => onConfirm(source.kind === 'table' ? '' : comment),
-          }, h(IconCheck, null)),
+          }, h(IconCheck, null), h('span', { className: 'qc-compose-confirm-text' }, labels.confirm)),
         ),
         ),
         document.body,
@@ -2661,18 +2718,15 @@ function escapeHtml(text) {
        */
       React.useEffect(() => {
         if (typeof document === 'undefined') return
-        const hosting = new Set()
         for (const position of positions) {
           const row = position.row
           if (row === undefined || !row.isConnected) continue
-          hosting.add(row)
           if (row.dataset.qcHost === '1') continue
           if (getComputedStyle(row).position === 'static') row.style.position = 'relative'
-          // Reserve the bubble's gutter ONCE. Doing it here, behind the qcHost flag,
-          // means the paragraph adopts its final width before the bubble is drawn and
-          // keeps it afterwards - so the prose never re-wraps and the measured height
-          // never changes underneath a later pass. That stability is what stops the
-          // bubble flickering.
+          // Reserve the bubble's gutter exactly once. The paragraph then lays out at
+          // its final width before the bubble is drawn and keeps it forever after, so
+          // the prose never re-wraps and the measured height never changes underneath
+          // a later pass. That stability is what stopped the flicker.
           row.classList.add('qc-hosts-bubble')
           row.dataset.qcHost = '1'
         }
@@ -2684,16 +2738,19 @@ function escapeHtml(text) {
       // this component out of the tree entirely, which is what it did before the
       // bubble was re-anchored into the rows.
       if (positions.length === 0 && editing === null) return null
-      // Render each bubble INTO the row that contains its passage.
+      // Render each bubble INSIDE its paragraph, excluded from every text read.
       //
-      // This is the whole point: a bubble anchored inside the row inherits the
-      // row's box. Scrolling, zooming (Ctrl +/-), wrapping and pane drags all move
-      // the row, and the browser moves the bubble with it - no measurement, no
-      // stale coordinates, nothing to go out of sync. The previous design kept the
-      // bubbles in a fixed coordinate space and re-derived their position, which is
-      // why every one of those actions made them drift.
+      // Mounting inside the paragraph is what makes it track the passage for free: it
+      // shares the paragraph's box, so scrolling, zoom (Ctrl +/-), re-wrapping and pane
+      // drags move it along with the text - no measurement, nothing to go stale.
       //
-      // The horizontal offset is CSS (right: 4px), so it is layout's job too.
+      // The catch is text contamination. The bubble's ordinal joins the paragraph's
+      // textContent ("...对齐到1段落顶部"), so a recorded DOM path stops ending on the
+      // quoted text: resolveAnchor then falls back to a full-text search, which can
+      // land on a different occurrence. That is exactly what made the bubble jump
+      // around AND stop responding to clicks. The bubble therefore carries
+      // data-qc-ignore, and every text read in this file goes through textOf(), which
+      // strips those nodes before matching.
       const nodes = []
       for (const position of positions) {
         const row = position.row
@@ -2701,6 +2758,7 @@ function escapeHtml(text) {
         nodes.push(createPortal(h('button', {
           key: position.id,
           type: 'button',
+          'data-qc-ignore': '1',
           className: 'qc-marker ' + position.tone
             + (editing !== null && editing.id === position.id ? ' qc-marker-active' : ''),
           title: position.title,

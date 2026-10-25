@@ -337,6 +337,19 @@ for (const entry of registered) {
 check('rendering the dock runs its effects without throwing',
   renderErrors.length === 0,
   renderErrors.map((item) => item.name + ': ' + item.error.name + ': ' + item.error.message).join('; '))
+// --- The bubble must mount into the row it measured ------------------------
+// A refactor left the mount target as an undefined `parent`, which threw during
+// render: the bubbles never appeared and could not be clicked. `node --check`
+// passes on an undefined identifier, so this is checked structurally.
+const markerRender = /const nodes = \[\]\s*\n\s*for \(const position of positions\)[\s\S]*?String\(position\.number\)\),\s*(\w+)\)\)/.exec(source)
+check('the bubble mounts into a variable the render actually defines',
+  markerRender !== null && ['row', 'position.row'].includes(markerRender[1]),
+  markerRender === null
+    ? 'the mount target could not be read'
+    : 'the mount target is "' + markerRender[1] + '", which the render does not define')
+check('the mount target is the measured row',
+  /setEditing\(already \? null : \{ id: position\.id, row \}\)/.test(source),
+  'the click handler stores a different node than the one it mounted into')
 let failed = 0
 for (const item of cases) {
   if (!item.ok) failed += 1
