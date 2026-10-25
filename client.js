@@ -2050,6 +2050,25 @@ function escapeHtml(text) {
     }
 
     /**
+     * A memoised `scrollContainerOf`.
+     *
+     * The walk calls `getComputedStyle` on every ancestor, which forces a style
+     * recalc. That is fine once, ruinous at 60 Hz during a drag, so the answer is
+     * cached against the flow element and re-validated cheaply (the container must
+     * still contain the flow).
+     * @param flow - the chat flow anchor.
+     * @returns the scroll container, or null.
+     */
+    const containerCache = new WeakMap()
+    function containerFor(flow) {
+      const hit = containerCache.get(flow)
+      if (hit !== undefined && hit.contains(flow)) return hit
+      const found = scrollContainerOf(flow)
+      if (found !== null) containerCache.set(flow, found)
+      return found
+    }
+
+    /**
      * The text column's box, derived from the rows inside the flow.
      *
      * The flow element itself is the slot anchor with `display:contents`, so it
@@ -2061,6 +2080,37 @@ function escapeHtml(text) {
      */
     function flowColumnBox(flow) {
       if (flow === null) return null
+      // Fast path: the columns of a chat transcript are laid out by the scroller's
+      // content box, so its client width IS the text column width. Reading it is
+      // one property access with no layout query per row — which matters because
+      // this runs on every frame of a pane drag.
+      //
+      // `scrollContainerOf` walks ancestors calling getComputedStyle, so it is
+      // memoised per flow element; a drag must not pay for it 60 times a second.
+      const scroller = containerFor(flow)
+      if (scroller !== null) {
+        const box = scroller.getBoundingClientRect()
+        if (box.width > 0 && box.height > 0) {
+          const style = getComputedStyle(scroller)
+          const padLeft = parseFloat(style.paddingLeft) || 0
+          const padRight = parseFloat(style.paddingRight) || 0
+          const contentLeft = box.left + padLeft - scroller.scrollLeft
+          const contentRight = contentLeft + scroller.clientWidth
+          if (contentRight - contentLeft > 0) {
+            return {
+              box: {
+                left: contentLeft,
+                right: contentRight,
+                width: contentRight - contentLeft,
+                top: box.top,
+                height: box.height,
+                bottom: box.bottom,
+              },
+              element: scroller,
+            }
+          }
+        }
+      }
       let best = null
       const consider = (element) => {
         const box = element.getBoundingClientRect()
@@ -2224,6 +2274,26 @@ function escapeHtml(text) {
     }
 
     /**
+     * Whether two bubble layouts are identical.
+     *
+     * Guards the state write: React re-renders on every `setPositions` call, so an
+     * unchanged layout must not produce a new array. During a drag this is the
+     * difference between ~60 renders a second and none.
+     * @param left - the current layout.
+     * @param right - the candidate layout.
+     * @returns true when nothing visible changed.
+     */
+    function samePositions(left, right) {
+      if (left.length !== right.length) return false
+      for (let index = 0; index < left.length; index += 1) {
+        const a = left[index]
+        const b = right[index]
+        if (a.id !== b.id || a.top !== b.top || a.left !== b.left || a.number !== b.number) return false
+      }
+      return true
+    }
+
+    /**
      * The right-gutter bubbles that mark where each annotation came from.
      *
      * They are rendered INSIDE the transcript's scroll container, absolutely
@@ -2242,27 +2312,54 @@ function escapeHtml(text) {
         if (typeof document === 'undefined') return undefined
         let frame = 0
         let timer = 0
+        let settleTimer = 0
+        /**
+         * Reusable measurement state.
+         *
+         * A full pass is expensive: it walks ancestors with getComputedStyle,
+         * reads a rect per row, and resolves every annotation's anchor (a DOM path
+         * walk plus, on a miss, a TreeWalker over the whole transcript's text).
+         * Dragging a pane edge fires the column ResizeObserver on every frame, so
+         * running a full pass per frame is what made dragging stutter.
+         *
+         * A drag only changes the column's WIDTH. Vertical placement and anchor
+         * resolution cannot change from it, so those are cached and only the
+         * horizontal offset is recomputed while the drag is in flight. Once it
+         * settles, one full pass runs to correct anything that moved.
+         */
+        let cachedHost = null
+        /** Whether `cachedHost` is still known to be the right scroll container. */
+        let hostResolved = false
+        /** The last fully measured bubbles, before the x offset is applied. */
+        let measured = []
         const measure = () => {
           frame = 0
           const flow = findFlow()
           if (flow === null) {
+            measured = []
             setPositions((current) => (current.length === 0 ? current : []))
             return
           }
           // The bubble's offset parent: the element that scrolls the transcript.
           // Without it there is no coordinate space to place bubbles in, so this
           // is also the mount check.
-          const scroller = scrollContainerOf(flow)
+          const scroller = cachedHost ?? containerFor(flow)
           if (scroller === null) {
+            measured = []
             setPositions((current) => (current.length === 0 ? current : []))
             return
           }
-          setHost((current) => (current === scroller ? current : scroller))
-          // A positioned offset parent is required for absolute children; the
-          // container is usually `position:static`, so mark it. `relative` keeps
-          // its box and its scrolling behaviour.
-          if (getComputedStyle(scroller).position === 'static') {
-            scroller.style.position = 'relative'
+          if (!hostResolved) {
+            cachedHost = scroller
+            hostResolved = true
+            setHost((current) => (current === scroller ? current : scroller))
+            // A positioned offset parent is required for absolute children; the
+            // container is usually `position:static`, so mark it. `relative` keeps
+            // its box and its scrolling behaviour. Done once, not per frame: it
+            // triggers a style recalc.
+            if (getComputedStyle(scroller).position === 'static') {
+              scroller.style.position = 'relative'
+            }
           }
           const scrollerRect = scroller.getBoundingClientRect()
           // The flow element is the slot anchor, rendered with `display:contents`
@@ -2273,14 +2370,15 @@ function escapeHtml(text) {
           // are ordinary boxes, and the widest one gives the text column's edge.
           const column = flowColumn(flow)
           if (column === null) {
+            measured = []
             setPositions((current) => (current.length === 0 ? current : []))
             return
           }
           // Hug the text column: the bubble's tail touches the column's right
           // edge, so widening or narrowing the transcript carries the bubble with
-          // it. `column` is re-measured on every pass, and a ResizeObserver below
-          // triggers a pass when the column itself changes size.
+          // it.
           const gutter = Math.min(column.right + 4, window.innerWidth - 28)
+          const leftInScroller = Math.round(gutter - scrollerRect.left + scroller.scrollLeft)
           // The chip's ordinal is the authoritative number: it is the position in
           // the current draft, so a bubble reading anything else would disagree
           // with the chip the user is looking at. It is read off the chips
@@ -2310,9 +2408,7 @@ function escapeHtml(text) {
             // are absolutely positioned inside that container, and doing the
             // arithmetic here means a scroll does not have to re-measure — the
             // browser moves them with the content.
-            const origin = scrollerRect
-            const topInScroller = rect.top - origin.top + scroller.scrollTop
-            const leftInScroller = gutter - origin.left + scroller.scrollLeft
+            const topInScroller = rect.top - scrollerRect.top + scroller.scrollTop
             // Culling is done in container coordinates against the visible band,
             // so a row that is mounted but scrolled far above gets no bubble.
             const viewTop = scroller.scrollTop
@@ -2323,26 +2419,63 @@ function escapeHtml(text) {
               id: annotation.id,
               // Centre the bubble on the passage's first line.
               top: Math.round(topInScroller + Math.min(rect.height, 20) / 2 - 9),
-              left: Math.round(leftInScroller),
               // The base class is already the blue bubble; only tables recolour.
               tone: annotation.kind === 'table' ? 'qc-marker-table' : '',
               number,
               title: labels.jump.replace('{n}', String(number)),
             })
           }
-          setPositions((current) => {
-            if (current.length === next.length
-              && current.every((item, index) => {
-                const other = next[index]
-                return item.id === other.id && item.top === other.top && item.left === other.left
-                  && item.number === other.number
-              })) return current
-            return next
-          })
+          measured = next
+          publish(next, leftInScroller)
+        }
+        /**
+         * Push a measured set into state.
+         * @param next - the measured bubbles, without their horizontal offset.
+         * @param left - the container-relative x every bubble shares.
+         */
+        const publish = (next, left) => {
+          const withLeft = next.map((item) => ({ ...item, left }))
+          setPositions((current) => (samePositions(current, withLeft) ? current : withLeft))
+        }
+        /**
+         * Re-apply only the horizontal offset.
+         *
+         * This is the path a drag takes: one rect read for the column and one
+         * arithmetic operation per bubble, with no anchor resolution and no per-row
+         * layout. That is what keeps dragging smooth.
+         */
+        const shift = () => {
+          frame = 0
+          if (measured.length === 0) return
+          const scroller = cachedHost
+          if (scroller === null) return
+          const flow = findFlow()
+          if (flow === null) return
+          const column = flowColumn(flow)
+          if (column === null) return
+          const rect = scroller.getBoundingClientRect()
+          const gutter = Math.min(column.right + 4, window.innerWidth - 28)
+          publish(measured, Math.round(gutter - rect.left + scroller.scrollLeft))
         }
         const schedule = () => {
           if (frame !== 0) return
           frame = requestAnimationFrame(measure)
+        }
+        /**
+         * Schedule a cheap horizontal pass now, and a full pass once the drag
+         * stops.
+         *
+         * The settle pass is what corrects anything the cheap pass cannot see: a
+         * reflow that changed line wrapping changes vertical placement too.
+         */
+        const scheduleShift = () => {
+          if (frame !== 0) return
+          frame = requestAnimationFrame(shift)
+          clearTimeout(settleTimer)
+          settleTimer = setTimeout(() => {
+            settleTimer = 0
+            schedule()
+          }, 140)
         }
         const debounced = () => {
           clearTimeout(timer)
@@ -2367,10 +2500,9 @@ function escapeHtml(text) {
             && columnObserver.__qcTarget === target) return
           if (columnObserver !== null) columnObserver.disconnect()
           if (typeof ResizeObserver !== 'function') return
-          // `schedule` (one animation frame), not `debounced` (80ms + frame):
-          // resizing is a continuous drag, and the debounce made the bubble trail
-          // the text visibly. A frame is enough to coalesce a burst.
-          columnObserver = new ResizeObserver(schedule)
+          // `scheduleShift`, not a full pass: a drag fires this every frame, and a
+          // full pass per frame resolves every anchor and reads every row.
+          columnObserver = new ResizeObserver(scheduleShift)
           columnObserver.__qcTarget = target
           columnObserver.observe(target)
         }
@@ -2378,12 +2510,14 @@ function escapeHtml(text) {
         return () => {
           if (frame !== 0) cancelAnimationFrame(frame)
           clearTimeout(timer)
+          clearTimeout(settleTimer)
           document.removeEventListener('scroll', schedule, true)
           window.removeEventListener('resize', schedule)
           observer.disconnect()
           if (columnObserver !== null) columnObserver.disconnect()
         }
       }, [annotations, occurrences, labels])
+
 
       if (typeof document === 'undefined' || positions.length === 0) return null
       // Mount into the scroll container so overflow clips the bubbles and they

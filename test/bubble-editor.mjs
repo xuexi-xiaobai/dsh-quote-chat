@@ -124,7 +124,7 @@ check('the container is made a positioned ancestor',
   /scroller\.style\.position = 'relative'/.test(source),
   'absolute children have no offset parent')
 check('bubble coordinates are container-relative',
-  /topInScroller = rect\.top - origin\.top \+ scroller\.scrollTop/.test(source),
+  /topInScroller = rect\.top - scrollerRect\.top \+ scroller\.scrollTop/.test(source),
   'bubble coordinates are viewport-relative')
 
 // ── 6. Motion ─────────────────────────────────────────────────────────────
@@ -158,9 +158,9 @@ check('delete looks destructive on hover',
 check('save shows a confirmation',
   /qc-bp-done/.test(source) && /labels\.saved/.test(source),
   'saving gives no visible acknowledgement')
-check('the ResizeObserver tracks without a debounce',
-  /new ResizeObserver\(schedule\)/.test(source),
-  'the bubble lags the column while dragging')
+check('the column observer takes the cheap path',
+  /new ResizeObserver\(scheduleShift\)/.test(source),
+  'a drag runs a full anchor-resolution pass every frame')
 
 // ── 8. Contrast and the stray notice ──────────────────────────────────────
 // The save button must be readable: a pale accent fill with white text is not.
