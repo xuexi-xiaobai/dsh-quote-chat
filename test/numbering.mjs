@@ -96,9 +96,19 @@ check('the new annotation number is list length + 1',
 check('the chip ordinal is drawn from an attribute',
   /\[data-composer-chip="quote-chat"\]::after\{content:attr\(data-qc-label\)/.test(source),
   'no ::after rule reading data-qc-label')
-check('the ordinal attribute is set per chip',
-  /chip\.dataset\.qcLabel = labels\.content\.replace\('\{n\}', String\(annotation\.number\)\)/.test(source),
-  'data-qc-label is not assigned')
+check('the ordinal is the chip position in the draft',
+  /for \(let position = 0; position < ordered\.length; position \+= 1\)/.test(source)
+    && /labels\.content\.replace\('\{n\}', String\(ordinal\)\)/.test(source),
+  'the chip ordinal is not derived from its position')
+// The chip's ordinal must come from the live chip list, never from a stored
+// counter — that is what drifted upward across messages.
+check('the chip ordinal does not read annotation.number',
+  /const ordinal = position \+ 1/.test(source)
+    && /chip\.dataset\.qcLabel = labels\.content\.replace\('\{n\}', String\(ordinal\)\)/.test(source),
+  'the chip still renders annotation.number')
+check('an unrendered card shows no ordinal',
+  /dangerouslySetInnerHTML/.test(source) && !/qc-card-num/.test(source),
+  'the card still builds a number badge')
 check('the ordinal attribute is cleared on unmark',
   /delete chip\.dataset\.qcLabel/.test(source),
   'data-qc-label is left behind when a chip is released')

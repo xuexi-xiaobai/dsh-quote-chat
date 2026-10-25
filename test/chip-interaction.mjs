@@ -44,14 +44,17 @@ check('the x is a fixed overlay', removeRule.includes('position:fixed'),
   `the .qc-chip-remove rule is: ${removeRule.slice(0, 80)}`)
 check('the x is red', /background:#e[0-9a-f]{5}/i.test(removeRule) || removeRule.includes('#e8291c'),
   'the x is not red')
-// Its left edge must be the chip's left edge plus the pill's own padding — a
-// positive inset. A negative one would put it outside the pill.
-check('the x is inset inside the chip, not outside it',
-  /left: `\$\{hover\.anchor\.left \+ CHIP_INSET\}px`/.test(source),
-  'the x is positioned outside the chip box')
-check('the inset matches the pill padding',
-  /const CHIP_INSET = 6/.test(source) && /padding:2px 9px 2px 7px/.test(css),
-  'CHIP_INSET no longer matches the chip padding')
+// Its centre must land on the glyph's centre: the pill's left padding plus half
+// the glyph box. A left-edge anchor would put it visibly off-centre.
+check('the x is centred on the glyph slot',
+  /left: `\$\{hover\.anchor\.left \+ GLYPH_CENTRE\}px`/.test(source),
+  'the x is not positioned by the glyph centre')
+check('the glyph centre is derived from the pill padding',
+  /const GLYPH_CENTRE = 7 \+ \(13 \/ 2\)/.test(source),
+  'GLYPH_CENTRE no longer matches padding-left + half glyph')
+check('the x is round like the pill',
+  /\.qc-chip-remove\{[\s\S]{0,400}border-radius:999px/.test(css),
+  'the x does not share the pill radius')
 
 // ── 4. Hover survives the trip to the × ────────────────────────────────────
 check('hover keeps the x reachable',

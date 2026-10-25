@@ -42,6 +42,15 @@ const ANCHOR_GAP = 8
 /** How long the jump-back highlight stays, in ms. */
 const FLASH_MS = 2600
 
+/**
+ * Grace period before a hover card closes, in ms.
+ *
+ * Without it the card vanished the instant the pointer left the chip, so the gap
+ * between chip and card was impossible to cross. Long enough to travel a few
+ * pixels, short enough that the card does not linger over the composer.
+ */
+const HOVER_LINGER_MS = 260
+
 window.__ModuleLoader__.load({
   id: 'dsh-quote-chat',
   factory(require) {
@@ -274,18 +283,6 @@ window.__ModuleLoader__.load({
 /* Keep the host's own label out of the way so the ordinal is the only text. */
 [data-composer-chip="quote-chat"] > span:last-child{display:none}
 
-/* The removal control. Position comes from the chip's rectangle (inline style), so
-   it lands in the pill's left slot where the kind glyph sits; the glyph fades out
-   as this fades in, so exactly one of the two is ever visible. */
-.qc-chip-remove{position:fixed;z-index:2147482100;
-  appearance:none;box-sizing:border-box;margin:0;padding:0;border:0;
-  border-radius:999px;background:#e8291c;color:#fff;
-  font-size:9px;font-weight:700;line-height:1;
-  cursor:pointer;display:flex;align-items:center;justify-content:center;
-  transform:translateY(-50%);box-shadow:0 0 0 1.5px #f2f2f2;
-  transition:background .12s ease}
-.qc-chip-remove:hover{background:#c81f14}
-
 /* Glyph: a rounded rectangle with a quote stroke inside it — the same "quoted
    text" mark the reference shows. Table chips get a grid glyph. */
 :root{
@@ -302,34 +299,35 @@ window.__ModuleLoader__.load({
 
    Measured from the reference: an 18px circle, pure red, white × glyph, a thin
    white ring so it reads cleanly against the composer background. */
-.qc-chip-remove{position:fixed;z-index:2147482100;appearance:none;box-sizing:border-box;
-  width:18px;height:18px;margin:0;padding:0;border:1.5px solid #fff;
+.qc-chip-remove{position:fixed;z-index:2147482100;
+  appearance:none;box-sizing:border-box;margin:0;padding:0;border:0;
   border-radius:999px;background:#e8291c;color:#fff;
-  font-size:11px;font-weight:700;line-height:1;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;
-  transform:translate(-50%,-50%);box-shadow:0 1px 4px rgba(0,0,0,.28);
+  font-size:9.5px;font-weight:700;line-height:1;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transform:translate(-50%,-50%);box-shadow:0 0 0 1.5px #f2f2f2;
   transition:background .12s ease,transform .12s ease}
-.qc-chip-remove:hover{background:#c81f14;transform:translate(-50%,-50%) scale(1.12)}
+.qc-chip-remove:hover{background:#c81f14;transform:translate(-50%,-50%) scale(1.1)}
 
-/* ── The expanded preview card ───────────────────────────────────────────────
+/* ── The hover preview card ──────────────────────────────────────────────────
 
-   Also measured from the reference: a white rounded panel floating ABOVE the
-   chip, holding the rendered passage (a real table, scrollable, with its own
-   scrollbar), sitting on the composer with a soft shadow. It carries the × and
-   the comment; it does not repeat the truncated label. */
-.qc-card{position:fixed;z-index:2147482000;width:min(560px,90vw);box-sizing:border-box;
-  border:1px solid rgba(0,0,0,.07);border-radius:14px;background:#fff;
-  box-shadow:0 10px 34px rgba(0,0,0,.16),0 2px 8px rgba(0,0,0,.06);
-  padding:10px 12px;color:#181818;cursor:pointer;animation:qc-pop .12s ease-out}
-.qc-card-remove{position:absolute;right:8px;top:8px;z-index:2;appearance:none;
-  border:0;width:18px;height:18px;border-radius:999px;background:#e9e9e9;
-  color:#595959;font-size:12px;line-height:1;cursor:pointer;padding:0;
-  display:flex;align-items:center;justify-content:center}
-.qc-card-remove:hover{background:#dc2626;color:#fff}
-.qc-card-comment{margin:0 0 8px;padding:6px 9px;border-radius:8px;
+   A compact panel floating above the chip, holding the rendered passage. Sized to
+   its content: a short passage should not open a 560px sheet. max-width caps
+   it, width:max-content lets it stay small.
+
+   No ordinal and no removal control inside — the chip carries both. */
+.qc-card{position:fixed;z-index:2147482000;
+  width:max-content;max-width:min(380px,80vw);box-sizing:border-box;
+  border:1px solid rgba(0,0,0,.07);border-radius:12px;background:#fff;
+  box-shadow:0 8px 26px rgba(0,0,0,.15),0 2px 6px rgba(0,0,0,.05);
+  padding:8px 10px;color:#181818;
+  animation:qc-card-in .16s cubic-bezier(.2,.8,.3,1)}
+@keyframes qc-card-in{
+  from{opacity:0;transform:translateY(4px) scale(.98)}
+  to{opacity:1;transform:translateY(0) scale(1)}}
+.qc-card-comment{margin:0 0 7px;padding:6px 9px;border-radius:8px;
   background:#f6f6f6;color:#4b4b4b;font-size:12px;line-height:1.55;
   white-space:pre-wrap;word-break:break-word}
-.qc-card-body{max-height:260px;overflow:auto;font-size:13px;line-height:1.6;
+.qc-card-body{max-height:220px;overflow:auto;font-size:12.5px;line-height:1.6;
   word-break:break-word;
   /* The captured markup keeps the answer's own class names, but the stylesheet
      those classes belong to lives in the transcript, not here — so nothing is
@@ -378,19 +376,6 @@ window.__ModuleLoader__.load({
   text-align:left}
 .qc-card-body th{background:#fafafa;font-weight:600}
 .qc-card-md{margin:0;white-space:pre-wrap;font:inherit;font-size:12px;line-height:1.55}
-/* The expanded card's own header: the number badge and 注释 i. */
-.qc-card-head{display:flex;align-items:center;gap:6px;margin-bottom:8px;
-  padding-bottom:7px;border-bottom:1px solid #ececec}
-.qc-card-num{flex:none;width:17px;height:17px;border-radius:999px;color:#fff;
-  font-size:10px;font-weight:600;display:flex;align-items:center;
-  justify-content:center;line-height:1}
-.qc-card-title{font-size:12.5px;font-weight:600;color:#181818;white-space:nowrap}
-/* The footer chip mirrors the reference: a small × next to the annotation's
-   name, which is the click target that removes it. */
-.qc-card-hint{display:inline-flex;align-items:center;gap:5px;margin-top:8px;
-  padding:4px 10px 4px 7px;border-radius:999px;background:#f2f2f2;
-  font-size:12px;color:#181818}
-.qc-card-hint::before{content:"×";font-size:13px;line-height:1;opacity:.7}
 
 .qc-notice{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:2147483000;
   padding:6px 12px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);
@@ -1434,6 +1419,8 @@ function ChipCards(props) {
     if (typeof document === 'undefined') return undefined
     let frame = 0
     let timer = 0
+    /** Pending close, so leaving the chip can be undone by coming back. */
+    let closeTimer = 0
     const marked = new Set()
 
     /** Drop our attributes from one chip. */
@@ -1470,14 +1457,19 @@ function ChipCards(props) {
       frame = 0
       if (typeof document === 'undefined') return
       const live = new Set()
-      for (const { chip, annotation } of pairs()) {
+      // The ordinal is the chip's position among the chips currently in the
+      // draft — 1, 2, 3 in visual order — not a stored counter. Annotations that
+      // were sent or deleted are still in the store, so numbering from the store
+      // drifted upward from one message to the next. Deriving it from the live
+      // chip list makes it count what the user can actually see.
+      const ordered = pairs()
+      for (let position = 0; position < ordered.length; position += 1) {
+        const { chip, annotation } = ordered[position]
+        const ordinal = position + 1
         live.add(chip)
-        // Attributes only: the number badge is drawn by CSS from this value.
-        chip.dataset.qcNum = String(annotation.number)
+        chip.dataset.qcNum = String(ordinal)
         chip.dataset.qcKind = annotation.kind === 'table' ? 'table' : 'text'
-        // The ordinal shown on the chip. CSS renders it via ::after, so the text
-        // is guaranteed to appear even though the host's own label span does not.
-        chip.dataset.qcLabel = labels.content.replace('{n}', String(annotation.number))
+        chip.dataset.qcLabel = labels.content.replace('{n}', String(ordinal))
         marked.add(chip)
       }
       for (const chip of [...marked]) {
@@ -1533,8 +1525,20 @@ function ChipCards(props) {
       // `undefined` = pointer is elsewhere; `null` = inside a piece with nothing
       // open. Both mean there is nothing to show.
       if (annotation === undefined || annotation === null) {
-        setHover(null)
+        // Do not drop the card the instant the pointer leaves. A grace period
+        // lets the user travel from the chip to the card (or to the ×) across the
+        // gap between them, and returning inside the window cancels the close.
+        if (closeTimer === 0) {
+          closeTimer = setTimeout(() => {
+            closeTimer = 0
+            setHover(null)
+          }, HOVER_LINGER_MS)
+        }
         return
+      }
+      if (closeTimer !== 0) {
+        clearTimeout(closeTimer)
+        closeTimer = 0
       }
       const chip = pairs().find((pair) => pair.annotation.id === annotation.id)?.chip
       if (chip === undefined) return
@@ -1593,6 +1597,7 @@ function ChipCards(props) {
     return () => {
       if (frame !== 0) cancelAnimationFrame(frame)
       clearTimeout(timer)
+      if (closeTimer !== 0) clearTimeout(closeTimer)
       observer.disconnect()
       document.removeEventListener('mouseover', onPointer, true)
       document.removeEventListener('scroll', reposition, true)
@@ -1603,13 +1608,17 @@ function ChipCards(props) {
   }, [annotations, occurrences, labels])
 
   if (hover === null) return null
-  // The × is drawn INSIDE the chip's left edge, in the slot the kind glyph
+  // The × is drawn inside the chip's left edge, in the slot the kind glyph
   // occupies — the two never show at once. It is a fixed overlay pinned to the
   // chip's own rectangle rather than a chip child, because the chip's contents
-  // are the editor's and must not be written into. `6px` matches the pill's own
-  // left padding, so the control sits where the glyph was.
-  const CHIP_INSET = 6
-  const CHIP_GLYPH = 14
+  // are the editor's and must not be written into.
+  //
+  // Positioned by its CENTRE, not its left edge: the glyph's centre is the pill's
+  // left padding plus half the glyph, and centring the button there keeps the two
+  // concentric at any button size. Anchoring the left edge instead is what made
+  // the control sit visibly left of the icon.
+  const GLYPH_CENTRE = 7 + (13 / 2) // padding-left + half the glyph box
+  const REMOVE_SIZE = 15
   return createPortal(
     h(React.Fragment, null,
       h('button', {
@@ -1618,11 +1627,10 @@ function ChipCards(props) {
         title: labels.remove,
         'aria-label': labels.remove,
         style: {
-          position: 'fixed',
-          left: `${hover.anchor.left + CHIP_INSET}px`,
+          left: `${hover.anchor.left + GLYPH_CENTRE}px`,
           top: `${hover.anchor.top + (hover.anchor.height / 2)}px`,
-          width: `${CHIP_GLYPH}px`,
-          height: `${CHIP_GLYPH}px`,
+          width: `${REMOVE_SIZE}px`,
+          height: `${REMOVE_SIZE}px`,
         },
         onMouseDown: (event) => event.preventDefault(),
         onClick: (event) => {
@@ -1635,15 +1643,6 @@ function ChipCards(props) {
       h(AnnotationCard, {
         annotation: hover.annotation,
         anchor: hover.anchor,
-        labels,
-        onJump: () => {
-          setHover(null)
-          onJump(hover.annotation)
-        },
-        onRemove: () => {
-          setHover(null)
-          onRemove(hover.annotation)
-        },
       }),
     ),
     document.body,
@@ -1651,19 +1650,17 @@ function ChipCards(props) {
 }
 
 /**
- * The expanded preview card for one annotation.
+ * The preview card for one annotation.
  *
- * Matched to the reference screenshot: a white rounded panel floating above the
- * composer, holding the passage rendered as it appears in the answer — a real
- * table with borders when the annotation is a table, formatted text otherwise —
- * and a small footer pill reading `× <label>` that removes it.
+ * A compact panel floating above the chip, holding the passage rendered as it
+ * appeared in the answer — a real table for a table, formatted text otherwise.
  *
- * The passage is shown rendered, not as raw Markdown: the reference clearly shows
- * the table with its cells and check marks, not pipes and dashes.
- * @param props - the annotation, its chip rectangle, labels, and handlers.
+ * Deliberately minimal: no ordinal (the chip already carries it), no removal
+ * control (the chip's own × does that), and only as wide as its content needs.
+ * @param props - the annotation and its chip rectangle.
  */
 function AnnotationCard(props) {
-  const { annotation, anchor, labels, onJump, onRemove } = props
+  const { annotation, anchor } = props
   const ref = React.useRef(null)
   const [size, setSize] = React.useState({ width: 0, height: 0 })
 
@@ -1674,11 +1671,11 @@ function AnnotationCard(props) {
     setSize({ width: box.width, height: box.height })
   }, [annotation.id])
 
-  const width = size.width || 520
-  const height = size.height || 160
-  // Prefer above the chip, like the reference; drop below when there is no room.
-  const above = anchor.top - height - 10
-  const top = above >= VIEWPORT_MARGIN ? above : anchor.top + anchor.height + 10
+  const width = size.width || 280
+  const height = size.height || 140
+  // Prefer above the chip; drop below when there is no room up there.
+  const above = anchor.top - height - 8
+  const top = above >= VIEWPORT_MARGIN ? above : anchor.top + anchor.height + 8
   const left = Math.min(
     Math.max(VIEWPORT_MARGIN, anchor.left),
     Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN),
@@ -1686,26 +1683,12 @@ function AnnotationCard(props) {
   return h('div', {
     ref,
     className: 'qc-card',
-    role: 'dialog',
-    title: labels.jump.replace('{n}', String(annotation.number)),
     style: {
       left: `${left}px`,
       top: `${top}px`,
       visibility: size.width === 0 ? 'hidden' : 'visible',
     },
-    onMouseDown: (event) => event.preventDefault(),
-    onClick: onJump,
   },
-  h('button', {
-    type: 'button',
-    className: 'qc-card-remove',
-    title: labels.remove,
-    'aria-label': labels.remove,
-    onClick: (event) => {
-      event.stopPropagation()
-      onRemove()
-    },
-  }, '×'),
   annotation.comment === ''
     ? null
     : h('div', { className: 'qc-card-comment' }, annotation.comment),
@@ -1713,13 +1696,6 @@ function AnnotationCard(props) {
     annotation.kind === 'table'
       ? h('div', { dangerouslySetInnerHTML: { __html: tableHtml(annotation.text) } })
       : h('div', { dangerouslySetInnerHTML: { __html: annotation.previewHtml ?? '' } }),
-  ),
-  // A named header: the number badge plus `注释 i`, so the expanded card is
-  // self-describing without repeating the whole label at the bottom.
-  h('div', { className: 'qc-card-head' },
-    h('span', { className: `qc-card-num ${annotation.kind === 'table' ? 'qc-marker-table' : 'qc-marker-text'}` },
-      String(annotation.number)),
-    h('span', { className: 'qc-card-title' }, labels.content.replace('{n}', String(annotation.number))),
   ),
   )
 }
