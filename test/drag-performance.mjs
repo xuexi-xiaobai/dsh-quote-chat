@@ -68,9 +68,10 @@ check('the drag path does not re-check computed style',
   'the drag path forces a style recalc every frame')
 
 // ── 2. The column observer takes the cheap path ────────────────────────────
-check('the column observer is wired to the cheap path',
-  /new ResizeObserver\(scheduleShift\)/.test(source),
-  'the ResizeObserver triggers a full pass per frame')
+check('the column observer classifies the resize',
+  /new ResizeObserver\(onColumnResize\)/.test(source)
+    && /if \(widthOnly\)/.test(source),
+  'the ResizeObserver cannot tell a width change from a reflow')
 check('a full pass still runs once the drag settles',
   /settleTimer = setTimeout\([\s\S]{0,160}schedule\(\)/.test(source),
   'nothing corrects the layout after the drag ends')

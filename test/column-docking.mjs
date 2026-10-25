@@ -91,6 +91,37 @@ check('the column lookup skips the right-sidebar tab',
   /closest\('\[data-sidebar-right-tab\]'\) !== null\) continue/.test(columnBody),
   'a side-chat row could become the measured column')
 
+// ── 5. Zoom and drag timing ───────────────────────────────────────────────
+// Ctrl +/- changes vertical placement without necessarily changing the column's
+// CSS width, so a width-only pass would keep stale tops and the bubbles float.
+check('a column height change forces a full pass',
+  /heightChanged/.test(source) && /widthOnly = false/.test(source),
+  'a reflow is treated as a width-only change')
+check('page zoom is detected',
+  /devicePixelRatio/.test(source),
+  'zoom is not observed, so bubbles float after Ctrl +/-')
+check('a zoom invalidates the cached boxes',
+  /columnCache\.delete\(findFlow\(\) \?\? flow\)/.test(source)
+    && /cachedHost = null/.test(source),
+  'a zoom reuses pre-zoom measurements')
+check('visualViewport is observed and released',
+  /visualViewport\.addEventListener\('resize'/.test(source)
+    && /visualViewport\.removeEventListener\('resize'/.test(source),
+  'the visualViewport listener leaks')
+// ResizeObserver callbacks land after layout, so an rAF scheduled from one is
+// always a frame late; a pointer-driven drag measures before the paint.
+check('a drag is measured from the pointer, not the observer',
+  /addEventListener\('pointermove', onPointerMove, true\)/.test(source)
+    && /runShiftNow\(\)/.test(source),
+  'the cheap pass only runs after the observer, one frame late')
+check('the synchronous pass replaces a pending frame',
+  /cancelAnimationFrame\(frame\)[\s\S]{0,80}shift\(\)/.test(source),
+  'a queued frame can still overwrite the synchronous result')
+check('a drag end triggers one authoritative pass',
+  /window\.addEventListener\('pointerup', onPointerUp, true\)/.test(source)
+    && /dragging = false[\s\S]{0,60}schedule\(\)/.test(source),
+  'nothing corrects the layout when the drag ends')
+
 let failed = 0
 for (const item of cases) {
   if (!item.ok) failed += 1

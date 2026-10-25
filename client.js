@@ -2563,15 +2563,55 @@ function escapeHtml(text) {
           frame = requestAnimationFrame(measure)
         }
         /**
-         * Schedule a cheap horizontal pass now, and a full pass once the drag
-         * stops.
+         * React to a column resize, choosing the cheap or the full pass.
          *
-         * The settle pass is what corrects anything the cheap pass cannot see: a
-         * reflow that changed line wrapping changes vertical placement too.
+         * Two different changes can arrive here and they need different responses:
+         *
+         * - **Width only** (dragging a pane edge): vertical placement cannot move,
+         *   so the cheap horizontal pass is correct.
+         * - **Anything else**, in particular a change in the column's HEIGHT or a
+         *   device-pixel-ratio change from Ctrl +/- zoom: line boxes reflow, so
+         *   every bubble's vertical position moves. A width-only pass would keep
+         *   the stale `top` values and the bubbles would visibly float. Those go
+         *   through the full pass.
          */
-        const scheduleShift = () => {
-          if (frame !== 0) return
-          frame = requestAnimationFrame(shift)
+        let lastWidth = -1
+        let lastHeight = -1
+        const onColumnResize = (entries) => {
+          let widthOnly = false
+          for (const entry of entries) {
+            const box = entry.contentRect
+            const width = Math.round(box.width)
+            const height = Math.round(box.height)
+            const widthChanged = width !== lastWidth
+            const heightChanged = height !== lastHeight
+            lastWidth = width
+            lastHeight = height
+            if (widthChanged && !heightChanged) widthOnly = true
+            else if (heightChanged) {
+              // A height change means the text reflowed: re-measure vertically.
+              widthOnly = false
+              break
+            }
+          }
+          if (widthOnly) scheduleShift()
+          else schedule()
+        }
+        /**
+         * Run the cheap pass synchronously, on the frame the pointer moves.
+         *
+         * `ResizeObserver` callbacks are delivered AFTER layout, so scheduling a
+         * `requestAnimationFrame` from one always lands on the next frame — the
+         * bubble trails the column by a frame, which is the "slow by one beat"
+         * complaint. During an actual drag the intent is known before layout, so
+         * the horizontal offset is recomputed in the pointer handler itself.
+         */
+        const runShiftNow = () => {
+          if (frame !== 0) {
+            cancelAnimationFrame(frame)
+            frame = 0
+          }
+          shift()
           clearTimeout(settleTimer)
           settleTimer = setTimeout(() => {
             settleTimer = 0
@@ -2638,19 +2678,81 @@ function escapeHtml(text) {
             && columnObserver.__qcTarget === target) return
           if (columnObserver !== null) columnObserver.disconnect()
           if (typeof ResizeObserver !== 'function') return
-          // `scheduleShift`, not a full pass: a drag fires this every frame, and a
-          // full pass per frame resolves every anchor and reads every row.
-          columnObserver = new ResizeObserver(scheduleShift)
+          // `onColumnResize` decides between the cheap and the full pass: a width
+          // change is cheap, a height change (reflow, zoom) is not.
+          columnObserver = new ResizeObserver(onColumnResize)
           columnObserver.__qcTarget = target
           columnObserver.observe(target)
         }
         watchColumn()
+        /**
+         * Window resize and page zoom both invalidate vertical placement.
+         *
+         * Ctrl +/- changes the device pixel ratio without changing the column's
+         * CSS width, so neither the ResizeObserver nor a width-only pass notices.
+         * Listening for the ratio change is what catches zoom; the full pass is
+         * required either way, because line boxes reflow.
+         */
+        let lastRatio = typeof window === 'undefined' ? 1 : (window.devicePixelRatio || 1)
+        const onWindowResize = () => {
+          const ratio = window.devicePixelRatio || 1
+          const zoomed = ratio !== lastRatio
+          lastRatio = ratio
+          if (zoomed) {
+            // A ratio change invalidates every cached box.
+            columnCache.delete(findFlow() ?? flow)
+            cachedHost = null
+            hostResolved = false
+            measured = []
+            lastColumnRight = -1
+          }
+          schedule()
+        }
+        window.addEventListener('resize', onWindowResize)
+        // `visualViewport` fires for zoom in browsers that do not change the ratio.
+        if (window.visualViewport !== undefined && window.visualViewport !== null) {
+          window.visualViewport.addEventListener('resize', onWindowResize)
+        }
+        /**
+         * Track a pane drag directly on the pointer.
+         *
+         * The ResizeObserver cannot be more timely than the layout pass it follows,
+         * so waiting for it costs a frame. A pointer-driven drag announces itself
+         * first, and the column's width can be read immediately in the handler —
+         * before the browser paints — which removes the lag entirely.
+         */
+        let dragging = false
+        const onPointerDown = (event) => {
+          // Only a primary-button press can start a resize.
+          if (event.button !== 0) return
+          dragging = true
+        }
+        const onPointerMove = () => {
+          if (!dragging) return
+          runShiftNow()
+        }
+        const onPointerUp = () => {
+          if (!dragging) return
+          dragging = false
+          schedule()
+        }
+        window.addEventListener('pointerdown', onPointerDown, true)
+        window.addEventListener('pointermove', onPointerMove, true)
+        window.addEventListener('pointerup', onPointerUp, true)
+        window.addEventListener('pointercancel', onPointerUp, true)
         return () => {
           if (frame !== 0) cancelAnimationFrame(frame)
           clearTimeout(timer)
           clearTimeout(settleTimer)
-          document.removeEventListener('scroll', schedule, true)
-          window.removeEventListener('resize', schedule)
+          document.removeEventListener('scroll', scheduleScroll, true)
+          window.removeEventListener('resize', onWindowResize)
+          window.removeEventListener('pointerdown', onPointerDown, true)
+          window.removeEventListener('pointermove', onPointerMove, true)
+          window.removeEventListener('pointerup', onPointerUp, true)
+          window.removeEventListener('pointercancel', onPointerUp, true)
+          if (window.visualViewport !== undefined && window.visualViewport !== null) {
+            window.visualViewport.removeEventListener('resize', onWindowResize)
+          }
           observer.disconnect()
           if (columnObserver !== null) columnObserver.disconnect()
         }

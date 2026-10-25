@@ -158,9 +158,11 @@ check('delete looks destructive on hover',
 check('save shows a confirmation',
   /qc-bp-done/.test(source) && /labels\.saved/.test(source),
   'saving gives no visible acknowledgement')
-check('the column observer takes the cheap path',
-  /new ResizeObserver\(scheduleShift\)/.test(source),
-  'a drag runs a full anchor-resolution pass every frame')
+check('a width-only resize takes the cheap path',
+  /if \(widthOnly\) scheduleShift\(\)/.test(source)
+    || /widthOnly\) \{?\s*runShiftNow/.test(source)
+    || /if \(widthOnly\) runShiftNow\(\)/.test(source),
+  'a width-only drag runs a full anchor-resolution pass')
 
 // ── 8. Contrast and the stray notice ──────────────────────────────────────
 // The save button must be readable: a pale accent fill with white text is not.
