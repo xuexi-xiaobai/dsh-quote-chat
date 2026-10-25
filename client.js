@@ -1617,17 +1617,14 @@ window.__ModuleLoader__.load({
         setSize({ width: rect.width, height: rect.height })
       }, [])
 
-      // Viewport placement on <body>.
-      //
-      // This toolbar appears the instant a selection is made, so it must be visible
-      // wherever the selection is. Mounting it inside the transcript meant the scroll
-      // container clipped it on every side: a selection near an edge had its popup cut
-      // away and the toolbar simply never showed. Being outside that box is what makes
-      // it reliable.
-      //
-      // It stays off the composer by LAYERING instead: its z-index (60) is well below
-      // the app's own chrome, which sits at the top of the stack by design.
-      const position = placeNear(anchor, { width: size.width || 210, height: size.height || 34 })
+      // Inside the transcript (so the container clips it against the chat chrome) and
+      // clamped to the visible band (so it is never cut off at an edge).
+      const flow = findFlow()
+      const measured = { width: size.width || 210, height: size.height || 34 }
+      const anchored = flow === null ? null : anchorInTranscript(flow, anchor, measured, true)
+      const position = anchored === null
+        ? placeNear(anchor, measured)
+        : anchored.position
       return createPortal(
         h('div', {
           ref,
@@ -1636,6 +1633,7 @@ window.__ModuleLoader__.load({
           style: {
             left: `${position.left}px`,
             top: `${position.top}px`,
+            position: anchored === null ? 'fixed' : 'absolute',
             visibility: size.width === 0 ? 'hidden' : 'visible',
           },
           // The selection must survive the click that chooses an action.
@@ -1646,7 +1644,7 @@ window.__ModuleLoader__.load({
         h('button', { type: 'button', disabled: !canAsk, onClick: onAsk },
           h(IconSideChat, null), labels.askInSide),
         ),
-        document.body,
+        anchored === null ? document.body : anchored.scroller,
       )
     }
 
@@ -1679,13 +1677,16 @@ window.__ModuleLoader__.load({
       // therefore outside any passage highlight.
       const width = size.width || 420
       const height = size.height || 170
-      // Viewport placement on <body>, clamped to stay on screen.
-      //
-      // It must be visible wherever the passage is. Mounting inside the transcript meant
-      // the scroll container clipped it on every side, so a selection near an edge had
-      // its popover cut away. Layering, not clipping, is what keeps it clear of the
-      // composer: its z-index (60) sits well below the app's own chrome.
-      const position = placeNear(source.rect, { width, height })
+      // Same placement rule as the action toolbar: inside the transcript so the container
+      // clips it against the chat chrome, clamped to the visible band so it is never cut
+      // off at an edge.
+      const flow = findFlow()
+      const anchored = flow === null
+        ? null
+        : anchorInTranscript(flow, source.rect, { width, height }, true)
+      const position = anchored === null
+        ? placeNear(source.rect, { width, height })
+        : anchored.position
 
       return createPortal(
         h('div', {
@@ -1696,6 +1697,7 @@ window.__ModuleLoader__.load({
           style: {
             left: `${position.left}px`,
             top: `${position.top}px`,
+            position: anchored === null ? 'fixed' : 'absolute',
           },
           onMouseDown: (event) => event.stopPropagation(),
           onKeyDown: (event) => {
@@ -1743,7 +1745,7 @@ window.__ModuleLoader__.load({
           }, h(IconCheck, null), h('span', { className: 'qc-compose-confirm-text' }, labels.confirm)),
         ),
         ),
-        document.body,
+        anchored === null ? document.body : anchored.scroller,
       )
     }
 
@@ -2275,6 +2277,54 @@ function escapeHtml(text) {
      * when it must and reuses the answer otherwise.
      */
     const columnCache = new WeakMap()
+
+    /** Never let an anchored surface touch the edges of the visible band. */
+    const ANCHOR_INSET = 6
+
+    /**
+     * Place a surface inside the transcript, clamped to the visible band.
+     *
+     * The surface is mounted INSIDE the scroll container so the container's own overflow
+     * clips it - that is what keeps it from ever painting over the composer or the top
+     * bar. It is also clamped so a passage near an edge does not push the surface into
+     * the clipped region and make it disappear.
+     *
+     * @param flow - the chat flow anchor.
+     * @param box - the reference box in viewport coordinates ({ left, top, right }).
+     * @param size - the surface's measured size.
+     * @param preferAbove - true to sit above the box, false to sit below it.
+     * @returns the mount target and container-relative position, or null.
+     */
+    function anchorInTranscript(flow, box, size, preferAbove) {
+      const scroller = containerFor(flow)
+      if (scroller === null || scroller === undefined || box === null) return null
+      // An absolutely positioned child needs a containing block. The container is
+      // `position: static` by default, so it is made relative once.
+      if (scroller.dataset.qcPositioned !== '1') {
+        if (getComputedStyle(scroller).position === 'static') {
+          scroller.style.position = 'relative'
+        }
+        scroller.dataset.qcPositioned = '1'
+      }
+      const rect = scroller.getBoundingClientRect()
+      const width = size.width || 0
+      const height = size.height || 0
+      // Container-relative coordinates for the reference box.
+      const localTop = box.top - rect.top + scroller.scrollTop
+      const localLeft = box.left - rect.left + scroller.scrollLeft
+      const localRight = localLeft + Math.max(0, (box.right ?? box.left) - box.left)
+      // The visible band, in the same coordinate space.
+      const bandTop = scroller.scrollTop
+      const bandBottom = bandTop + scroller.clientHeight
+      let top = preferAbove ? localTop - height - 8 : localTop + 8
+      // Clamp inside the band, so the container's overflow cannot eat the surface.
+      top = Math.min(Math.max(bandTop + ANCHOR_INSET, top),
+        Math.max(bandTop + ANCHOR_INSET, bandBottom - height - ANCHOR_INSET))
+      // Horizontally: right-align to the reference box, then pull back inside the band.
+      const maxLeft = Math.max(ANCHOR_INSET, scroller.clientWidth - width - ANCHOR_INSET)
+      const left = Math.min(Math.max(ANCHOR_INSET, localRight - width), maxLeft)
+      return { scroller, position: { top, left } }
+    }
 
     const containerCache = new WeakMap()
     function containerFor(flow) {

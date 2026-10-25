@@ -270,28 +270,35 @@ check('the bubble is excluded from the passage highlight',
 // It used to be position:fixed at a viewport coordinate, so scrolling left it
 // hovering over unrelated text. It is mounted as a sibling of the annotated block
 // and positioned from that block's offset.
-// The selection surfaces must be RELIABLE, which means outside the transcript's
-// scroll box.
-//
-// Mounting them inside the scroll container looked attractive (free clipping against the
-// composer) but the container clips on every side, so a selection near an edge had its
-// popup cut away entirely - the toolbar simply never appeared. Reliability wins: the
-// popups live on <body> and stay off the composer by LAYERING instead.
-check('the selection toolbar is not clipped by the transcript',
-  !/anchored \? scroller : document\.body/.test(source),
-  'the toolbar is inside the scroll box and can be clipped away')
-check('the compose popover is not clipped by the transcript',
-  !/anchored \? scroller : document\.body/.test(source),
-  'the popover is inside the scroll box and can be clipped away')
-check('both selection surfaces are portaled to body',
-  (source.match(/document\.body,\s*\n\s*\)/g) || []).length >= 2,
-  'a selection surface is not portaled to body')
-check('layering, not clipping, keeps them off the composer',
-  /\.qc-popup\{[^}]*z-index:(\d+)/.test(source)
-    && /\.qc-compose\{[^}]*z-index:(\d+)/.test(source)
-    && Number(/\.qc-popup\{[^}]*z-index:(\d+)/.exec(source)[1]) < 100
-    && Number(/\.qc-compose\{[^}]*z-index:(\d+)/.exec(source)[1]) < 100,
-  'a selection surface has no deliberate low z-index')
+// The selection surfaces must satisfy two constraints at once:
+//   * inside the transcript -> the container's overflow clips them, so they can never
+//     paint over the composer or the top bar;
+//   * clamped to the visible band -> they stay fully on screen, so a passage near an
+//     edge cannot push them into the clipped region and make them vanish.
+// Every earlier attempt satisfied one constraint and broke the other.
+check('a shared anchoring helper exists',
+  /function anchorInTranscript\(flow, box, size, preferAbove\)/.test(source),
+  'the two surfaces anchor independently and can drift apart')
+check('the selection toolbar is anchored inside the transcript',
+  /anchorInTranscript\(flow, anchor, measured, true\)/.test(source),
+  'the toolbar is placed against the viewport and follows the screen')
+check('the compose popover is anchored inside the transcript',
+  /anchorInTranscript\(flow, source\.rect, \{ width, height \}, true\)/.test(source),
+  'the popover is placed against the viewport and follows the screen')
+check('both surfaces mount into the transcript when anchored',
+  /anchored === null \? document\.body : anchored\.scroller/.test(source),
+  'a surface is mounted at body, where nothing clips it against the composer')
+check('the anchor is clamped into the scroll band',
+  /bandBottom - height - ANCHOR_INSET/.test(source)
+    && /Math\.max\(bandTop \+ ANCHOR_INSET, top\)/.test(source),
+  'the anchor is not clamped, so an edge selection can push it out of view')
+check('the anchor makes the container a containing block',
+  /scroller\.style\.position = 'relative'/.test(source)
+    && /dataset\.qcPositioned = '1'/.test(source),
+  'absolute children have no containing block and land off-screen')
+check('no surface claims an absurd z-index',
+  [...source.matchAll(/z-index:\s*(\d+)/g)].every((m) => Number(m[1]) < 100),
+  'a surface would paint over the chat chrome')
 
 let failed = 0
 for (const item of cases) {
