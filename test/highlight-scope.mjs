@@ -347,9 +347,31 @@ const scope = buildScope(document)
   check('the highlight survives re-render while typing',
     /resolveAnchor\(live, source\.anchor\)/.test(onAnnotateBody),
     'the highlight is dropped when the transcript re-renders')
-  check('cancelling clears the highlight',
-    /onCancel: \(\) => \{[\s\S]{0,120}clearFlashRange\(\)/.test(source),
-    'an abandoned comment leaves the passage looking annotated')
+  // Which dismissals count as a cancel: everything except Enter and the confirm button.
+  // Enter and the button commit; Escape, the cancel button and any outside click must
+  // all go through the same path, and that path must clear the highlight.
+  check('a single cancel path clears the highlight',
+    /const cancelCompose = React\.useCallback\(\(\) => \{\s*\n\s*clearFlashRange\(\)/.test(source),
+    'cancelling does not clear the highlight')
+  check('the cancel button uses that path',
+    /onCancel: cancelCompose,/.test(source),
+    'the cancel button has its own path that can drift from the others')
+  // Scoped to the popover itself: BubblePanel has an equivalent listener, so an
+  // unscoped search would pass on the panel's code rather than the popover's.
+  const popoverSource = (() => {
+    const start = source.indexOf('function ComposerPopover')
+    if (start < 0) return ''
+    const after = source.indexOf('function ChipCards', start)
+    return source.slice(start, after < 0 ? undefined : after)
+  })()
+  check('a click outside the comment box cancels',
+    /addEventListener\('mousedown', onDown, true\)/.test(popoverSource)
+      && /ref\.current\.contains\(event\.target\)\) return/.test(popoverSource)
+      && /onCancel\(\)/.test(popoverSource),
+    'clicking elsewhere leaves the box open and the passage lit')
+  check('Escape cancels',
+    /event\.key === 'Escape'\) onCancel\(\)/.test(source),
+    'Escape does not dismiss the comment box')
 }
 
 // ── Report ──────────────────────────────────────────────────────────────

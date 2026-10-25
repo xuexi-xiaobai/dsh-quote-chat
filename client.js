@@ -1695,6 +1695,29 @@ window.__ModuleLoader__.load({
         inputRef.current?.focus()
       }, [])
 
+      // Only Enter and the confirm button commit; EVERY other dismissal cancels.
+      //
+      // Clicking elsewhere in the transcript, or on the composer, used to leave the box
+      // open with the passage still lit, which read as "my comment is being kept". An
+      // outside click is a dismissal like any other, so it cancels - and cancelling
+      // clears the highlight.
+      React.useEffect(() => {
+        const onDown = (event) => {
+          if (ref.current !== null && event.target instanceof Node
+            && ref.current.contains(event.target)) return
+          onCancel()
+        }
+        const onKey = (event) => {
+          if (event.key === 'Escape') onCancel()
+        }
+        document.addEventListener('mousedown', onDown, true)
+        document.addEventListener('keydown', onKey, true)
+        return () => {
+          document.removeEventListener('mousedown', onDown, true)
+          document.removeEventListener('keydown', onKey, true)
+        }
+      }, [onCancel])
+
       // Pinned to the annotated block, not to the viewport.
       //
       // The popover used to be position:fixed at a viewport coordinate, so scrolling the
@@ -4057,6 +4080,22 @@ function escapeHtml(text) {
           }
         }, [draft, inputActions, labels])
 
+        /**
+         * Dismiss the comment box without saving.
+         *
+         * Enter and the confirm button are the only ways to commit; every other
+         * dismissal - Escape, the cancel button, or a click anywhere outside the box -
+         * lands here. The passage highlight is cleared because an abandoned comment must
+         * not leave the text looking annotated.
+         *
+         * A stable identity matters: this is passed into the popover's outside-click
+         * effect, and a fresh function each render would rebind the listener constantly.
+         */
+        const cancelCompose = React.useCallback(() => {
+          clearFlashRange()
+          setOverlay(null)
+        }, [])
+
         /** Store one annotation and mirror it into the draft as an inline chip. */
         const commit = React.useCallback((source, comment) => {
           if (sessionId === undefined) return
@@ -4285,11 +4324,7 @@ function escapeHtml(text) {
               source: overlay.source,
               labels,
               onConfirm: (comment) => commit(overlay.source, comment),
-              onCancel: () => {
-                // Abandoning the comment must not leave the passage looking annotated.
-                clearFlashRange()
-                setOverlay(null)
-              },
+              onCancel: cancelCompose,
             }),
           h(ChipCards, { annotations, occurrences, labels, onJump, onRemove }),
           h(MarkerLayer, { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
