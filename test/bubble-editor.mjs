@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Guard the bubble editor and the layering rules.
  *
  * Four behaviours the user asked for, each easy to regress:
@@ -189,6 +189,35 @@ check('clearing a notice keeps the state a string',
   !/setNotice\(null\)/.test(source),
   'setNotice(null) makes the emptiness check miss')
 
+// --- The passage must stay readable while it is annotated ------------------
+check('the hosting block reserves a gutter for the bubble',
+  /\.qc-hosts-bubble\{padding-right:30px\}/.test(css),
+  'the bubble sits on top of the prose')
+check('the hosting class is applied to the block',
+  /classList\.add\('qc-hosts-bubble'\)/.test(source),
+  'the reserved gutter is never applied')
+check('the comment panel opens below the passage',
+  /const below = \(anchor\.bottom \?\? anchor\.top\) \+ 8/.test(source),
+  'the panel covers the annotated passage')
+check('the panel flips above only when there is no room below',
+  /fitsBelow \? below : \(above >= VIEWPORT_MARGIN \? above : below\)/.test(source),
+  'the panel ignores available space')
+check('the panel receives the passage bottom edge',
+  /bottom: box\.bottom/.test(source),
+  'the panel cannot tell where the passage ends')
+// --- Dark mode -------------------------------------------------------------
+check('the chip surface comes from a theme token',
+  /data-composer-chip="quote-chat"\][\s\S]{0,240}--dsw-alias-bg-layer-2/.test(css),
+  'the chip hard-codes a light grey and breaks in dark mode')
+check('the chip text comes from a theme token',
+  /data-composer-chip="quote-chat"\]::after\{[\s\S]{0,160}--dsw-alias-label-primary/.test(css),
+  'the chip ordinal hard-codes dark ink and breaks in dark mode')
+check('the hover card surface comes from a theme token',
+  /\.qc-card\{[^}]*--dsw-alias-bg-overlay/.test(css),
+  'the card hard-codes white and breaks in dark mode')
+check('no bare light surface literal remains on a themed surface',
+  !/background:#fff;/.test(css),
+  'a hard-coded white surface survives')
 let failed = 0
 for (const item of cases) {
   if (!item.ok) failed += 1

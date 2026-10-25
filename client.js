@@ -266,6 +266,9 @@ window.__ModuleLoader__.load({
   
    position:absolute against the row keeps it out of the text flow; the row is
    given position:relative only while it hosts a bubble. */
+/* A hosting block reserves room on its right so the bubble can never sit on top
+   of the text. Applied only to paragraphs that actually carry a bubble. */
+.qc-hosts-bubble{padding-right:30px}
 .qc-marker{position:absolute;right:4px;top:0;z-index:2;
   display:flex;align-items:center;justify-content:center;
   min-width:19px;height:19px;padding:0 5px;
@@ -396,13 +399,19 @@ window.__ModuleLoader__.load({
    Both glyphs and the × are drawn by pseudo-elements and a positioned overlay
    keyed on the chip's own box. The chip's children are React's; nothing here
    writes into them. */
+/* The chip follows the app's theme instead of hard-coding a light grey.
+   --qc-chip-bg resolves to the app's own layer token, so dark mode is inherited
+   rather than guessed at; the fallbacks only apply outside the host. */
 [data-composer-chip="quote-chat"]{display:inline-flex;align-items:center;
   vertical-align:baseline;max-width:20em;padding:2px 9px 2px 7px;margin:0 1px;
-  border-radius:999px;border:0;background:#f2f2f2;color:#181818;
+  border-radius:999px;border:0;
+  background:var(--qc-chip-bg, var(--dsw-alias-bg-layer-2, #f2f2f2));
+  color:var(--dsw-alias-label-primary, #181818);
   font-size:12.5px;line-height:1.5;cursor:pointer;position:relative;
   transition:background .14s ease}
 [data-composer-chip="quote-chat"]:hover,
-[data-composer-chip="quote-chat"]:focus-within{background:#e8e8e8}
+[data-composer-chip="quote-chat"]:focus-within{
+  background:var(--qc-chip-bg-hover, var(--dsw-alias-bg-layer-3, #e8e8e8))}
 /* The host's own marker glyph is the first child; it is hidden and replaced by a
    CSS glyph so the node's contents are never touched. */
 [data-composer-chip="quote-chat"] > span:first-child{display:none}
@@ -429,7 +438,7 @@ window.__ModuleLoader__.load({
  */
 [data-composer-chip="quote-chat"]::after{content:attr(data-qc-label);
   order:1;margin-left:0;font-size:12.5px;line-height:1.5;
-  color:#181818;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  color:var(--dsw-alias-label-primary, #181818);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* Keep the host's own label out of the way so the ordinal is the only text. */
 [data-composer-chip="quote-chat"] > span:last-child{display:none}
 
@@ -457,7 +466,7 @@ window.__ModuleLoader__.load({
   appearance:none;box-sizing:border-box;margin:0;padding:0;border:0;
   border-radius:999px;background:#e8291c;
   cursor:pointer;display:flex;align-items:center;justify-content:center;
-  transform:translate(-50%,-50%);box-shadow:0 0 0 1.5px #f2f2f2;
+  transform:translate(-50%,-50%);box-shadow:0 0 0 1.5px var(--dsw-alias-bg-layer-1, #f2f2f2);
   transition:background .12s ease,transform .12s ease}
 .qc-chip-remove svg{display:block;width:10px;height:10px;flex:none;
   pointer-events:none}
@@ -474,9 +483,9 @@ window.__ModuleLoader__.load({
    No ordinal and no removal control inside — the chip carries both. */
 .qc-card{position:fixed;z-index:2147482000;
   width:max-content;max-width:min(380px,80vw);box-sizing:border-box;
-  border:1px solid rgba(0,0,0,.07);border-radius:12px;background:#fff;
+  border:1px solid rgba(0,0,0,.07);border-radius:12px;background:var(--dsw-alias-bg-overlay, #fff);
   box-shadow:0 8px 26px rgba(0,0,0,.15),0 2px 6px rgba(0,0,0,.05);
-  padding:8px 10px;color:#181818;
+  padding:8px 10px;color:var(--dsw-alias-label-primary, #181818);
   animation:qc-card-in .16s cubic-bezier(.2,.8,.3,1)}
 @keyframes qc-card-in{
   from{opacity:0;transform:translateY(4px) scale(.98)}
@@ -489,7 +498,7 @@ window.__ModuleLoader__.load({
   from{opacity:1;transform:translateY(0) scale(1)}
   to{opacity:0;transform:translateY(3px) scale(.985)}}
 .qc-card-comment{margin:0 0 7px;padding:6px 9px;border-radius:8px;
-  background:#f6f6f6;color:#4b4b4b;font-size:12px;line-height:1.55;
+  background:var(--dsw-alias-bg-layer-2, #f6f6f6);color:#4b4b4b;font-size:12px;line-height:1.55;
   white-space:pre-wrap;word-break:break-word}
 .qc-card-body{max-height:220px;overflow:auto;font-size:12.5px;line-height:1.6;
   word-break:break-word;
@@ -504,11 +513,11 @@ window.__ModuleLoader__.load({
 .qc-card-body ul,.qc-card-body ol{margin:.35em 0;padding-left:1.35em}
 .qc-card-body li{margin:.15em 0}
 .qc-card-body blockquote{margin:.4em 0;padding-left:.7em;
-  border-left:2px solid #e0e0e0;color:#555}
+  border-left:2px solid var(--dsw-alias-border-l2, #e0e0e0);color:var(--dsw-alias-label-secondary, #555)}
 .qc-card-body code{font-family:ui-monospace,monospace;font-size:.92em;
-  padding:.1em .3em;border-radius:4px;background:#f2f2f2}
+  padding:.1em .3em;border-radius:4px;background:var(--dsw-alias-bg-layer-2, #f2f2f2)}
 .qc-card-body pre{margin:.4em 0;padding:7px 9px;border-radius:8px;
-  background:#f6f6f6;overflow-x:auto}
+  background:var(--dsw-alias-bg-layer-2, #f6f6f6);overflow-x:auto}
 .qc-card-body pre code{padding:0;background:none}
 .qc-card-body a{color:#3b6fd4;text-decoration:underline}
 .qc-card-body strong,.qc-card-body b{font-weight:700}
@@ -2284,12 +2293,23 @@ function escapeHtml(text) {
 
       const width = size.width || 320
       const height = size.height || 200
+      // Keep the annotated passage readable while editing its comment.
+      //
+      // The old rule pinned the panel to the passage's own top, so the panel covered
+      // the very text the user is annotating. The passage is the subject; the editor
+      // is the tool. So the panel goes BELOW the passage when there is room, and
+      // only flips above it when the viewport is too short - in which case it is
+      // clamped to the bottom edge rather than sitting over the text.
+      const below = (anchor.bottom ?? anchor.top) + 8
+      const fitsBelow = below + height + VIEWPORT_MARGIN <= window.innerHeight
+      const above = anchor.top - height - 8
+      const preferredTop = fitsBelow ? below : (above >= VIEWPORT_MARGIN ? above : below)
       const left = Math.min(
         Math.max(VIEWPORT_MARGIN, anchor.left),
         Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN),
       )
       const top = Math.min(
-        Math.max(VIEWPORT_MARGIN, anchor.top),
+        Math.max(VIEWPORT_MARGIN, preferredTop),
         Math.max(VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN),
       )
       /**
@@ -2624,11 +2644,17 @@ function escapeHtml(text) {
        */
       React.useEffect(() => {
         if (typeof document === 'undefined') return
+        const hosting = new Set()
         for (const position of positions) {
           const row = position.row
           if (row === undefined || !row.isConnected) continue
+          hosting.add(row)
           if (row.dataset.qcHost === '1') continue
           if (getComputedStyle(row).position === 'static') row.style.position = 'relative'
+          // Reserve a right-hand gutter so the bubble never covers the prose. The
+          // class is used rather than an inline style so the padding can respond to
+          // the theme and be undone cleanly.
+          row.classList.add('qc-hosts-bubble')
           row.dataset.qcHost = '1'
         }
       }, [positions])
@@ -2681,7 +2707,13 @@ function escapeHtml(text) {
           : { left: 0, top: 0, right: window.innerWidth, bottom: 0 }
         return createPortal(h(BubblePanel, {
           annotation,
-          anchor: { left: Math.min(box.right, window.innerWidth - 40), top: box.top },
+          // The passage must stay visible while its comment is edited, so the panel
+          // anchors to the passage's BOTTOM edge and opens downward.
+          anchor: {
+            left: Math.min(box.right, window.innerWidth - 40),
+            top: box.top,
+            bottom: box.bottom,
+          },
           labels,
           onJump: () => {
             setEditing(null)
