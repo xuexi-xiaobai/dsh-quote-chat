@@ -80,13 +80,20 @@ check('the settle timer is cleaned up',
 
 // ── 3. Column width is read cheaply ────────────────────────────────────────
 const columnBody = functionBody('flowColumnBox')
-check('the column has a fast path',
-  /scroller\.clientWidth/.test(columnBody),
-  'column width still requires a rect per row')
+check('the column box is cached between passes',
+  /const columnCache = new WeakMap\(\)/.test(source)
+    && /columnCache\.get\(flow\)/.test(source),
+  'the column is re-measured from scratch every pass')
+check('the column is measured from the text rows, not the scroller',
+  !/scroller\.clientWidth/.test(columnBody),
+  'the column is derived from the pane, which is wider than the prose column')
+check('a drag re-measures the column exactly once',
+  /columnCache\.delete\(flow\)/.test(source),
+  'the resize path reuses a stale column box')
 const fastPath = columnBody.slice(0, columnBody.indexOf('let best = null'))
-check('the fast path does not scan rows',
-  !/querySelectorAll/.test(fastPath),
-  'the fast path still queries every row')
+check('the cached column is invalidated when the flow detaches',
+  /cachedHost !== null && !cachedHost\.isConnected/.test(source),
+  'a remounted transcript keeps a dead host and a dead column box')
 check('the row scan survives only as a fallback',
   /data-chat-node-key/.test(columnBody),
   'the accurate fallback was removed entirely')

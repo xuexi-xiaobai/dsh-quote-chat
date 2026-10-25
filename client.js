@@ -2133,6 +2133,16 @@ function escapeHtml(text) {
       return null
     }
 
+    /**
+     * Cached text-column box per flow element.
+     *
+     * The column costs one rect read per mounted row, which is too much per frame
+     * during a drag but cheap once. The ResizeObserver on the column clears the
+     * entry when the column actually changes size, so a drag re-measures exactly
+     * when it must and reuses the answer otherwise.
+     */
+    const columnCache = new WeakMap()
+
     const containerCache = new WeakMap()
     function containerFor(flow) {
       const hit = containerCache.get(flow)
@@ -2154,37 +2164,19 @@ function escapeHtml(text) {
      */
     function flowColumnBox(flow) {
       if (flow === null) return null
-      // Fast path: the columns of a chat transcript are laid out by the scroller's
-      // content box, so its client width IS the text column width. Reading it is
-      // one property access with no layout query per row — which matters because
-      // this runs on every frame of a pane drag.
+      // Measure the TEXT COLUMN, not the scroll container.
       //
-      // `scrollContainerOf` walks ancestors calling getComputedStyle, so it is
-      // memoised per flow element; a drag must not pay for it 60 times a second.
-      const scroller = containerFor(flow)
-      if (scroller !== null) {
-        const box = scroller.getBoundingClientRect()
-        if (box.width > 0 && box.height > 0) {
-          const style = getComputedStyle(scroller)
-          const padLeft = parseFloat(style.paddingLeft) || 0
-          const padRight = parseFloat(style.paddingRight) || 0
-          const contentLeft = box.left + padLeft - scroller.scrollLeft
-          const contentRight = contentLeft + scroller.clientWidth
-          if (contentRight - contentLeft > 0) {
-            return {
-              box: {
-                left: contentLeft,
-                right: contentRight,
-                width: contentRight - contentLeft,
-                top: box.top,
-                height: box.height,
-                bottom: box.bottom,
-              },
-              element: scroller,
-            }
-          }
-        }
-      }
+      // Reading the scroller's clientWidth was wrong: the scroller spans the whole
+      // conversation pane, while the prose is a narrower centred column inside it.
+      // The bubble was therefore docked at the pane's right edge — visually up
+      // against the navigation column — and, because the pane's width does not
+      // track the prose column's width, it stopped following a pane drag.
+      //
+      // The column is the widest mounted row. That costs one rect per row, so it is
+      // cached per flow element for the duration of a measurement burst and only
+      // recomputed when the column is observed to have resized.
+      const cached = columnCache.get(flow)
+      if (cached !== undefined && cached.element.isConnected) return cached
       let best = null
       const consider = (element) => {
         const box = element.getBoundingClientRect()
@@ -2192,18 +2184,28 @@ function escapeHtml(text) {
         if (best === null || box.right > best.box.right) best = { box, element }
       }
       for (const child of flow.querySelectorAll('[data-chat-node-key]')) consider(child)
-      if (best !== null) return best
+      if (best !== null) {
+        columnCache.set(flow, best)
+        return best
+      }
       // No row wrappers (or none mounted): fall back to the widest boxed
       // descendant, then to the nearest ancestor that actually occupies layout.
       for (const child of flow.querySelectorAll('*')) {
         if (child.closest('[data-sidebar-right-tab]') !== null) continue
         consider(child)
       }
-      if (best !== null) return best
+      if (best !== null) {
+        columnCache.set(flow, best)
+        return best
+      }
       let ancestor = flow.parentElement
       while (ancestor !== null) {
         const box = ancestor.getBoundingClientRect()
-        if (box.width > 0 && box.height > 0) return { box, element: ancestor }
+        if (box.width > 0 && box.height > 0) {
+          const found = { box, element: ancestor }
+          columnCache.set(flow, found)
+          return found
+        }
         ancestor = ancestor.parentElement
       }
       return null
@@ -2406,6 +2408,8 @@ function escapeHtml(text) {
         let hostResolved = false
         /** The last fully measured bubbles, before the x offset is applied. */
         let measured = []
+        /** The last column right edge applied, to detect a real change. */
+        let lastColumnRight = -1
         const measure = () => {
           frame = 0
           const flow = findFlow()
@@ -2417,6 +2421,15 @@ function escapeHtml(text) {
           // The bubble's offset parent: the element that scrolls the transcript.
           // Without it there is no coordinate space to place bubbles in, so this
           // is also the mount check.
+          // Re-validated every pass: opening or closing the right Sidebar can remount
+          // the transcript, and a cached host that has left the document would
+          // silently place every bubble in a dead coordinate space.
+          if (cachedHost !== null && !cachedHost.isConnected) {
+            cachedHost = null
+            hostResolved = false
+            measured = []
+            lastColumnRight = -1
+          }
           const scroller = cachedHost ?? containerFor(flow)
           if (scroller === null) {
             measured = []
@@ -2452,6 +2465,9 @@ function escapeHtml(text) {
           // edge, so widening or narrowing the transcript carries the bubble with
           // it.
           const gutter = Math.min(column.right + 4, window.innerWidth - 28)
+          // Record the edge a full pass just used, so the next cheap pass can tell
+          // a real resize from a spurious observer callback.
+          lastColumnRight = Math.round(column.right)
           const leftInScroller = Math.round(gutter - scrollerRect.left + scroller.scrollLeft)
           // The chip's ordinal is the authoritative number: it is the position in
           // the current draft, so a bubble reading anything else would disagree
@@ -2526,8 +2542,18 @@ function escapeHtml(text) {
           if (scroller === null) return
           const flow = findFlow()
           if (flow === null) return
+          // The column box is cached, and this path is entered precisely BECAUSE
+          // the column resized — so the cache must be dropped here, not reused.
+          columnCache.delete(flow)
           const column = flowColumn(flow)
           if (column === null) return
+          // Only a change in the column's RIGHT EDGE can move a bubble. Bailing when
+          // it is unchanged breaks the feedback loop that made the layout twitch:
+          // measuring the column reads a rect per row, which can itself nudge
+          // layout and re-fire the ResizeObserver.
+          const edge = Math.round(column.right)
+          if (edge === lastColumnRight) return
+          lastColumnRight = edge
           const rect = scroller.getBoundingClientRect()
           const gutter = Math.min(column.right + 4, window.innerWidth - 28)
           publish(measured, Math.round(gutter - rect.left + scroller.scrollLeft))
