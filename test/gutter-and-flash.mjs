@@ -31,13 +31,27 @@ check('the marker is a bubble, not a plain dot',
   'the marker has no bubble shape/tail')
 check('the marker shows a number', /String\(position\.number\)|String\(number\)/.test(source),
   'the marker does not render its ordinal')
-check('the marker sits to the right of the flow',
-  /flowRect\.right \+ 8/.test(source), 'the gutter offset is not past the flow right edge')
+check('the marker sits to the right of the text column',
+  /column\.right \+ 8/.test(source), 'the gutter offset is not past the column edge')
 check('the marker is level with the passage top, not its middle',
   /rect\.top \+ Math\.min\(rect\.height, 20\) \/ 2 - 9/.test(source),
   'the marker is not anchored to the passage top')
 check('the marker stays inside the viewport',
   /window\.innerWidth - 28/.test(source), 'the gutter offset can overflow the viewport')
+
+// The flow anchor is `display:contents`: it has NO box, so
+// `flow.getBoundingClientRect()` returns zeros. Measuring against it put the
+// gutter at the left edge and made the visibility gate reject every passage.
+check('the column is measured from rows, not the box-less anchor',
+  /function flowColumn\(flow\)/.test(source)
+    && /data-chat-node-key/.test(source),
+  'the marker still measures the display:contents anchor')
+check('the marker does not use flow.getBoundingClientRect',
+  !/const flowRect = flow\.getBoundingClientRect\(\)/.test(source),
+  'the marker is still framed by the box-less anchor')
+check('the visibility gate uses the viewport, not the flow box',
+  /rect\.bottom < 0 \|\| rect\.top > window\.innerHeight/.test(source),
+  'the gate compares against the zero-height flow box')
 
 // The bubble must show the same number as the chip. The chip number is the
 // chip's position in the draft, so reading annotation.number would disagree.
@@ -78,11 +92,19 @@ check('the re-resolve re-reads the live anchor',
   'the re-resolve does not re-read the anchor')
 
 // ── 3. Anchor text matching tolerates rich-text whitespace ────────────────
-check('sameText normalises non-breaking and ideographic spaces',
-  /\\u00a0/.test(source) && /\\u3000/.test(source),
-  'sameText only collapses \\s, so NBSP/ideographic spaces break the anchor')
-check('sameText strips zero-width characters',
-  /\\u200b-\\u200d/.test(source), 'sameText keeps zero-width characters')
+check('one whitespace definition is shared',
+  /function squishText\(value\)/.test(source)
+    && /function sameText\(left, right\) \{[\s\S]{0,120}squishText/.test(source)
+    && /const needle = squishText\(quote\)/.test(source),
+  'sameText and locateText do not share a whitespace definition')
+check('non-breaking and ideographic spaces are folded',
+  /u00a0/.test(source) && /u3000/.test(source),
+  'NBSP/ideographic spaces are not handled')
+check('zero-width characters are stripped',
+  /u200b-/u.test(source) || /\\u200b-\\u200d/.test(source), 'zero-width characters are kept')
+check('locateText uses the shared space class',
+  /new RegExp\(`\[\\\\s\$\{EXTRA_SPACE\}\]`\)/.test(source),
+  'locateText has its own whitespace test')
 
 let failed = 0
 for (const item of cases) {

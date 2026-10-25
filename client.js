@@ -700,24 +700,41 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Whether two passages say the same thing, ignoring whitespace differences.
+     * Whitespace characters beyond `\s` that rich-text markup can contain.
      *
-     * Whitespace is normalised beyond `\s`: an answer's markup may contain
-     * non-breaking spaces, ideographic spaces and zero-width characters that the
-     * selection captured but that a rebuilt row renders differently. Treating them
-     * as equivalent is what keeps a stored anchor resolving after the transcript
-     * re-renders — without it the exact-path check failed and the jump fell
-     * through to a text search that could also miss.
+     * Kept as one definition shared by `sameText` and `locateText`. When the two
+     * had their own idea of whitespace they disagreed about whether a stored
+     * anchor matched the live text, and both the path check and the text search
+     * would reject the same passage — which read as "the annotation is gone".
+     */
+    const EXTRA_SPACE = '\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000'
+
+    /** Zero-width characters that are invisible and must not affect matching. */
+    const ZERO_WIDTH = '\u200b-\u200d\ufeff'
+
+    /**
+     * Collapse a passage to a canonical form for comparison.
+     *
+     * Drops zero-width characters and folds every space-like character (including
+     * NBSP and the ideographic space) to a single ASCII space.
+     * @param value - the text to normalise.
+     * @returns the canonical form.
+     */
+    function squishText(value) {
+      return value
+        .replace(new RegExp(`[${ZERO_WIDTH}]`, 'g'), '')
+        .replace(new RegExp(`[\\s${EXTRA_SPACE}]+`, 'g'), ' ')
+        .trim()
+    }
+
+    /**
+     * Whether two passages say the same thing, ignoring whitespace differences.
      * @param left - the first passage.
      * @param right - the second passage.
      * @returns true when they match after normalising whitespace.
      */
     function sameText(left, right) {
-      const flat = (value) => value
-        .replace(/[\u200b-\u200d\ufeff]/g, '')
-        .replace(/[\s\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/g, ' ')
-        .trim()
-      return flat(left) === flat(right)
+      return squishText(left) === squishText(right)
     }
 
     /**
@@ -735,14 +752,22 @@ window.__ModuleLoader__.load({
       if (exact >= 0) return { offset: exact, length: quote.length }
       // Whitespace-insensitive retry: collapse the needle and the haystack in
       // lockstep, remembering where each collapsed character came from.
-      const needle = quote.replace(/\s+/g, ' ').trim()
+      //
+      // The character classes come from the same definitions `sameText` uses, or
+      // the two disagree about what counts as whitespace: an NBSP would survive
+      // the collapse here while `sameText` treats it as a space, so the path check
+      // and the text search would each reject the other's answer.
+      const spaceRe = new RegExp(`[\\s${EXTRA_SPACE}]`)
+      const zeroRe = new RegExp(`[${ZERO_WIDTH}]`)
+      const needle = squishText(quote)
       if (needle === '') return null
       const starts = []
       let flat = ''
       let pendingSpace = false
       for (let index = 0; index < raw.length; index += 1) {
         const char = raw[index]
-        if (/\s/.test(char)) {
+        if (zeroRe.test(char)) continue
+        if (spaceRe.test(char)) {
           pendingSpace = flat !== ''
           continue
         }
@@ -1846,6 +1871,42 @@ function escapeHtml(text) {
     }
 
     /**
+     * The text column's box, derived from the rows inside the flow.
+     *
+     * The flow element itself is the slot anchor with `display:contents`, so it
+     * has no box and reports zeros. The rows it contains are ordinary boxes; the
+     * widest one approximates the column, since a short line's box is narrower
+     * than the column that contains it.
+     * @param flow - the chat flow anchor.
+     * @returns the column rectangle, or null when there are no rows.
+     */
+    function flowColumn(flow) {
+      if (flow === null) return null
+      let best = null
+      const consider = (element) => {
+        const box = element.getBoundingClientRect()
+        if (box.width === 0 || box.height === 0) return
+        if (best === null || box.right > best.right) best = box
+      }
+      for (const child of flow.querySelectorAll('[data-chat-node-key]')) consider(child)
+      if (best !== null) return best
+      // No row wrappers (or none mounted): fall back to the widest boxed
+      // descendant, then to the nearest ancestor that actually occupies layout.
+      for (const child of flow.querySelectorAll('*')) {
+        if (child.closest('[data-sidebar-right-tab]') !== null) continue
+        consider(child)
+      }
+      if (best !== null) return best
+      let ancestor = flow.parentElement
+      while (ancestor !== null) {
+        const box = ancestor.getBoundingClientRect()
+        if (box.width > 0 && box.height > 0) return box
+        ancestor = ancestor.parentElement
+      }
+      return null
+    }
+
+    /**
      * The right-gutter bubbles that mark where each annotation came from.
      *
      * They are portaled and re-measured on scroll, because the chat flow is a
@@ -1868,11 +1929,19 @@ function escapeHtml(text) {
             setPositions((current) => (current.length === 0 ? current : []))
             return
           }
-          const flowRect = flow.getBoundingClientRect()
-          // Dock the bubble just past the flow's right edge, inside the viewport.
-          // Hanging it off the text column keeps it out of the prose while staying
-          // adjacent to the line it marks.
-          const gutter = Math.min(flowRect.right + 8, window.innerWidth - 28)
+          // The flow element is the slot anchor, rendered with `display:contents`
+          // so it has NO box — `flow.getBoundingClientRect()` is all zeros. Using
+          // it as the reference frame put the gutter at 8px (the left edge) and
+          // made the visibility gate below reject every passage, because every
+          // real rect lay outside a zero-height box. Measure a row instead: rows
+          // are ordinary boxes, and the widest one gives the text column's edge.
+          const column = flowColumn(flow)
+          if (column === null) {
+            setPositions((current) => (current.length === 0 ? current : []))
+            return
+          }
+          // Dock the bubble just past the text column, inside the viewport.
+          const gutter = Math.min(column.right + 8, window.innerWidth - 28)
           // The chip's ordinal is the authoritative number: it is the position in
           // the current draft, so a bubble reading anything else would disagree
           // with the chip the user is looking at. It is read off the chips
@@ -1889,7 +1958,10 @@ function escapeHtml(text) {
             // line — which is exactly the intended anchor point.
             const rect = range.getBoundingClientRect()
             if (rect.width === 0 && rect.height === 0) continue
-            if (rect.bottom < flowRect.top || rect.top > flowRect.bottom) continue
+            // Skip passages scrolled out of the viewport; they get a bubble when
+            // they come back. Compared against the viewport, not the flow box,
+            // because the flow box is the box-less anchor.
+            if (rect.bottom < 0 || rect.top > window.innerHeight) continue
             // An annotation whose chip has left the draft has no number to show;
             // the passage is still marked, from its stored number.
             const number = ordinals.get(annotation.id) ?? annotation.number
