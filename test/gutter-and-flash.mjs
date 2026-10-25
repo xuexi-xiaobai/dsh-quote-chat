@@ -31,28 +31,10 @@ check('the marker is a bubble, not a plain dot',
   'the marker has no bubble shape/tail')
 check('the marker shows a number', /String\(position\.number\)|String\(number\)/.test(source),
   'the marker does not render its ordinal')
-check('the marker sits to the right of the text column',
-  /column\.right \+ 4/.test(source), 'the gutter offset is not hugging the column edge')
-check('the marker is level with the passage top, not its middle',
-  /topInScroller \+ Math\.min\(rect\.height, 20\) \/ 2 - 9/.test(source),
-  'the marker is not anchored to the passage top')
-check('the marker stays inside the viewport',
-  /window\.innerWidth - 28/.test(source), 'the gutter offset can overflow the viewport')
 
 // The flow anchor is `display:contents`: it has NO box, so
 // `flow.getBoundingClientRect()` returns zeros. Measuring against it put the
 // gutter at the left edge and made the visibility gate reject every passage.
-check('the column is measured from rows, not the box-less anchor',
-  /function flowColumn\(flow\)/.test(source)
-    && /data-chat-node-key/.test(source),
-  'the marker still measures the display:contents anchor')
-check('the marker does not use flow.getBoundingClientRect',
-  !/const flowRect = flow\.getBoundingClientRect\(\)/.test(source),
-  'the marker is still framed by the box-less anchor')
-check('visibility is derived from the container band',
-  /const visible = measured\.filter\(\(item\) => \{[\s\S]{0,120}viewTop/.test(source)
-    || /centre >= viewTop - 40 && centre <= viewBottom \+ 40/.test(source),
-  'the gate does not use the container band')
 
 // The bubble must show the same number as the chip. The chip number is the
 // chip's position in the draft, so reading annotation.number would disagree.

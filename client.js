@@ -248,14 +248,17 @@ window.__ModuleLoader__.load({
 
    Drawn with a tail, so it reads as a bubble rather than a plain badge: the tail
    points back at the passage it belongs to. */
-/* The bubble lives INSIDE the transcript's scroll container.
-   Being absolutely positioned against that container means the container's own
-   overflow clips it — so it can never paint over the tab strip above or the
-   composer below, no matter what z-index it carries. A fixed overlay could not be
-   clipped by anything, which is why lowering its z-index alone did not fix the
-   layering. It also scrolls with the text for free, with no re-measure per frame.
-   z-index stays small so it sits under the rows' own hover surfaces. */
-.qc-marker{position:absolute;z-index:2;
+/* The bubble is mounted INSIDE the row that holds its passage, and positioned
+   with CSS alone.
+  
+   That is what makes it independent of zoom, wrapping and pane drags: it shares
+   the row's box, so any transform of the row moves it by construction. Nothing
+   recomputes its position, so nothing can go stale. right docks it to the
+   column edge and top centres it on the row's first line.
+  
+   position:absolute against the row keeps it out of the text flow; the row is
+   given position:relative only while it hosts a bubble. */
+.qc-marker{position:absolute;right:4px;top:0;z-index:2;
   display:flex;align-items:center;justify-content:center;
   min-width:19px;height:19px;padding:0 5px;
   border-radius:9.5px 9.5px 9.5px 3px;border:0;cursor:pointer;
@@ -263,11 +266,7 @@ window.__ModuleLoader__.load({
   background:#2f7df6;
   box-shadow:0 1px 4px rgba(0,0,0,.22);
   transform-origin:left center;
-  transition:transform .12s ease,background .12s ease,box-shadow .12s ease}
-.qc-marker::after{content:"";position:absolute;left:-3px;bottom:0;
-  width:6px;height:6px;background:inherit;
-  clip-path:polygon(100% 0,100% 100%,0 100%)}
-.qc-marker:hover{transform:scale(1.16);background:#1f6ae0}
+  transition:transform .12s ease,background .12s ease,box-shadow .12s ease}.qc-marker:hover{transform:scale(1.16);background:#1f6ae0}
 .qc-marker:active{transform:scale(1.04)}
 /* Tables keep a distinct hue so a glance tells the two kinds apart. */
 .qc-marker-table{background:#17a673}
@@ -2364,11 +2363,32 @@ function escapeHtml(text) {
       for (let index = 0; index < left.length; index += 1) {
         const a = left[index]
         const b = right[index]
-        if (a.id !== b.id || a.top !== b.top || a.left !== b.left || a.number !== b.number) return false
+        if (a.id !== b.id || a.row !== b.row || a.number !== b.number) return false
       }
       return true
     }
 
+    /**
+     * The row element that contains a resolved passage.
+     *
+     * The bubble is mounted INTO this element, which is what makes it track the
+     * passage for free: any transform of the row - scroll, zoom, reflow, a pane
+     * drag - carries the bubble with it because the bubble is part of the row's
+     * box, not a coordinate someone recomputed.
+     * @param range - the resolved passage range.
+     * @param flow - the chat flow anchor, used when no row wrapper exists.
+     * @returns the row element, or null.
+     */
+    function rowOf(range, flow) {
+      const element = elementOf(range.startContainer)
+      if (element === null) return null
+      // The row is the nearest element carrying a chat node key; a passage with no
+      // wrapper (an empty conversation, a synthetic row) falls back to the flow's
+      // first boxed ancestor, which still gives it a stable home.
+      const row = element.closest('[data-chat-node-key]')
+      if (row !== null) return row
+      return flow
+    }
     /**
      * The right-gutter bubbles that mark where each annotation came from.
      *
@@ -2408,8 +2428,6 @@ function escapeHtml(text) {
         let hostResolved = false
         /** The last fully measured bubbles, before the x offset is applied. */
         let measured = []
-        /** The last column right edge applied, to detect a real change. */
-        let lastColumnRight = -1
         const measure = () => {
           frame = 0
           const flow = findFlow()
@@ -2428,7 +2446,6 @@ function escapeHtml(text) {
             cachedHost = null
             hostResolved = false
             measured = []
-            lastColumnRight = -1
           }
           const scroller = cachedHost ?? containerFor(flow)
           if (scroller === null) {
@@ -2448,115 +2465,57 @@ function escapeHtml(text) {
               scroller.style.position = 'relative'
             }
           }
-          const scrollerRect = scroller.getBoundingClientRect()
-          // The flow element is the slot anchor, rendered with `display:contents`
-          // so it has NO box — `flow.getBoundingClientRect()` is all zeros. Using
-          // it as the reference frame put the gutter at 8px (the left edge) and
-          // made the visibility gate below reject every passage, because every
-          // real rect lay outside a zero-height box. Measure a row instead: rows
-          // are ordinary boxes, and the widest one gives the text column's edge.
-          const column = flowColumn(flow)
-          if (column === null) {
-            measured = []
-            setPositions((current) => (current.length === 0 ? current : []))
-            return
-          }
-          // Hug the text column: the bubble's tail touches the column's right
-          // edge, so widening or narrowing the transcript carries the bubble with
-          // it.
-          const gutter = Math.min(column.right + 4, window.innerWidth - 28)
-          // Record the edge a full pass just used, so the next cheap pass can tell
-          // a real resize from a spurious observer callback.
-          lastColumnRight = Math.round(column.right)
-          const leftInScroller = Math.round(gutter - scrollerRect.left + scroller.scrollLeft)
-          // The chip's ordinal is the authoritative number: it is the position in
-          // the current draft, so a bubble reading anything else would disagree
-          // with the chip the user is looking at. It is read off the chips
-          // themselves rather than recomputed, so the two can never drift.
+          // The chip's ordinal is the authoritative number: it is the chip's
+          // position in the current draft, so a bubble reading anything else would
+          // disagree with the chip the user is looking at.
           const ordinals = chipOrdinals(occurrences)
           const next = []
           for (const annotation of annotations) {
             // A bubble marks an annotation that is still in the draft. Deleting a
-            // chip with the keyboard is a legitimate way to drop an annotation —
-            // the framework just removes the occurrence and never calls back into
-            // the plugin — so the store keeps an entry with no chip. Drawing a
-            // bubble for it would leave a marker pointing at a passage the user
-            // has already un-annotated.
+            // chip with the keyboard removes the occurrence without calling back
+            // into the plugin, so the store keeps an entry with no chip.
             const number = ordinals.get(annotation.id)
             if (number === undefined) continue
             const range = resolveAnchor(flow, annotation.anchor)
             if (range === null) continue
-            // Vertical position comes from the TOP of the annotated passage, as
-            // asked: the bubble marks where the passage begins, not its middle.
-            // `getBoundingClientRect` on a range that wraps returns the union of
-            // its line boxes, so for multi-line passages the top edge is the first
-            // line — which is exactly the intended anchor point.
-            const rect = range.getBoundingClientRect()
-            if (rect.width === 0 && rect.height === 0) continue
-            // Coordinates are relative to the SCROLL CONTAINER (which is also the
-            // bubble's offset parent), not the viewport. Two reasons: the bubbles
-            // are absolutely positioned inside that container, and doing the
-            // arithmetic here means a scroll does not have to re-measure — the
-            // browser moves them with the content.
-            const topInScroller = rect.top - scrollerRect.top + scroller.scrollTop
+            // The bubble is mounted INTO this row, so the row is all the position
+            // information needed: the browser keeps the bubble on it through
+            // scrolling, zoom and reflow. No coordinates are computed here at all.
+            const row = rowOf(range, flow)
+            if (row === null) continue
             next.push({
               id: annotation.id,
-              // Centre the bubble on the passage's first line.
-              top: Math.round(topInScroller + Math.min(rect.height, 20) / 2 - 9),
+              row,
               // The base class is already the blue bubble; only tables recolour.
               tone: annotation.kind === 'table' ? 'qc-marker-table' : '',
               number,
               title: labels.jump.replace('{n}', String(number)),
             })
           }
-          // Keep the FULL set, not the culled one: a scroll re-derives visibility
-          // from these coordinates without repeating the anchor work.
           measured = next
-          const viewTop = scroller.scrollTop
-          const viewBottom = viewTop + scroller.clientHeight
-          publish(next.filter((item) => {
-            const centre = item.top + 9
-            return centre >= viewTop - 40 && centre <= viewBottom + 40
-          }), leftInScroller)
+          publish(next)
         }
         /**
          * Push a measured set into state.
-         * @param next - the measured bubbles, without their horizontal offset.
-         * @param left - the container-relative x every bubble shares.
+         *
+         * Only the identity and the row matter now: layout owns the geometry.
+         * @param next - the measured bubbles, each carrying its row element.
          */
-        const publish = (next, left) => {
-          const withLeft = next.map((item) => ({ ...item, left }))
-          setPositions((current) => (samePositions(current, withLeft) ? current : withLeft))
+         const publish = (next) => {
+          setPositions((current) => (samePositions(current, next) ? current : next))
         }
         /**
-         * Re-apply only the horizontal offset.
+         * Re-point the bubbles at their rows.
          *
-         * This is the path a drag takes: one rect read for the column and one
-         * arithmetic operation per bubble, with no anchor resolution and no per-row
-         * layout. That is what keeps dragging smooth.
+         * There is nothing to position: a bubble lives inside its row, so the
+         * browser keeps it on the passage through scrolling, zoom, wrapping and
+         * pane drags. A resize therefore only has to ensure the set of bubbles is
+         * current — it never has to move them.
          */
-        const shift = () => {
+        const reflow = () => {
           frame = 0
           if (measured.length === 0) return
-          const scroller = cachedHost
-          if (scroller === null) return
-          const flow = findFlow()
-          if (flow === null) return
-          // The column box is cached, and this path is entered precisely BECAUSE
-          // the column resized — so the cache must be dropped here, not reused.
-          columnCache.delete(flow)
-          const column = flowColumn(flow)
-          if (column === null) return
-          // Only a change in the column's RIGHT EDGE can move a bubble. Bailing when
-          // it is unchanged breaks the feedback loop that made the layout twitch:
-          // measuring the column reads a rect per row, which can itself nudge
-          // layout and re-fire the ResizeObserver.
-          const edge = Math.round(column.right)
-          if (edge === lastColumnRight) return
-          lastColumnRight = edge
-          const rect = scroller.getBoundingClientRect()
-          const gutter = Math.min(column.right + 4, window.innerWidth - 28)
-          publish(measured, Math.round(gutter - rect.left + scroller.scrollLeft))
+          publish(measured)
         }
         const schedule = () => {
           if (frame !== 0) return
@@ -2594,69 +2553,16 @@ function escapeHtml(text) {
               break
             }
           }
-          if (widthOnly) scheduleShift()
-          else schedule()
-        }
-        /**
-         * Run the cheap pass synchronously, on the frame the pointer moves.
-         *
-         * `ResizeObserver` callbacks are delivered AFTER layout, so scheduling a
-         * `requestAnimationFrame` from one always lands on the next frame — the
-         * bubble trails the column by a frame, which is the "slow by one beat"
-         * complaint. During an actual drag the intent is known before layout, so
-         * the horizontal offset is recomputed in the pointer handler itself.
-         */
-        const runShiftNow = () => {
-          if (frame !== 0) {
-            cancelAnimationFrame(frame)
-            frame = 0
-          }
-          shift()
-          clearTimeout(settleTimer)
-          settleTimer = setTimeout(() => {
-            settleTimer = 0
-            schedule()
-          }, 140)
+          // A resize never moves a bubble: each one is mounted inside its row, so
+          // layout keeps it on the passage. The pass only refreshes the set.
+          schedule()
         }
         const debounced = () => {
           clearTimeout(timer)
           timer = setTimeout(schedule, 80)
         }
-        /**
-         * Recompute vertical offsets from cached absolute positions.
-         *
-         * A scroll cannot change WHERE a passage is in the container — the bubbles
-         * are absolutely positioned inside it, so the browser already moved them
-         * with the content. What a scroll changes is which of them fall inside the
-         * visible band. Re-deriving that from stored container coordinates costs one
-         * arithmetic step per bubble, so scrolling never has to resolve an anchor.
-         */
-        const repositionFromCached = () => {
-          frame = 0
-          const scroller = cachedHost
-          if (scroller === null || measured.length === 0) return
-          const flow = findFlow()
-          if (flow === null) return
-          const column = flowColumn(flow)
-          if (column === null) return
-          const rect = scroller.getBoundingClientRect()
-          const gutter = Math.min(column.right + 4, window.innerWidth - 28)
-          const left = Math.round(gutter - rect.left + scroller.scrollLeft)
-          const viewTop = scroller.scrollTop
-          const viewBottom = viewTop + scroller.clientHeight
-          const visible = measured.filter((item) => {
-            const centre = item.top + 9
-            return centre >= viewTop - 40 && centre <= viewBottom + 40
-          })
-          publish(visible, left)
-        }
-        const scheduleScroll = () => {
-          if (frame !== 0) return
-          frame = requestAnimationFrame(repositionFromCached)
-        }
         schedule()
-        document.addEventListener('scroll', scheduleScroll, true)
-        window.addEventListener('resize', schedule)
+        window.addEventListener('resize', onWindowResize)
         const observer = new MutationObserver(debounced)
         const flow = findFlow()
         // `childList` only, and NOT `characterData`. The virtualiser mounting or
@@ -2699,12 +2605,6 @@ function escapeHtml(text) {
           const zoomed = ratio !== lastRatio
           lastRatio = ratio
           if (zoomed) {
-            // A ratio change invalidates every cached box.
-            columnCache.delete(findFlow() ?? flow)
-            cachedHost = null
-            hostResolved = false
-            measured = []
-            lastColumnRight = -1
           }
           schedule()
         }
@@ -2713,43 +2613,11 @@ function escapeHtml(text) {
         if (window.visualViewport !== undefined && window.visualViewport !== null) {
           window.visualViewport.addEventListener('resize', onWindowResize)
         }
-        /**
-         * Track a pane drag directly on the pointer.
-         *
-         * The ResizeObserver cannot be more timely than the layout pass it follows,
-         * so waiting for it costs a frame. A pointer-driven drag announces itself
-         * first, and the column's width can be read immediately in the handler —
-         * before the browser paints — which removes the lag entirely.
-         */
-        let dragging = false
-        const onPointerDown = (event) => {
-          // Only a primary-button press can start a resize.
-          if (event.button !== 0) return
-          dragging = true
-        }
-        const onPointerMove = () => {
-          if (!dragging) return
-          runShiftNow()
-        }
-        const onPointerUp = () => {
-          if (!dragging) return
-          dragging = false
-          schedule()
-        }
-        window.addEventListener('pointerdown', onPointerDown, true)
-        window.addEventListener('pointermove', onPointerMove, true)
-        window.addEventListener('pointerup', onPointerUp, true)
-        window.addEventListener('pointercancel', onPointerUp, true)
         return () => {
           if (frame !== 0) cancelAnimationFrame(frame)
           clearTimeout(timer)
           clearTimeout(settleTimer)
-          document.removeEventListener('scroll', scheduleScroll, true)
           window.removeEventListener('resize', onWindowResize)
-          window.removeEventListener('pointerdown', onPointerDown, true)
-          window.removeEventListener('pointermove', onPointerMove, true)
-          window.removeEventListener('pointerup', onPointerUp, true)
-          window.removeEventListener('pointercancel', onPointerUp, true)
           if (window.visualViewport !== undefined && window.visualViewport !== null) {
             window.visualViewport.removeEventListener('resize', onWindowResize)
           }
@@ -2759,71 +2627,81 @@ function escapeHtml(text) {
       }, [annotations, occurrences, labels])
 
 
-      if (typeof document === 'undefined' || positions.length === 0) return null
-      // Mount into the scroll container so overflow clips the bubbles and they
-      // travel with the content. Until the container is found there is nowhere
-      // correct to put them, so render nothing rather than flashing at 0,0.
-      if (host === null) return null
-      return createPortal(
-        h(React.Fragment, null,
-          positions.map((position) => h('button', {
-            key: position.id,
-            type: 'button',
-            className: `qc-marker ${position.tone}`
-              + (editing !== null && editing.id === position.id ? ' qc-marker-active' : ''),
-            style: { left: `${position.left}px`, top: `${position.top}px` },
-            title: position.title,
-            'aria-label': position.title,
-            // A click on the bubble opens the editor, and lights the passage for as
-            // long as the editor is open. Jumping moved into that panel (and stays
-            // on the chip), so one click is not asked to do two things.
-            onClick: () => {
-              const annotation = annotations.find((item) => item.id === position.id)
-              if (annotation === undefined) return
-              const already = editing !== null && editing.id === position.id
-              setEditing(already ? null : { id: position.id, left: position.left, top: position.top })
-              if (!already) onHighlight(annotation, true)
-              else onHighlight(annotation, false)
-            },
-          }, String(position.number))),
-          // The editor is a separate portal into `document.body`: it must not be
-          // clipped by the scroll container the bubbles live in.
-          editing === null ? null : (() => {
-            const annotation = annotations.find((item) => item.id === editing.id)
-            if (annotation === undefined) return null
-            const position = positions.find((item) => item.id === editing.id)
-            const box = host.getBoundingClientRect()
-            const anchor = position === undefined
-              ? { left: box.left + 24, top: box.top }
-              : { left: box.left + position.left + 24, top: box.top + position.top }
-            return createPortal(h(BubblePanel, {
-              annotation,
-              anchor,
-              labels,
-              onJump: () => {
-                setEditing(null)
-                onHighlight(annotation, false)
-                onJump(annotation)
-              },
-              onSave: (comment) => {
-                setEditing(null)
-                onHighlight(annotation, false)
-                onUpdate(annotation, comment)
-              },
-              onDelete: () => {
-                setEditing(null)
-                onHighlight(annotation, false)
-                onRemove(annotation)
-              },
-              onClose: () => {
-                setEditing(null)
-                onHighlight(annotation, false)
-              },
-            }), document.body)
-          })(),
-        ),
-        host,
-      )
+      if (typeof document === 'undefined') return null
+      // Render each bubble INTO the row that contains its passage.
+      //
+      // This is the whole point: a bubble anchored inside the row inherits the
+      // row's box. Scrolling, zooming (Ctrl +/-), wrapping and pane drags all move
+      // the row, and the browser moves the bubble with it - no measurement, no
+      // stale coordinates, nothing to go out of sync. The previous design kept the
+      // bubbles in a fixed coordinate space and re-derived their position, which is
+      // why every one of those actions made them drift.
+      //
+      // The horizontal offset is CSS (right: 4px), so it is layout's job too.
+      const nodes = []
+      const hosting = new Set()
+      for (const position of positions) {
+        const row = position.row
+        if (row === undefined || !row.isConnected) continue
+        // An absolutely positioned child needs a positioned ancestor. Marking the
+        // row is what turns it into the bubble's containing block, so the bubble
+        // moves with the row instead of with the viewport.
+        if (!hosting.has(row)) {
+          hosting.add(row)
+          if (getComputedStyle(row).position === 'static') row.style.position = 'relative'
+        }
+        nodes.push(createPortal(h('button', {
+          key: position.id,
+          type: 'button',
+          className: 'qc-marker ' + position.tone
+            + (editing !== null && editing.id === position.id ? ' qc-marker-active' : ''),
+          title: position.title,
+          'aria-label': position.title,
+          onClick: () => {
+            const annotation = annotations.find((item) => item.id === position.id)
+            if (annotation === undefined) return
+            const already = editing !== null && editing.id === position.id
+            setEditing(already ? null : { id: position.id, row })
+            if (!already) onHighlight(annotation, true)
+            else onHighlight(annotation, false)
+          },
+        }, String(position.number)), row))
+      }
+      // The editor is a separate portal into document.body: it must not be
+      // clipped by the transcript.
+      const editor = editing === null ? null : (() => {
+        const annotation = annotations.find((item) => item.id === editing.id)
+        if (annotation === undefined) return null
+        const row = editing.row
+        const box = (row !== undefined && row.isConnected)
+          ? row.getBoundingClientRect()
+          : { left: 0, top: 0, right: window.innerWidth, bottom: 0 }
+        return createPortal(h(BubblePanel, {
+          annotation,
+          anchor: { left: Math.min(box.right, window.innerWidth - 40), top: box.top },
+          labels,
+          onJump: () => {
+            setEditing(null)
+            onHighlight(annotation, false)
+            onJump(annotation)
+          },
+          onSave: (comment) => {
+            setEditing(null)
+            onHighlight(annotation, false)
+            onUpdate(annotation, comment)
+          },
+          onDelete: () => {
+            setEditing(null)
+            onHighlight(annotation, false)
+            onRemove(annotation)
+          },
+          onClose: () => {
+            setEditing(null)
+            onHighlight(annotation, false)
+          },
+        }), document.body)
+      })()
+      return h(React.Fragment, null, ...nodes, editor)
     }
 
     // #endregion
