@@ -32,7 +32,7 @@ check('the marker is a bubble, not a plain dot',
 check('the marker shows a number', /String\(position\.number\)|String\(number\)/.test(source),
   'the marker does not render its ordinal')
 check('the marker sits to the right of the text column',
-  /column\.right \+ 8/.test(source), 'the gutter offset is not past the column edge')
+  /column\.right \+ 4/.test(source), 'the gutter offset is not hugging the column edge')
 check('the marker is level with the passage top, not its middle',
   /rect\.top \+ Math\.min\(rect\.height, 20\) \/ 2 - 9/.test(source),
   'the marker is not anchored to the passage top')
@@ -72,8 +72,11 @@ check('chipOrdinals numbers from 1 in DOM order',
   /ordinals\.set\(refs\[index\], index \+ 1\)/.test(source),
   'chipOrdinals does not number by position')
 check('MarkerLayer receives occurrences',
-  /h\(MarkerLayer, \{ annotations, occurrences, labels, onJump \}\)/.test(source),
+  /h\(MarkerLayer, \{ annotations, occurrences, labels, onJump/.test(source),
   'MarkerLayer is mounted without occurrences')
+check('MarkerLayer receives the update and remove handlers',
+  /h\(MarkerLayer, \{[^}]*onUpdate[^}]*onRemove/.test(source),
+  'the bubble editor cannot save or delete')
 
 // ── 2. The jump highlight ──────────────────────────────────────────────────
 // The module-scope stylesheet must NOT be called `CSS`. That name shadows the
@@ -89,12 +92,21 @@ check('canPaintHighlight does not trust a shadowable identifier',
   /const registry = typeof window === 'undefined' \? undefined : window\.CSS/.test(source),
   'canPaintHighlight checks a bare identifier')
 
-// ── 2b. The jump lands on the passage, not the end of the transcript ──────
+// ── 2b. The jump lands in the middle of the READABLE area ─────────────────
 // `scrollIntoView` on the containing ROW aligns the row, and a row can be taller
 // than the viewport, so its centre is nowhere near the quoted line.
-check('the jump scrolls the range to the middle of the viewport',
-  /scroller\.scrollTop\s*[\s\S]{0,200}\(box\.height - rect\.height\) \/ 2/.test(source),
+check('the jump centres on the passage, not the row',
+  /scroller\.scrollTop\s*[\s\S]{0,220}\(area\.height - rect\.height\) \/ 2/.test(source),
   'the jump still centres the row instead of the passage')
+// The composer grows with multi-line input and attachments, so "the middle of the
+// screen" is not the middle of what the user can read.
+check('the visible area is bounded by the composer',
+  /function visibleChatArea\(scroller\)/.test(source)
+    && /findComposerDock\(\)/.test(source),
+  'the jump does not account for the composer growing')
+check('the visible area is measured on every jump',
+  /const area = visibleChatArea\(scroller\)/.test(source),
+  'the visible area is cached instead of re-measured')
 check('the jump clamps to the scroll range',
   /Math\.min\(Math\.max\(0, target\), max\)/.test(source),
   'the jump can scroll past the end')

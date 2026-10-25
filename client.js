@@ -98,6 +98,11 @@ window.__ModuleLoader__.load({
       'card.missing': '这条注释对应的内容已不在当前对话中',
       'card.limit': '最多 {max} 条注释',
 
+      'bubble.edit': '编辑注释',
+      'bubble.placeholder': '补充这条注释的说明…',
+      'bubble.save': '保存',
+      'bubble.delete': '删除',
+
       'marker.jump': '跳到注释内容：内容 {n}',
 
       'table.add': '添加到对话',
@@ -141,6 +146,11 @@ window.__ModuleLoader__.load({
       'card.clear': 'Clear all',
       'card.missing': 'The passage for this annotation is no longer in this conversation',
       'card.limit': 'At most {max} annotations',
+
+      'bubble.edit': 'Edit annotation',
+      'bubble.placeholder': 'Add a note about this annotation…',
+      'bubble.save': 'Save',
+      'bubble.delete': 'Delete',
 
       'marker.jump': 'Jump to the passage: Content {n}',
 
@@ -223,7 +233,11 @@ window.__ModuleLoader__.load({
 
    Drawn with a tail, so it reads as a bubble rather than a plain badge: the tail
    points back at the passage it belongs to. */
-.qc-marker{position:fixed;z-index:2147482000;
+/* z-index is deliberately mid-range, not maximal: the bubble belongs to the
+   transcript, so it must sit UNDER the app's own chrome (top bar, composer,
+   popovers) rather than painting over them. A max-ish value made it float above
+   the menu bar and below the chat box, which read as a layering bug. */
+.qc-marker{position:fixed;z-index:30;
   display:flex;align-items:center;justify-content:center;
   min-width:19px;height:19px;padding:0 5px;
   border-radius:9.5px 9.5px 9.5px 3px;border:0;cursor:pointer;
@@ -239,6 +253,38 @@ window.__ModuleLoader__.load({
 /* Tables keep a distinct hue so a glance tells the two kinds apart. */
 .qc-marker-table{background:#17a673}
 .qc-marker-table:hover{background:#128a5f}
+
+/* The bubble's own editor: change or delete the comment, without touching the
+   annotated passage. Sits above the bubble but still below app chrome. */
+.qc-bubble-panel{position:fixed;z-index:40;box-sizing:border-box;
+  width:min(320px,80vw);padding:10px;
+  border:1px solid var(--dsw-alias-border-l2);border-radius:12px;
+  background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);
+  box-shadow:0 10px 30px rgba(0,0,0,.18);
+  display:flex;flex-direction:column;gap:8px;
+  animation:qc-card-in .14s cubic-bezier(.2,.8,.3,1)}
+.qc-bubble-panel .qc-bp-quote{margin:0;padding:6px 8px;border-radius:8px;
+  background:var(--dsw-alias-bg-layer-2);font-size:11.5px;line-height:1.5;
+  color:var(--dsw-alias-label-secondary);max-height:64px;overflow:auto;
+  white-space:pre-wrap;word-break:break-word}
+.qc-bubble-panel textarea{box-sizing:border-box;width:100%;min-height:64px;
+  resize:vertical;padding:7px 9px;border-radius:8px;font:inherit;font-size:12.5px;
+  line-height:1.55;color:inherit;background:var(--dsw-alias-bg-layer-2);
+  border:1px solid var(--dsw-alias-border-l2)}
+.qc-bubble-panel textarea:focus{outline:none;
+  border-color:var(--dsw-alias-state-accent-primary)}
+.qc-bp-actions{display:flex;align-items:center;gap:6px}
+.qc-bp-actions button{appearance:none;font:inherit;font-size:12px;cursor:pointer;
+  padding:5px 11px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);
+  background:var(--dsw-alias-bg-layer-2);color:inherit;
+  transition:background .12s ease,opacity .12s ease}
+.qc-bp-actions button:hover:not(:disabled){background:var(--dsw-alias-bg-layer-3)}
+.qc-bp-actions button:disabled{opacity:.45;cursor:default}
+.qc-bp-actions .qc-bp-save{margin-left:auto;border-color:transparent;
+  background:var(--dsw-alias-state-accent-primary);color:#fff}
+.qc-bp-actions .qc-bp-save:hover:not(:disabled){opacity:.88;
+  background:var(--dsw-alias-state-accent-primary)}
+.qc-bp-actions .qc-bp-delete{color:var(--dsw-alias-state-error-primary)}
 
 .qc-table-add{position:fixed;z-index:2147482000;appearance:none;border:1px solid var(--dsw-alias-border-l2);
   background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;
@@ -968,6 +1014,38 @@ window.__ModuleLoader__.load({
     function removeAnnotation(sessionId, id) {
       const store = storeFor(sessionId)
       publish(store, renumber(store.list.filter((item) => item.id !== id)))
+    }
+
+    /**
+     * Change one annotation's comment, keeping everything else.
+     *
+     * The comment is the only editable part: the passage it points at is fixed by
+     * the selection, and the ordinal is a position. Editing is a replace, not a
+     * re-add, so the chip, its id, and its place in the draft all survive.
+     * @param sessionId - the session key.
+     * @param id - the annotation id.
+     * @param comment - the new comment text (may be empty).
+     * @returns the updated annotation, or null when it is gone.
+     */
+    function updateAnnotation(sessionId, id, comment) {
+      const store = storeFor(sessionId)
+      let updated = null
+      publish(store, store.list.map((item) => {
+        if (item.id !== id) return item
+        updated = { ...item, comment: typeof comment === 'string' ? comment.trim() : '' }
+        return updated
+      }))
+      return updated
+    }
+
+    /**
+     * Look up one annotation.
+     * @param sessionId - the session key.
+     * @param id - the annotation id.
+     * @returns the annotation, or null.
+     */
+    function findAnnotation(sessionId, id) {
+      return storeFor(sessionId).list.find((item) => item.id === id) ?? null
     }
 
     /**
@@ -1889,15 +1967,15 @@ function escapeHtml(text) {
      * widest one approximates the column, since a short line's box is narrower
      * than the column that contains it.
      * @param flow - the chat flow anchor.
-     * @returns the column rectangle, or null when there are no rows.
+     * @returns the column rectangle and the element it came from, or null.
      */
-    function flowColumn(flow) {
+    function flowColumnBox(flow) {
       if (flow === null) return null
       let best = null
       const consider = (element) => {
         const box = element.getBoundingClientRect()
         if (box.width === 0 || box.height === 0) return
-        if (best === null || box.right > best.right) best = box
+        if (best === null || box.right > best.box.right) best = { box, element }
       }
       for (const child of flow.querySelectorAll('[data-chat-node-key]')) consider(child)
       if (best !== null) return best
@@ -1911,10 +1989,129 @@ function escapeHtml(text) {
       let ancestor = flow.parentElement
       while (ancestor !== null) {
         const box = ancestor.getBoundingClientRect()
-        if (box.width > 0 && box.height > 0) return box
+        if (box.width > 0 && box.height > 0) return { box, element: ancestor }
         ancestor = ancestor.parentElement
       }
       return null
+    }
+
+    /**
+     * Just the column rectangle.
+     * @param flow - the chat flow anchor.
+     * @returns the rectangle, or null.
+     */
+    function flowColumn(flow) {
+      const found = flowColumnBox(flow)
+      return found === null ? null : found.box
+    }
+
+    /**
+     * The element whose width defines the text column, for observing.
+     * @param flow - the chat flow anchor.
+     * @returns the element, or null.
+     */
+    function columnElement(flow) {
+      const found = flowColumnBox(flow)
+      return found === null ? null : found.element
+    }
+
+    /**
+     * The editor a gutter bubble opens.
+     *
+     * It edits the annotation's COMMENT only — the passage and the ordinal are
+     * not text the user chose, they are what the annotation points at. Saving
+     * rewrites the comment in place, so the chip, its id, and its position in the
+     * draft all survive; deleting removes the annotation the same way the chip's ×
+     * does.
+     * @param props - the annotation, the anchor point, labels, and the handlers.
+     */
+    function BubblePanel(props) {
+      const { annotation, anchor, labels, onJump, onSave, onDelete, onClose } = props
+      const [text, setText] = React.useState(annotation.comment)
+      const ref = React.useRef(null)
+      const areaRef = React.useRef(null)
+      const [size, setSize] = React.useState({ width: 0, height: 0 })
+
+      React.useLayoutEffect(() => {
+        const element = ref.current
+        if (element === null) return
+        const box = element.getBoundingClientRect()
+        setSize({ width: box.width, height: box.height })
+        areaRef.current?.focus()
+      }, [])
+
+      // Clicking anywhere else closes it; the panel stops the event itself.
+      React.useEffect(() => {
+        const onDown = (event) => {
+          if (ref.current !== null && event.target instanceof Node
+            && ref.current.contains(event.target)) return
+          onClose()
+        }
+        const onKey = (event) => {
+          if (event.key === 'Escape') onClose()
+        }
+        document.addEventListener('mousedown', onDown, true)
+        document.addEventListener('keydown', onKey, true)
+        return () => {
+          document.removeEventListener('mousedown', onDown, true)
+          document.removeEventListener('keydown', onKey, true)
+        }
+      }, [onClose])
+
+      const width = size.width || 320
+      const height = size.height || 200
+      const left = Math.min(
+        Math.max(VIEWPORT_MARGIN, anchor.left),
+        Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN),
+      )
+      const top = Math.min(
+        Math.max(VIEWPORT_MARGIN, anchor.top),
+        Math.max(VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN),
+      )
+      return h('div', {
+        ref,
+        className: 'qc-bubble-panel',
+        role: 'dialog',
+        'aria-label': labels.edit,
+        style: {
+          left: `${left}px`,
+          top: `${top}px`,
+          visibility: size.width === 0 ? 'hidden' : 'visible',
+        },
+      },
+      h('div', { className: 'qc-bp-quote' }, previewOf(annotation)),
+      h('textarea', {
+        ref: areaRef,
+        value: text,
+        placeholder: labels.placeholder,
+        spellCheck: false,
+        onChange: (event) => setText(event.target.value),
+        onKeyDown: (event) => {
+          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault()
+            onSave(text)
+          }
+        },
+      }),
+      h('div', { className: 'qc-bp-actions' },
+        h('button', {
+          type: 'button',
+          className: 'qc-bp-delete',
+          onClick: onDelete,
+        }, labels.delete),
+        // Jumping lives here now that a bubble click opens this panel.
+        h('button', {
+          type: 'button',
+          className: 'qc-bp-jump',
+          onClick: onJump,
+        }, labels.jump),
+        h('button', {
+          type: 'button',
+          className: 'qc-bp-save',
+          onClick: () => onSave(text),
+        }, labels.save),
+      ),
+      )
     }
 
     /**
@@ -1926,8 +2123,9 @@ function escapeHtml(text) {
      * @param props - the annotations, labels, and the jump handler.
      */
     function MarkerLayer(props) {
-      const { annotations, occurrences, labels, onJump } = props
+      const { annotations, occurrences, labels, onJump, onUpdate, onRemove } = props
       const [positions, setPositions] = React.useState([])
+      const [editing, setEditing] = React.useState(null)
 
       React.useEffect(() => {
         if (typeof document === 'undefined') return undefined
@@ -1951,8 +2149,11 @@ function escapeHtml(text) {
             setPositions((current) => (current.length === 0 ? current : []))
             return
           }
-          // Dock the bubble just past the text column, inside the viewport.
-          const gutter = Math.min(column.right + 8, window.innerWidth - 28)
+          // Hug the text column: the bubble's tail touches the column's right
+          // edge, so widening or narrowing the transcript carries the bubble with
+          // it. `column` is re-measured on every pass, and a ResizeObserver below
+          // triggers a pass when the column itself changes size.
+          const gutter = Math.min(column.right + 4, window.innerWidth - 28)
           // The chip's ordinal is the authoritative number: it is the position in
           // the current draft, so a bubble reading anything else would disagree
           // with the chip the user is looking at. It is read off the chips
@@ -2016,12 +2217,31 @@ function escapeHtml(text) {
         const observer = new MutationObserver(debounced)
         const flow = findFlow()
         if (flow !== null) observer.observe(flow, { childList: true, subtree: true, characterData: true })
+        // Follow the text column's width. Resizing the transcript (dragging a
+        // pane edge, toggling a side panel) does not fire `resize` on the window
+        // and does not mutate the flow's children, so without this the bubble
+        // would keep its old x while the prose moved underneath it.
+        let columnObserver = null
+        const watchColumn = () => {
+          const flow2 = findFlow()
+          const target = flow2 === null ? null : columnElement(flow2)
+          if (target === null) return
+          if (columnObserver !== null
+            && columnObserver.__qcTarget === target) return
+          if (columnObserver !== null) columnObserver.disconnect()
+          if (typeof ResizeObserver !== 'function') return
+          columnObserver = new ResizeObserver(debounced)
+          columnObserver.__qcTarget = target
+          columnObserver.observe(target)
+        }
+        watchColumn()
         return () => {
           if (frame !== 0) cancelAnimationFrame(frame)
           clearTimeout(timer)
           document.removeEventListener('scroll', schedule, true)
           window.removeEventListener('resize', schedule)
           observer.disconnect()
+          if (columnObserver !== null) columnObserver.disconnect()
         }
       }, [annotations, occurrences, labels])
 
@@ -2035,11 +2255,36 @@ function escapeHtml(text) {
             style: { left: `${position.left}px`, top: `${position.top}px` },
             title: position.title,
             'aria-label': position.title,
+            // A click on the bubble opens the editor, as asked: the bubble is the
+            // annotation's handle in the transcript, and the editor is where its
+            // comment is changed. Jumping moved into that panel (and stays on the
+            // chip), so the two gestures do not fight over one click.
             onClick: () => {
-              const annotation = annotations.find((item) => item.id === position.id)
-              if (annotation !== undefined) onJump(annotation)
+              setEditing({ id: position.id, left: position.left + 22, top: position.top })
             },
           }, String(position.number))),
+          editing === null ? null : (() => {
+            const annotation = annotations.find((item) => item.id === editing.id)
+            if (annotation === undefined) return null
+            return h(BubblePanel, {
+              annotation,
+              anchor: editing,
+              labels,
+              onJump: () => {
+                setEditing(null)
+                onJump(annotation)
+              },
+              onSave: (comment) => {
+                onUpdate(annotation, comment)
+                setEditing(null)
+              },
+              onDelete: () => {
+                setEditing(null)
+                onRemove(annotation)
+              },
+              onClose: () => setEditing(null),
+            })
+          })(),
         ),
         document.body,
       )
@@ -2350,18 +2595,71 @@ function escapeHtml(text) {
         host.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
         return range
       }
-      // Scroll so the PASSAGE sits in the middle of the viewport, computed from the
-      // passage's own box — not from the row that contains it. `scrollIntoView` on
-      // the row cannot express this: it aligns the row's edges, and for a tall row
-      // its centre is nowhere near the quoted line, which is why the view jumped to
-      // the bottom instead of showing the passage.
-      const box = scroller.getBoundingClientRect()
+      // Scroll so the PASSAGE sits in the middle of the VISIBLE transcript area —
+      // the window minus the app's top bar and the composer at the bottom — not
+      // the middle of the viewport. The composer grows as the user types or adds
+      // attachments, so its top edge moves; measuring it each time keeps the
+      // passage centred in what is actually readable right now.
+      const area = visibleChatArea(scroller)
       const target = scroller.scrollTop
-        + (rect.top - box.top)
-        - ((box.height - rect.height) / 2)
+        + (rect.top - area.top)
+        - ((area.height - rect.height) / 2)
       const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
       scroller.scrollTop = Math.min(Math.max(0, target), max)
       return range
+    }
+
+    /**
+     * The part of the scroller that is actually readable.
+     *
+     * Bounded above by the app's top bar and below by the composer, which is
+     * height-fluid: it grows with multi-line input and with attachments. The
+     * union of both is derived from the scroller's own box intersected with the
+     * viewport, then narrowed by whatever chrome sits over it. The chrome is found
+     * by looking for the composer's own dock, falling back to a sane inset.
+     * @param scroller - the transcript's scroll container.
+     * @returns the visible rectangle in viewport coordinates.
+     */
+    function visibleChatArea(scroller) {
+      const box = scroller.getBoundingClientRect()
+      let top = Math.max(0, box.top)
+      let bottom = Math.min(window.innerHeight, box.bottom)
+      // Anything docked over the bottom of the transcript (the composer, an
+      // attachment strip) clips what the user can see. Take the highest such
+      // element that actually overlaps the scroller.
+      const composer = findComposerDock()
+      if (composer !== null) {
+        const dock = composer.getBoundingClientRect()
+        if (dock.height > 0 && dock.top > top && dock.top < bottom) bottom = dock.top
+      }
+      if (bottom - top < 120) {
+        // The dock was not found or the arithmetic collapsed; fall back to the
+        // scroller's own box so a jump still centres somewhere sensible.
+        top = Math.max(0, box.top)
+        bottom = Math.min(window.innerHeight, box.bottom)
+      }
+      return { top, height: Math.max(1, bottom - top) }
+    }
+
+    /**
+     * The composer's dock, which bounds the transcript from below.
+     * @returns the element, or null when it is not in the DOM.
+     */
+    function findComposerDock() {
+      if (typeof document === 'undefined') return null
+      const candidates = [
+        '[data-slot="conversation.composer.dock"]',
+        '[data-slot="conversation.input.dock"]',
+        '[data-composer-root]',
+      ]
+      for (const selector of candidates) {
+        for (const element of document.querySelectorAll(selector)) {
+          if (element.closest('[data-sidebar-right-tab]') !== null) continue
+          const box = element.getBoundingClientRect()
+          if (box.width > 0 && box.height > 0) return element
+        }
+      }
+      return null
     }
 
     // #endregion
@@ -2716,6 +3014,10 @@ function escapeHtml(text) {
           limit: t('card.limit'),
           jump: t('marker.jump'),
           tableAdd: t('table.add'),
+          edit: t('bubble.edit'),
+          placeholder: t('bubble.placeholder'),
+          save: t('bubble.save'),
+          delete: t('bubble.delete'),
         }), [t])
 
         // Dismissal: a press anywhere outside the open surface closes it.
@@ -2956,6 +3258,27 @@ function escapeHtml(text) {
           removeAnnotation(sessionId, annotation.id)
         }, [draft, inputActions, sessionId])
 
+        /**
+         * Rewrite one annotation's comment from the bubble editor.
+         *
+         * The draft is untouched: the chip already stands for this annotation, and
+         * the comment reaches the model through the codec at submit time. Only the
+         * stored comment changes, so the chip keeps its place and its number.
+         */
+        const onUpdate = React.useCallback((annotation, comment) => {
+          if (sessionId === undefined) return
+          // Keep the codec's payload in step with the store, or the model would
+          // receive the previous comment while the chip shows the new one.
+          const payload = chipPayloads.get(annotation.id)
+          if (payload !== undefined) {
+            chipPayloads.set(annotation.id, {
+              ...payload,
+              comment: typeof comment === 'string' ? comment.trim() : '',
+            })
+          }
+          updateAnnotation(sessionId, annotation.id, comment)
+        }, [sessionId])
+
         const onAsk = React.useCallback((source) => {
           const opener = ctx.get('sidebarRight')
           if (typeof opener?.openTab !== 'function') return
@@ -2997,7 +3320,7 @@ function escapeHtml(text) {
               onCancel: () => setOverlay(null),
             }),
           h(ChipCards, { annotations, occurrences, labels, onJump, onRemove }),
-          h(MarkerLayer, { annotations, occurrences, labels, onJump }),
+          h(MarkerLayer, { annotations, occurrences, labels, onJump, onUpdate, onRemove }),
           h(TableAddButton, { label: labels.tableAdd, onAdd: annotateTable }),
           notice === '' ? null : h('div', { className: 'qc-notice' }, notice),
         )
