@@ -82,6 +82,28 @@ check('the diff compares row identity, not coordinates',
     && /a\.row !== b\.row/.test(source),
   'the diff compares stale coordinates')
 
+// ── 6. The layer must not crash the slot entry ────────────────────────────
+// A const referenced above its declaration throws at runtime only on the path
+// that reaches it. That is how a resize listener registered before its
+// declaration killed conversation.input.dock and took the selection toolbar
+// with it: every syntax check passed.
+const markerSource = /function MarkerLayer\(props\) \{([\s\S]*?)\n    \}\n/.exec(source)?.[1] ?? ''
+check('every resize listener is registered after its handler is declared',
+  (() => {
+    const declaredAt = markerSource.indexOf('const onWindowResize =')
+    const usedAt = markerSource.indexOf("addEventListener('resize', onWindowResize)")
+    return declaredAt >= 0 && usedAt > declaredAt
+  })(),
+  'a listener references a const before it initialises, which throws on mount')
+check('the slot entry cannot crash on a missing const',
+  !/\n\s+window\.addEventListener\('resize', onWindowResize\)\n\s+\/\*[\s\S]{0,400}?const onWindowResize/.test(markerSource),
+  'a resize registration precedes its declaration in source order')
+check('the toolbar is not unmounted by a render-time DOM mutation',
+  !/getComputedStyle\(row\)/.test(
+    /\(positions\.length === 0[\s\S]*?return h\(React\.Fragment/.exec(markerSource)?.[0] ?? '')
+    && /React\.useEffect\(\(\) => \{[\s\S]{0,400}?row\.dataset\.qcHost/.test(source),
+  'the render pass mutates the DOM, which drops the live selection')
+
 let failed = 0
 for (const item of cases) {
   if (!item.ok) failed += 1

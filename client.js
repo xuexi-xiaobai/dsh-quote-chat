@@ -2401,14 +2401,12 @@ function escapeHtml(text) {
     function MarkerLayer(props) {
       const { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove } = props
       const [positions, setPositions] = React.useState([])
-      const [host, setHost] = React.useState(null)
       const [editing, setEditing] = React.useState(null)
 
       React.useEffect(() => {
         if (typeof document === 'undefined') return undefined
         let frame = 0
         let timer = 0
-        let settleTimer = 0
         /**
          * Reusable measurement state.
          *
@@ -2423,9 +2421,6 @@ function escapeHtml(text) {
          * horizontal offset is recomputed while the drag is in flight. Once it
          * settles, one full pass runs to correct anything that moved.
          */
-        let cachedHost = null
-        /** Whether `cachedHost` is still known to be the right scroll container. */
-        let hostResolved = false
         /** The last fully measured bubbles, before the x offset is applied. */
         let measured = []
         const measure = () => {
@@ -2435,35 +2430,6 @@ function escapeHtml(text) {
             measured = []
             setPositions((current) => (current.length === 0 ? current : []))
             return
-          }
-          // The bubble's offset parent: the element that scrolls the transcript.
-          // Without it there is no coordinate space to place bubbles in, so this
-          // is also the mount check.
-          // Re-validated every pass: opening or closing the right Sidebar can remount
-          // the transcript, and a cached host that has left the document would
-          // silently place every bubble in a dead coordinate space.
-          if (cachedHost !== null && !cachedHost.isConnected) {
-            cachedHost = null
-            hostResolved = false
-            measured = []
-          }
-          const scroller = cachedHost ?? containerFor(flow)
-          if (scroller === null) {
-            measured = []
-            setPositions((current) => (current.length === 0 ? current : []))
-            return
-          }
-          if (!hostResolved) {
-            cachedHost = scroller
-            hostResolved = true
-            setHost((current) => (current === scroller ? current : scroller))
-            // A positioned offset parent is required for absolute children; the
-            // container is usually `position:static`, so mark it. `relative` keeps
-            // its box and its scrolling behaviour. Done once, not per frame: it
-            // triggers a style recalc.
-            if (getComputedStyle(scroller).position === 'static') {
-              scroller.style.position = 'relative'
-            }
           }
           // The chip's ordinal is the authoritative number: it is the chip's
           // position in the current draft, so a bubble reading anything else would
@@ -2534,35 +2500,13 @@ function escapeHtml(text) {
          *   the stale `top` values and the bubbles would visibly float. Those go
          *   through the full pass.
          */
-        let lastWidth = -1
-        let lastHeight = -1
-        const onColumnResize = (entries) => {
-          let widthOnly = false
-          for (const entry of entries) {
-            const box = entry.contentRect
-            const width = Math.round(box.width)
-            const height = Math.round(box.height)
-            const widthChanged = width !== lastWidth
-            const heightChanged = height !== lastHeight
-            lastWidth = width
-            lastHeight = height
-            if (widthChanged && !heightChanged) widthOnly = true
-            else if (heightChanged) {
-              // A height change means the text reflowed: re-measure vertically.
-              widthOnly = false
-              break
-            }
-          }
-          // A resize never moves a bubble: each one is mounted inside its row, so
-          // layout keeps it on the passage. The pass only refreshes the set.
-          schedule()
-        }
-        const debounced = () => {
-          clearTimeout(timer)
-          timer = setTimeout(schedule, 80)
-        }
+        /**
+         * A resize needs no geometry work any more: each bubble lives inside its
+         * row, so layout keeps it on the passage through a pane drag, a zoom or a
+         * reflow. The pass only refreshes which bubbles should exist.
+         */
+        const onColumnResize = () => { schedule() }
         schedule()
-        window.addEventListener('resize', onWindowResize)
         const observer = new MutationObserver(debounced)
         const flow = findFlow()
         // `childList` only, and NOT `characterData`. The virtualiser mounting or
@@ -2616,7 +2560,6 @@ function escapeHtml(text) {
         return () => {
           if (frame !== 0) cancelAnimationFrame(frame)
           clearTimeout(timer)
-          clearTimeout(settleTimer)
           window.removeEventListener('resize', onWindowResize)
           if (window.visualViewport !== undefined && window.visualViewport !== null) {
             window.visualViewport.removeEventListener('resize', onWindowResize)
@@ -2626,8 +2569,31 @@ function escapeHtml(text) {
         }
       }, [annotations, occurrences, labels])
 
+      /**
+       * Give every hosting row a positioned containing block.
+       *
+       * This runs in an effect rather than during render: writing to the DOM while
+       * React renders is what invalidated the live selection (the browser drops a
+       * selection whose nodes were mutated), which in turn closed the toolbar the
+       * moment a bubble appeared.
+       */
+      React.useEffect(() => {
+        if (typeof document === 'undefined') return
+        for (const position of positions) {
+          const row = position.row
+          if (row === undefined || !row.isConnected) continue
+          if (row.dataset.qcHost === '1') continue
+          if (getComputedStyle(row).position === 'static') row.style.position = 'relative'
+          row.dataset.qcHost = '1'
+        }
+      }, [positions])
+
 
       if (typeof document === 'undefined') return null
+      // Nothing to show: no annotations, nothing to edit. Returning null here keeps
+      // this component out of the tree entirely, which is what it did before the
+      // bubble was re-anchored into the rows.
+      if (positions.length === 0 && editing === null) return null
       // Render each bubble INTO the row that contains its passage.
       //
       // This is the whole point: a bubble anchored inside the row inherits the
@@ -2639,17 +2605,9 @@ function escapeHtml(text) {
       //
       // The horizontal offset is CSS (right: 4px), so it is layout's job too.
       const nodes = []
-      const hosting = new Set()
       for (const position of positions) {
         const row = position.row
         if (row === undefined || !row.isConnected) continue
-        // An absolutely positioned child needs a positioned ancestor. Marking the
-        // row is what turns it into the bubble's containing block, so the bubble
-        // moves with the row instead of with the viewport.
-        if (!hosting.has(row)) {
-          hosting.add(row)
-          if (getComputedStyle(row).position === 'static') row.style.position = 'relative'
-        }
         nodes.push(createPortal(h('button', {
           key: position.id,
           type: 'button',
