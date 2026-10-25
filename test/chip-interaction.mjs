@@ -56,6 +56,26 @@ check('the x is round like the pill',
   /\.qc-chip-remove\{[\s\S]{0,400}border-radius:999px/.test(css),
   'the x does not share the pill radius')
 
+// The cross is drawn, not typed. A text multiplication sign carries the font's
+// baseline and side bearings, so it sat high and looked undersized no matter how
+// it was nudged; the SVG is centred by construction.
+check('the cross is an svg, not a text character',
+  /className: 'qc-chip-remove',[\s\S]{0,800}h\('svg'/.test(source)
+    && !/\}, '×'\)/.test(source),
+  'the cross is still rendered as a text character')
+check('the cross strokes meet at the exact centre',
+  /viewBox: '0 0 10 10'/.test(source)
+    && /M2\.6 2\.6 L7\.4 7\.4 M7\.4 2\.6 L2\.6 7\.4/.test(source),
+  'the cross path is not symmetric about (5,5)')
+check('the cross is drawn with round strokes',
+  /\.qc-chip-remove svg path\{[^}]*stroke:#fff[^}]*stroke-linecap:round/.test(css),
+  'the cross strokes are not round white')
+check('the cross icon is at least 10px',
+  (() => {
+    const size = /\.qc-chip-remove svg\{[^}]*width:(\d+)px/.exec(css)
+    return size !== null && Number(size[1]) >= 10
+  })(), 'the cross icon is too small')
+
 // ── 4. Hover survives the trip to the × ────────────────────────────────────
 check('hover keeps the x reachable',
   /target\.closest\('\.qc-chip-remove'\) !== null/.test(source),

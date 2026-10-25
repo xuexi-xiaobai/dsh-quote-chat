@@ -293,19 +293,26 @@ window.__ModuleLoader__.load({
 
 /* ── The hover removal control ───────────────────────────────────────────────
 
-   The red × from the reference: it pops out to the LEFT of the chip on hover and
-   is the quick way to drop the annotation. It is a fixed overlay, not a chip
-   child, because the chip's contents belong to the editor's React portal.
+   The red × sits in the chip's left slot, replacing the kind glyph on hover.
 
-   Measured from the reference: an 18px circle, pure red, white × glyph, a thin
-   white ring so it reads cleanly against the composer background. */
+   Shaped to belong to the pill: fully rounded like the chip, sized to the glyph
+   box it covers, and centred on the same point (the inline style positions it by
+   its centre).
+
+   The cross is drawn as an SVG, not typed as a character. A text multiplication
+   sign inherits the font's baseline and side bearings, which made it sit high and
+   look undersized no matter how it was nudged; two strokes give exact geometry
+   and scale with the button. */
 .qc-chip-remove{position:fixed;z-index:2147482100;
   appearance:none;box-sizing:border-box;margin:0;padding:0;border:0;
-  border-radius:999px;background:#e8291c;color:#fff;
-  font-size:9.5px;font-weight:700;line-height:1;
+  border-radius:999px;background:#e8291c;
   cursor:pointer;display:flex;align-items:center;justify-content:center;
   transform:translate(-50%,-50%);box-shadow:0 0 0 1.5px #f2f2f2;
   transition:background .12s ease,transform .12s ease}
+.qc-chip-remove svg{display:block;width:10px;height:10px;flex:none;
+  pointer-events:none}
+.qc-chip-remove svg path{stroke:#fff;stroke-width:2.1;stroke-linecap:round;
+  fill:none;vector-effect:non-scaling-stroke}
 .qc-chip-remove:hover{background:#c81f14;transform:translate(-50%,-50%) scale(1.1)}
 
 /* ── The hover preview card ──────────────────────────────────────────────────
@@ -1639,7 +1646,12 @@ function ChipCards(props) {
           setHover(null)
           onRemove(hover.annotation)
         },
-      }, '×'),
+      },
+      // Two diagonal strokes on a 10×10 grid, meeting at the exact centre (5,5).
+      // Drawn rather than typed so it is centred by construction.
+      h('svg', { viewBox: '0 0 10 10', 'aria-hidden': 'true', focusable: 'false' },
+        h('path', { d: 'M2.6 2.6 L7.4 7.4 M7.4 2.6 L2.6 7.4' }),
+      )),
       h(AnnotationCard, {
         annotation: hover.annotation,
         anchor: hover.anchor,
