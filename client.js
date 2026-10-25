@@ -4261,14 +4261,35 @@ function escapeHtml(text) {
               canAnnotate,
               canAsk,
               labels,
-              onAnnotate: () => setOverlay({ kind: 'compose', source: overlay.source }),
+              onAnnotate: () => {
+                // Light the selection immediately: the popover is about to cover part
+                // of the transcript, so the highlight is what tells the user which
+                // passage the comment belongs to. It stays lit for as long as the
+                // popover is open.
+                const source = overlay.source
+                const flow = findFlow()
+                if (flow !== null && source.anchor !== undefined) {
+                  const range = resolveAnchor(flow, source.anchor)
+                  if (range !== null) {
+                    holdRange(range, () => {
+                      const live = findFlow()
+                      return live === null ? null : resolveAnchor(live, source.anchor)
+                    })
+                  }
+                }
+                setOverlay({ kind: 'compose', source })
+              },
               onAsk: () => onAsk(overlay.source),
             })
             : h(ComposerPopover, {
               source: overlay.source,
               labels,
               onConfirm: (comment) => commit(overlay.source, comment),
-              onCancel: () => setOverlay(null),
+              onCancel: () => {
+                // Abandoning the comment must not leave the passage looking annotated.
+                clearFlashRange()
+                setOverlay(null)
+              },
             }),
           h(ChipCards, { annotations, occurrences, labels, onJump, onRemove }),
           h(MarkerLayer, { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),

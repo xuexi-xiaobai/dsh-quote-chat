@@ -332,6 +332,26 @@ const scope = buildScope(document)
     'the panel label is reachable through the text search')
 }
 
+// ── 5. Opening the comment box lights the passage immediately ────────────
+// The popover partially covers the transcript, so without a highlight the user cannot
+// tell which passage the comment belongs to. The light must come ON when the box opens,
+// not only after saving.
+{
+  const onAnnotateBody = /onAnnotate: \(\) => \{([\s\S]*?)\n              \},/.exec(source)?.[1] ?? ''
+  check('opening the comment box lights the selection at once',
+    /holdRange\(range/.test(onAnnotateBody),
+    'the passage stays unlit while the user writes the comment')
+  check('the lit range is the selection being annotated',
+    /resolveAnchor\(flow, source\.anchor\)/.test(onAnnotateBody),
+    'the highlight is not resolved from the annotated anchor')
+  check('the highlight survives re-render while typing',
+    /resolveAnchor\(live, source\.anchor\)/.test(onAnnotateBody),
+    'the highlight is dropped when the transcript re-renders')
+  check('cancelling clears the highlight',
+    /onCancel: \(\) => \{[\s\S]{0,120}clearFlashRange\(\)/.test(source),
+    'an abandoned comment leaves the passage looking annotated')
+}
+
 // ── Report ──────────────────────────────────────────────────────────────
 let failed = 0
 for (const item of cases) {
