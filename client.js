@@ -229,7 +229,7 @@ window.__ModuleLoader__.load({
 .qc-popup button+button{box-shadow:inset 1px 0 0 var(--dsw-alias-border-l1)}
 .qc-popup svg{flex:none;opacity:.8}
 
-.qc-compose{width:min(420px,92vw);box-sizing:border-box;
+.qc-compose{position:fixed;z-index:60;width:min(420px,92vw);box-sizing:border-box;
   border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:12px;
   background:var(--dsw-alias-bg-overlay);
   box-shadow:0 16px 40px rgba(0,0,0,.32),0 2px 8px rgba(0,0,0,.18);
@@ -1617,20 +1617,17 @@ window.__ModuleLoader__.load({
         setSize({ width: rect.width, height: rect.height })
       }, [])
 
-      // Anchor inside the transcript so the container clips this popup against the chat
-      // chrome (composer, top bar) and so it rides with the passage on scroll. Without a
-      // transcript to attach to it falls back to viewport placement.
-      const flow = findFlow()
-      const scroller = flow === null ? null : containerFor(flow)
-      const anchored = scroller !== null
-      let position = placeNear(anchor, { width: size.width || 210, height: size.height || 34 })
-      if (anchored) {
-        const box = scroller.getBoundingClientRect()
-        position = {
-          left: Math.max(8, anchor.left - box.left + scroller.scrollLeft),
-          top: Math.max(8, anchor.top - box.top + scroller.scrollTop - (size.height || 34) - 6),
-        }
-      }
+      // Viewport placement on <body>.
+      //
+      // This toolbar appears the instant a selection is made, so it must be visible
+      // wherever the selection is. Mounting it inside the transcript meant the scroll
+      // container clipped it on every side: a selection near an edge had its popup cut
+      // away and the toolbar simply never showed. Being outside that box is what makes
+      // it reliable.
+      //
+      // It stays off the composer by LAYERING instead: its z-index (60) is well below
+      // the app's own chrome, which sits at the top of the stack by design.
+      const position = placeNear(anchor, { width: size.width || 210, height: size.height || 34 })
       return createPortal(
         h('div', {
           ref,
@@ -1639,7 +1636,6 @@ window.__ModuleLoader__.load({
           style: {
             left: `${position.left}px`,
             top: `${position.top}px`,
-            position: anchored ? 'absolute' : 'fixed',
             visibility: size.width === 0 ? 'hidden' : 'visible',
           },
           // The selection must survive the click that chooses an action.
@@ -1650,7 +1646,7 @@ window.__ModuleLoader__.load({
         h('button', { type: 'button', disabled: !canAsk, onClick: onAsk },
           h(IconSideChat, null), labels.askInSide),
         ),
-        anchored ? scroller : document.body,
+        document.body,
       )
     }
 
@@ -1683,34 +1679,13 @@ window.__ModuleLoader__.load({
       // therefore outside any passage highlight.
       const width = size.width || 420
       const height = size.height || 170
-      // Mount INSIDE the transcript's scroll container, not on <body>.
+      // Viewport placement on <body>, clamped to stay on screen.
       //
-      // Two things follow from that, and both were reported: the popover must ride
-      // with the passage instead of tracking the viewport, and it must never paint over
-      // the composer or the top bar. A body-mounted, very-high z-index overlay can do
-      // neither - the chat chrome is outside the transcript, so nothing can clip an
-      // overlay that lives beside it. Inside the scroll container the container's own
-      // overflow clips it, exactly like the gutter bubbles.
-      const flow = findFlow()
-      const scroller = flow === null ? null : containerFor(flow)
-      const block = source.block ?? null
-      const anchored = scroller !== null && block !== null && block.isConnected
-      let position = placeNear(source.rect, { width, height })
-      if (anchored) {
-        // The block's box in scroll-container coordinates, so a scroll needs no update:
-        // the browser moves the popover together with the content.
-        const box = scroller.getBoundingClientRect()
-        const target = block.getBoundingClientRect()
-        const scrollTop = scroller.scrollTop
-        const scrollLeft = scroller.scrollLeft
-        const topInScroller = target.top - box.top + scrollTop
-        const leftInScroller = target.right - box.left + scrollLeft
-        position = {
-          // Above the passage, clear of the gutter bubble, and never off the left edge.
-          top: Math.max(8, topInScroller - height - BUBBLE_CLEARANCE),
-          left: Math.max(8, leftInScroller - width),
-        }
-      }
+      // It must be visible wherever the passage is. Mounting inside the transcript meant
+      // the scroll container clipped it on every side, so a selection near an edge had
+      // its popover cut away. Layering, not clipping, is what keeps it clear of the
+      // composer: its z-index (60) sits well below the app's own chrome.
+      const position = placeNear(source.rect, { width, height })
 
       return createPortal(
         h('div', {
@@ -1721,7 +1696,6 @@ window.__ModuleLoader__.load({
           style: {
             left: `${position.left}px`,
             top: `${position.top}px`,
-            position: anchored ? 'absolute' : 'fixed',
           },
           onMouseDown: (event) => event.stopPropagation(),
           onKeyDown: (event) => {
@@ -1769,9 +1743,7 @@ window.__ModuleLoader__.load({
           }, h(IconCheck, null), h('span', { className: 'qc-compose-confirm-text' }, labels.confirm)),
         ),
         ),
-        // Inside the scroll container so its overflow clips this against the chat chrome;
-        // on <body> when there is no transcript to attach to.
-        anchored ? scroller : document.body,
+        document.body,
       )
     }
 

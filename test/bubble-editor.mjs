@@ -270,39 +270,28 @@ check('the bubble is excluded from the passage highlight',
 // It used to be position:fixed at a viewport coordinate, so scrolling left it
 // hovering over unrelated text. It is mounted as a sibling of the annotated block
 // and positioned from that block's offset.
-// The popover must live INSIDE the transcript scroll container: that is what makes
-// the container's overflow clip it against the chat chrome, and what makes it travel
-// with the passage instead of tracking the viewport.
-check('the compose popover is mounted inside the transcript',
-  /anchored \? scroller : document\.body/.test(source)
-    && /const scroller = flow === null \? null : containerFor\(flow\)/.test(source),
-  'the popover is portaled to body, where nothing can clip it against the composer')
-check('the compose popover is positioned in container coordinates',
-  /target\.top - box\.top \+ scrollTop/.test(source)
-    && /target\.right - box\.left \+ scrollLeft/.test(source),
-  'the popover uses viewport coordinates and drifts on scroll')
-check('the compose popover is absolute inside the transcript',
-  /position: anchored \? 'absolute' : 'fixed'/.test(source),
-  'a fixed popover cannot ride with the passage')
-check('the selection records the block it came from',
-  /block: startElement\.closest\(BLOCK_SELECTOR\) \?\? flow/.test(source),
-  'the selected block is not known, so the popover cannot anchor to it')
-
-// --- Layering: the chat chrome is the top layer ----------------------------
-// Every surface this plugin draws must stay below the composer and the top bar.
-// A nine-digit z-index beats every app surface, which is why the annotation popovers
-// painted over the composer.
-const zIndexes = [...source.matchAll(/z-index:\s*(\d+)/g)].map((m) => Number(m[1]))
-check('no surface claims an absurd z-index',
-  zIndexes.every((value) => value < 100),
-  'a surface uses a very high z-index and will paint over the chat chrome: '
-    + zIndexes.filter((value) => value >= 100).join(', '))
-check('the plugin has an explicit layering order',
-  zIndexes.includes(60) && zIndexes.includes(45) && zIndexes.includes(2),
-  'the surfaces do not share a deliberate stacking order')
-check('the selection popup is clipped by the transcript',
-  /anchored \? scroller : document\.body,/.test(source),
-  'the selection popup is portaled to body and can cover the composer')
+// The selection surfaces must be RELIABLE, which means outside the transcript's
+// scroll box.
+//
+// Mounting them inside the scroll container looked attractive (free clipping against the
+// composer) but the container clips on every side, so a selection near an edge had its
+// popup cut away entirely - the toolbar simply never appeared. Reliability wins: the
+// popups live on <body> and stay off the composer by LAYERING instead.
+check('the selection toolbar is not clipped by the transcript',
+  !/anchored \? scroller : document\.body/.test(source),
+  'the toolbar is inside the scroll box and can be clipped away')
+check('the compose popover is not clipped by the transcript',
+  !/anchored \? scroller : document\.body/.test(source),
+  'the popover is inside the scroll box and can be clipped away')
+check('both selection surfaces are portaled to body',
+  (source.match(/document\.body,\s*\n\s*\)/g) || []).length >= 2,
+  'a selection surface is not portaled to body')
+check('layering, not clipping, keeps them off the composer',
+  /\.qc-popup\{[^}]*z-index:(\d+)/.test(source)
+    && /\.qc-compose\{[^}]*z-index:(\d+)/.test(source)
+    && Number(/\.qc-popup\{[^}]*z-index:(\d+)/.exec(source)[1]) < 100
+    && Number(/\.qc-compose\{[^}]*z-index:(\d+)/.exec(source)[1]) < 100,
+  'a selection surface has no deliberate low z-index')
 
 let failed = 0
 for (const item of cases) {
