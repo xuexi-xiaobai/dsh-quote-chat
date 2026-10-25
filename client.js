@@ -2364,6 +2364,7 @@ function escapeHtml(text) {
         const a = left[index]
         const b = right[index]
         if (a.id !== b.id || a.row !== b.row || a.number !== b.number) return false
+        if (a.offset !== b.offset) return false
       }
       return true
     }
@@ -2382,12 +2383,19 @@ function escapeHtml(text) {
     function rowOf(range, flow) {
       const element = elementOf(range.startContainer)
       if (element === null) return null
-      // The row is the nearest element carrying a chat node key; a passage with no
-      // wrapper (an empty conversation, a synthetic row) falls back to the flow's
-      // first boxed ancestor, which still gives it a stable home.
+      // The row is the nearest element carrying a chat node key. That row is a real
+      // box, so an absolutely positioned child anchors to it.
       const row = element.closest('[data-chat-node-key]')
       if (row !== null) return row
-      return flow
+      // No row wrapper. The flow anchor itself is display:contents and has NO box,
+      // so mounting into it would place the bubble in a zero-sized container and it
+      // would never be visible. Climb to the nearest ancestor that actually paints.
+      let ancestor = element
+      while (ancestor !== null) {
+        if (ancestor !== flow && ancestor.getClientRects().length > 0) return ancestor
+        ancestor = ancestor.parentElement
+      }
+      return null
     }
     /**
      * The right-gutter bubbles that mark where each annotation came from.
@@ -2449,9 +2457,22 @@ function escapeHtml(text) {
             // scrolling, zoom and reflow. No coordinates are computed here at all.
             const row = rowOf(range, flow)
             if (row === null) continue
+            // Vertical offset WITHIN the row, computed once here.
+            //
+            // The row can hold several paragraphs, so top:0 would put the bubble by
+            // the first line of the whole row rather than by the annotated passage.
+            // This offset is a distance inside the row's own box, so it survives
+            // scrolling, zoom and reflow untouched - unlike a viewport coordinate,
+            // it does not go stale when the row moves.
+            const rowBox = row.getBoundingClientRect()
+            const rangeBox = range.getBoundingClientRect()
+            const offset = rowBox.height > 0
+              ? Math.max(0, Math.round(rangeBox.top - rowBox.top))
+              : 0
             next.push({
               id: annotation.id,
               row,
+              offset,
               // The base class is already the blue bubble; only tables recolour.
               tone: annotation.kind === 'table' ? 'qc-marker-table' : '',
               number,
@@ -2624,6 +2645,8 @@ function escapeHtml(text) {
           type: 'button',
           className: 'qc-marker ' + position.tone
             + (editing !== null && editing.id === position.id ? ' qc-marker-active' : ''),
+          // A distance inside the row, so it tracks the passage without measuring.
+          style: { top: (position.offset || 0) + 'px' },
           title: position.title,
           'aria-label': position.title,
           onClick: () => {

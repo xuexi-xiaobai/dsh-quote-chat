@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Guard how the bubble is positioned.
  *
  * The bubble must be INDEPENDENT of zoom, pane drags and text reflow: it tracks
@@ -104,6 +104,20 @@ check('the toolbar is not unmounted by a render-time DOM mutation',
     && /React\.useEffect\(\(\) => \{[\s\S]{0,400}?row\.dataset\.qcHost/.test(source),
   'the render pass mutates the DOM, which drops the live selection')
 
+// --- The bubble must be visible and level with its passage -----------------
+check('the bubble never mounts into the boxless flow anchor',
+  /if \(!==?"? ?flow && ancestor\.getClientRects\(\)\.length > 0\)/.test(source)
+    || /ancestor !== flow && ancestor\.getClientRects\(\)\.length > 0/.test(source),
+  'the bubble can mount into a display:contents element and never be visible')
+check('the bubble carries a vertical offset inside its row',
+  /offset/.test(source) && /rangeBox\.top - rowBox\.top/.test(source),
+  'the bubble sits at the row top instead of at the annotated passage')
+check('the offset is a distance inside the row, not a viewport coordinate',
+  /rangeBox\.top - rowBox\.top/.test(source),
+  'the offset is computed against the viewport and will go stale')
+check('the offset participates in the identity diff',
+  /a\.offset !== b\.offset/.test(source),
+  'a changed offset would not repaint')
 let failed = 0
 for (const item of cases) {
   if (!item.ok) failed += 1
