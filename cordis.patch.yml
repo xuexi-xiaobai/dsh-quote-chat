@@ -1,0 +1,6 @@
+# Bundle patch: one Loader row. Its main entry is the Host half (a plain
+# Cordis plugin); the `dsh.client` declaration in package.json makes the Web
+# app load ./client.js as the browser half.
+- insert:
+    - id: dsh-quote-chat
+      name: dsh-quote-chat

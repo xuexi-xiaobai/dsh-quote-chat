@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Quote to Chat",
+    "description": "Select text in a model answer to add the passage to the current conversation, or to ask about it in a side chat."
+  }
+}
