@@ -168,8 +168,16 @@ window.__ModuleLoader__.load({
 
     // #region styles
 
-    /** Package-owned stylesheet, removed with the plugin fiber. */
-    const CSS = `
+    /**
+     * Package-owned stylesheet, removed with the plugin fiber.
+     *
+     * Deliberately NOT named `CSS`: that identifier shadows the browser's global
+     * CSS object, which is the one that owns `escape` and `highlights`, for the
+     * whole module scope. Called `CSS`, `CSS.highlights` read back `undefined`,
+     * so `canPaintHighlight()` returned false and the jump highlight never
+     * painted at all.
+     */
+    const STYLESHEET = `
 .qc-popup{position:fixed;z-index:2147483000;display:flex;align-items:stretch;gap:2px;padding:3px;
   border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-overlay);
   box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:12.5px;line-height:1.2;color:var(--dsw-alias-label-primary);
@@ -463,7 +471,7 @@ window.__ModuleLoader__.load({
         if (typeof document === 'undefined') return undefined
         const tag = document.createElement('style')
         tag.dataset.quoteChat = ''
-        tag.textContent = CSS
+        tag.textContent = STYLESHEET
         document.head.appendChild(tag)
         return () => { tag.remove() }
       }, 'quote-chat: stylesheet')
@@ -531,7 +539,10 @@ window.__ModuleLoader__.load({
      * @returns the escaped form.
      */
     function cssEscape(value) {
-      if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(value)
+      const registry = typeof window === 'undefined' ? undefined : window.CSS
+      if (typeof registry === 'object' && registry !== null && typeof registry.escape === 'function') {
+        return registry.escape(value)
+      }
       return value.replace(/["\\]/g, '\\$&')
     }
 
@@ -1949,6 +1960,14 @@ function escapeHtml(text) {
           const ordinals = chipOrdinals(occurrences)
           const next = []
           for (const annotation of annotations) {
+            // A bubble marks an annotation that is still in the draft. Deleting a
+            // chip with the keyboard is a legitimate way to drop an annotation —
+            // the framework just removes the occurrence and never calls back into
+            // the plugin — so the store keeps an entry with no chip. Drawing a
+            // bubble for it would leave a marker pointing at a passage the user
+            // has already un-annotated.
+            const number = ordinals.get(annotation.id)
+            if (number === undefined) continue
             const range = resolveAnchor(flow, annotation.anchor)
             if (range === null) continue
             // Vertical position comes from the TOP of the annotated passage, as
@@ -1962,9 +1981,6 @@ function escapeHtml(text) {
             // they come back. Compared against the viewport, not the flow box,
             // because the flow box is the box-less anchor.
             if (rect.bottom < 0 || rect.top > window.innerHeight) continue
-            // An annotation whose chip has left the draft has no number to show;
-            // the passage is still marked, from its stored number.
-            const number = ordinals.get(annotation.id) ?? annotation.number
             next.push({
               id: annotation.id,
               // Centre the bubble on the passage's first line.
@@ -2157,7 +2173,7 @@ function escapeHtml(text) {
     /**
      * The highlight registry name for the jump flash.
      *
-     * `CSS.highlights` binds a painted decoration to a live `Range`. That is the
+     * `window.CSS.highlights` binds a painted decoration to a live `Range`. That is the
      * whole reason it is used here instead of portal divs: the browser re-projects
      * the range onto the page on every scroll and reflow, so the glow cannot
      * drift away from the words it belongs to. An absolutely-positioned overlay
@@ -2169,14 +2185,18 @@ function escapeHtml(text) {
 
     /**
      * Whether this engine can paint range highlights.
-     * @returns true when `CSS.highlights` is available.
+     * @returns true when `window.CSS.highlights` is available.
      */
     function canPaintHighlight() {
-      return typeof CSS !== 'undefined'
-        && CSS !== null
-        && typeof CSS.highlights === 'object'
-        && CSS.highlights !== null
-        && typeof Highlight === 'function'
+      // Read the global off `window` rather than through the bare identifier: a
+      // module-scope binding of the same name would shadow it, and a shadowed
+      // global is exactly how the flash came to never paint.
+      const registry = typeof window === 'undefined' ? undefined : window.CSS
+      return typeof registry === 'object'
+        && registry !== null
+        && typeof registry.highlights === 'object'
+        && registry.highlights !== null
+        && typeof window.Highlight === 'function'
     }
 
     /**
@@ -2198,7 +2218,7 @@ function escapeHtml(text) {
       if (!canPaintHighlight()) return
       try {
         let highlight = new Highlight(range)
-        CSS.highlights.set(FLASH_HIGHLIGHT, highlight)
+        window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight)
         const deadline = Date.now() + ms
 
         /**
@@ -2212,17 +2232,17 @@ function escapeHtml(text) {
          * since a stale range is still better than no highlight.
          */
         const settle = () => {
-          if (CSS.highlights.get(FLASH_HIGHLIGHT) !== highlight) return
+          if (window.CSS.highlights.get(FLASH_HIGHLIGHT) !== highlight) return
           if (resolve !== null) {
             const live = resolve()
             if (live !== null) {
               highlight = new Highlight(live)
-              CSS.highlights.set(FLASH_HIGHLIGHT, highlight)
+              window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight)
             }
           }
           setTimeout(() => {
-            if (CSS.highlights.get(FLASH_HIGHLIGHT) === highlight) {
-              CSS.highlights.delete(FLASH_HIGHLIGHT)
+            if (window.CSS.highlights.get(FLASH_HIGHLIGHT) === highlight) {
+              window.CSS.highlights.delete(FLASH_HIGHLIGHT)
             }
           }, Math.max(0, deadline - Date.now()))
         }
@@ -2238,7 +2258,7 @@ function escapeHtml(text) {
      */
     function clearFlashRange() {
       if (!canPaintHighlight()) return
-      CSS.highlights.delete(FLASH_HIGHLIGHT)
+      window.CSS.highlights.delete(FLASH_HIGHLIGHT)
     }
 
     /**
@@ -2319,8 +2339,28 @@ function escapeHtml(text) {
      * @returns the same range.
      */
     function scrollToRange(range, flow) {
-      const host = elementOf(range.startContainer)?.closest('[data-chat-node-key]') ?? flow
-      host.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' })
+      const scroller = scrollContainerOf(flow)
+      const rect = range.getBoundingClientRect()
+      if (scroller === null) {
+        // No explicit scroller: let the browser pick, but ask for minimum movement
+        // rather than `center` — a row can be taller than the viewport, and
+        // centring such a row scrolls to its middle, which is not where the
+        // passage is.
+        const host = elementOf(range.startContainer)?.closest('[data-chat-node-key]') ?? flow
+        host.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
+        return range
+      }
+      // Scroll so the PASSAGE sits in the middle of the viewport, computed from the
+      // passage's own box — not from the row that contains it. `scrollIntoView` on
+      // the row cannot express this: it aligns the row's edges, and for a tall row
+      // its centre is nowhere near the quoted line, which is why the view jumped to
+      // the bottom instead of showing the passage.
+      const box = scroller.getBoundingClientRect()
+      const target = scroller.scrollTop
+        + (rect.top - box.top)
+        - ((box.height - rect.height) / 2)
+      const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+      scroller.scrollTop = Math.min(Math.max(0, target), max)
       return range
     }
 

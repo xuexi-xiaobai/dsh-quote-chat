@@ -59,7 +59,7 @@ check('no positioned flash overlay remains',
 
 // The stylesheet is a template literal. A backtick inside it ends the string
 // early and the whole bundle fails to parse — this bit twice, so it is a test now.
-const cssMatch = /const CSS = `([\s\S]*?)`\n/.exec(source)
+const cssMatch = /const (?:CSS|STYLESHEET) = `([\s\S]*?)`\n/.exec(source)
 check('CSS block is extractable', cssMatch !== null, 'could not find the CSS template literal')
 if (cssMatch !== null) {
   const css = cssMatch[1]

@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const source = await readFile(join(here, '..', 'client.js'), 'utf8')
-const css = /const CSS = `([\s\S]*?)`\n/.exec(source)?.[1] ?? ''
+const css = /const (?:CSS|STYLESHEET) = `([\s\S]*?)`\n/.exec(source)?.[1] ?? ''
 
 const cases = []
 const check = (name, ok, detail) => cases.push({ name, ok, detail })
@@ -55,10 +55,16 @@ check('the visibility gate uses the viewport, not the flow box',
 
 // The bubble must show the same number as the chip. The chip number is the
 // chip's position in the draft, so reading annotation.number would disagree.
-check('the marker reads the chip ordinal, not the stored number',
+check('the marker reads the chip ordinal',
   /chipOrdinals\(occurrences\)/.test(source)
-    && /ordinals\.get\(annotation\.id\) \?\? annotation\.number/.test(source),
+    && /const number = ordinals\.get\(annotation\.id\)/.test(source),
   'the marker does not use the chip ordinal')
+// A chip deleted with the keyboard removes the occurrence without calling back
+// into the plugin, so the store keeps an entry with no chip. Marking it would
+// leave a bubble for a passage the user already un-annotated.
+check('a bubble is drawn only while its chip exists',
+  /const number = ordinals\.get\(annotation\.id\)[\s\S]{0,90}if \(number === undefined\) continue/.test(source),
+  'annotations without a chip still get a bubble')
 check('chipOrdinals pairs by reference id',
   /item\.source === CHIP_SOURCE[\s\S]{0,80}item\.ref/.test(source),
   'chipOrdinals does not pair by ref')
@@ -70,9 +76,32 @@ check('MarkerLayer receives occurrences',
   'MarkerLayer is mounted without occurrences')
 
 // ── 2. The jump highlight ──────────────────────────────────────────────────
-check('the highlight uses CSS.highlights',
-  /CSS\.highlights\.set\(FLASH_HIGHLIGHT/.test(source),
-  'the jump no longer paints a registry highlight')
+// The module-scope stylesheet must NOT be called `CSS`. That name shadows the
+// browser global for the whole module, and a shadowed global is how the flash
+// came to never paint: `CSS.highlights` read back undefined.
+check('the stylesheet is not named CSS',
+  /const STYLESHEET = `/.test(source) && !/const CSS = `/.test(source),
+  'the stylesheet shadows the global CSS object')
+check('the highlight reads the global off window',
+  /window\.CSS\.highlights\.set\(/.test(source),
+  'the highlight reads an identifier that a local binding can shadow')
+check('canPaintHighlight does not trust a shadowable identifier',
+  /const registry = typeof window === 'undefined' \? undefined : window\.CSS/.test(source),
+  'canPaintHighlight checks a bare identifier')
+
+// ── 2b. The jump lands on the passage, not the end of the transcript ──────
+// `scrollIntoView` on the containing ROW aligns the row, and a row can be taller
+// than the viewport, so its centre is nowhere near the quoted line.
+check('the jump scrolls the range to the middle of the viewport',
+  /scroller\.scrollTop\s*[\s\S]{0,200}\(box\.height - rect\.height\) \/ 2/.test(source),
+  'the jump still centres the row instead of the passage')
+check('the jump clamps to the scroll range',
+  /Math\.min\(Math\.max\(0, target\), max\)/.test(source),
+  'the jump can scroll past the end')
+check('the jump falls back to nearest, not center',
+  /scrollIntoView\(\{ block: 'nearest'/.test(source),
+  'the fallback still centres a possibly-tall row')
+
 check('the highlight rule is registered',
   /::highlight\(quote-chat-flash\)/.test(css),
   'the ::highlight rule is missing')
