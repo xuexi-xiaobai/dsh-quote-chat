@@ -42,6 +42,9 @@ const ANCHOR_GAP = 8
 /** Breathing room between the top bar and a jumped-to passage, in px. */
 const ANCHOR_TOP_GAP = 28
 
+/** Clearance so the comment panel never overlaps the gutter bubble, in px. */
+const BUBBLE_CLEARANCE = 30
+
 /** How long the jump-back highlight stays, in ms. */
 const FLASH_MS = 2600
 
@@ -2390,8 +2393,14 @@ function escapeHtml(text) {
           Math.max(VIEWPORT_MARGIN, anchor.left),
           Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN),
         )
+      // Opened ABOVE the passage, clear of both the gutter bubble and the text.
+      //
+      // The panel is a child of the paragraph, so a negative offset lifts it above the
+      // paragraph's top edge - which is where the bubble also sits. Shifting up by the
+      // bubble's own height plus a gap keeps the two from overlapping, and leaves the
+      // annotated passage itself fully visible.
       const top = inFlow
-        ? 0
+        ? -(height + BUBBLE_CLEARANCE)
         : Math.min(
           Math.max(VIEWPORT_MARGIN, anchor.top),
           Math.max(VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN),
@@ -2410,6 +2419,9 @@ function escapeHtml(text) {
       }
       return h('div', {
         ref,
+        // Plugin chrome: the passage highlight must never paint over the editor, and
+        // text readers must skip it. Both are keyed off this attribute.
+        'data-qc-ignore': '1',
         className: 'qc-bubble-panel',
         role: 'dialog',
         'aria-label': labels.edit,

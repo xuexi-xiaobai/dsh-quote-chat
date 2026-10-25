@@ -237,6 +237,25 @@ check('the hover card surface comes from a theme token',
 check('no bare light surface literal remains on a themed surface',
   !/background:#fff;/.test(css),
   'a hard-coded white surface survives')
+// --- The panel must not sit on the passage, nor be highlighted -------------
+// It opens ABOVE the paragraph (negative offset), clear of the gutter bubble.
+check('the panel opens above the passage',
+  /const top = inFlow\s*\n\s*\? -\(height \+ BUBBLE_CLEARANCE\)/.test(source),
+  'the panel covers the passage or the bubble')
+check('the clearance is a named constant',
+  /const BUBBLE_CLEARANCE = \d+/.test(source),
+  'the clearance is a magic number')
+// Plugin chrome must be excluded from the highlight, or the fluorescent marker
+// paints straight over the editor.
+check('the panel is excluded from the passage highlight',
+  /'data-qc-ignore': '1',\s*\n\s*className: 'qc-bubble-panel'/.test(source),
+  'the highlight paints over the comment editor')
+check('the bubble is excluded from the passage highlight',
+  (() => {
+    const at = source.indexOf("'data-qc-number'")
+    return at > 0 && source.slice(at - 500, at).includes("'data-qc-ignore'")
+  })(),
+  'the highlight paints over the bubble')
 let failed = 0
 for (const item of cases) {
   if (!item.ok) failed += 1
