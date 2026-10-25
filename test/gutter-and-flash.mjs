@@ -34,7 +34,7 @@ check('the marker shows a number', /String\(position\.number\)|String\(number\)/
 check('the marker sits to the right of the text column',
   /column\.right \+ 4/.test(source), 'the gutter offset is not hugging the column edge')
 check('the marker is level with the passage top, not its middle',
-  /rect\.top \+ Math\.min\(rect\.height, 20\) \/ 2 - 9/.test(source),
+  /topInScroller \+ Math\.min\(rect\.height, 20\) \/ 2 - 9/.test(source),
   'the marker is not anchored to the passage top')
 check('the marker stays inside the viewport',
   /window\.innerWidth - 28/.test(source), 'the gutter offset can overflow the viewport')
@@ -49,9 +49,9 @@ check('the column is measured from rows, not the box-less anchor',
 check('the marker does not use flow.getBoundingClientRect',
   !/const flowRect = flow\.getBoundingClientRect\(\)/.test(source),
   'the marker is still framed by the box-less anchor')
-check('the visibility gate uses the viewport, not the flow box',
-  /rect\.bottom < 0 \|\| rect\.top > window\.innerHeight/.test(source),
-  'the gate compares against the zero-height flow box')
+check('the visibility gate uses the scroll container band',
+  /centre < viewTop - 40 \|\| centre > viewBottom \+ 40/.test(source),
+  'the gate does not use the container band')
 
 // The bubble must show the same number as the chip. The chip number is the
 // chip's position in the draft, so reading annotation.number would disagree.

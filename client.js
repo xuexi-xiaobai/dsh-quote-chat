@@ -51,6 +51,15 @@ const FLASH_MS = 2600
  */
 const HOVER_LINGER_MS = 260
 
+/**
+ * How long the hover card's exit animation runs, in ms.
+ *
+ * The card is kept mounted for this long after the pointer leaves so the fade-out
+ * can finish. Unmounting immediately makes it disappear between frames, which
+ * reads as a flicker rather than a dismissal.
+ */
+const CARD_EXIT_MS = 130
+
 window.__ModuleLoader__.load({
   id: 'dsh-quote-chat',
   factory(require) {
@@ -99,6 +108,9 @@ window.__ModuleLoader__.load({
       'card.limit': '最多 {max} 条注释',
 
       'bubble.edit': '编辑注释',
+      'bubble.comment': '评论',
+      'bubble.saved': '已保存',
+      'bubble.deleted': '已删除',
       'bubble.placeholder': '补充这条注释的说明…',
       'bubble.save': '保存',
       'bubble.delete': '删除',
@@ -148,6 +160,9 @@ window.__ModuleLoader__.load({
       'card.limit': 'At most {max} annotations',
 
       'bubble.edit': 'Edit annotation',
+      'bubble.comment': 'Comment',
+      'bubble.saved': 'Saved',
+      'bubble.deleted': 'Deleted',
       'bubble.placeholder': 'Add a note about this annotation…',
       'bubble.save': 'Save',
       'bubble.delete': 'Delete',
@@ -233,11 +248,14 @@ window.__ModuleLoader__.load({
 
    Drawn with a tail, so it reads as a bubble rather than a plain badge: the tail
    points back at the passage it belongs to. */
-/* z-index is deliberately mid-range, not maximal: the bubble belongs to the
-   transcript, so it must sit UNDER the app's own chrome (top bar, composer,
-   popovers) rather than painting over them. A max-ish value made it float above
-   the menu bar and below the chat box, which read as a layering bug. */
-.qc-marker{position:fixed;z-index:30;
+/* The bubble lives INSIDE the transcript's scroll container.
+   Being absolutely positioned against that container means the container's own
+   overflow clips it — so it can never paint over the tab strip above or the
+   composer below, no matter what z-index it carries. A fixed overlay could not be
+   clipped by anything, which is why lowering its z-index alone did not fix the
+   layering. It also scrolls with the text for free, with no re-measure per frame.
+   z-index stays small so it sits under the rows' own hover surfaces. */
+.qc-marker{position:absolute;z-index:2;
   display:flex;align-items:center;justify-content:center;
   min-width:19px;height:19px;padding:0 5px;
   border-radius:9.5px 9.5px 9.5px 3px;border:0;cursor:pointer;
@@ -245,14 +263,18 @@ window.__ModuleLoader__.load({
   background:#2f7df6;
   box-shadow:0 1px 4px rgba(0,0,0,.22);
   transform-origin:left center;
-  transition:transform .12s ease,background .12s ease}
+  transition:transform .12s ease,background .12s ease,box-shadow .12s ease}
 .qc-marker::after{content:"";position:absolute;left:-3px;bottom:0;
   width:6px;height:6px;background:inherit;
   clip-path:polygon(100% 0,100% 100%,0 100%)}
 .qc-marker:hover{transform:scale(1.16);background:#1f6ae0}
+.qc-marker:active{transform:scale(1.04)}
 /* Tables keep a distinct hue so a glance tells the two kinds apart. */
 .qc-marker-table{background:#17a673}
 .qc-marker-table:hover{background:#128a5f}
+/* The bubble the editor belongs to stays lit while the editor is open. */
+.qc-marker.qc-marker-active{background:#1f6ae0;box-shadow:0 0 0 2px rgba(47,125,246,.28),
+  0 1px 4px rgba(0,0,0,.22)}
 
 /* The bubble's own editor: change or delete the comment, without touching the
    annotated passage. Sits above the bubble but still below app chrome. */
@@ -263,10 +285,8 @@ window.__ModuleLoader__.load({
   box-shadow:0 10px 30px rgba(0,0,0,.18);
   display:flex;flex-direction:column;gap:8px;
   animation:qc-card-in .14s cubic-bezier(.2,.8,.3,1)}
-.qc-bubble-panel .qc-bp-quote{margin:0;padding:6px 8px;border-radius:8px;
-  background:var(--dsw-alias-bg-layer-2);font-size:11.5px;line-height:1.5;
-  color:var(--dsw-alias-label-secondary);max-height:64px;overflow:auto;
-  white-space:pre-wrap;word-break:break-word}
+.qc-bubble-panel .qc-bp-label{font-size:11.5px;font-weight:600;
+  color:var(--dsw-alias-label-secondary);padding:0 1px}
 .qc-bubble-panel textarea{box-sizing:border-box;width:100%;min-height:64px;
   resize:vertical;padding:7px 9px;border-radius:8px;font:inherit;font-size:12.5px;
   line-height:1.55;color:inherit;background:var(--dsw-alias-bg-layer-2);
@@ -274,17 +294,45 @@ window.__ModuleLoader__.load({
 .qc-bubble-panel textarea:focus{outline:none;
   border-color:var(--dsw-alias-state-accent-primary)}
 .qc-bp-actions{display:flex;align-items:center;gap:6px}
-.qc-bp-actions button{appearance:none;font:inherit;font-size:12px;cursor:pointer;
-  padding:5px 11px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);
+/* Buttons carry a real hover/press state, not just a cursor change: a filled
+   background shift on hover, a drop under the finger on press, and a focused ring
+   for keyboard use. A pointer-only affordance is invisible at a glance. */
+.qc-bp-actions button{appearance:none;font:inherit;font-size:12px;font-weight:500;
+  cursor:pointer;padding:6px 13px;border-radius:8px;
+  border:1px solid var(--dsw-alias-border-l2);
   background:var(--dsw-alias-bg-layer-2);color:inherit;
-  transition:background .12s ease,opacity .12s ease}
-.qc-bp-actions button:hover:not(:disabled){background:var(--dsw-alias-bg-layer-3)}
+  transition:background .14s ease,border-color .14s ease,transform .08s ease,
+    box-shadow .14s ease,opacity .14s ease}
+.qc-bp-actions button:hover:not(:disabled){
+  background:var(--dsw-alias-bg-layer-3);
+  border-color:var(--dsw-alias-border-l3)}
+.qc-bp-actions button:active:not(:disabled){transform:translateY(1px) scale(.985)}
+.qc-bp-actions button:focus-visible{outline:none;
+  box-shadow:0 0 0 2px var(--dsw-alias-state-accent-primary)}
 .qc-bp-actions button:disabled{opacity:.45;cursor:default}
 .qc-bp-actions .qc-bp-save{margin-left:auto;border-color:transparent;
-  background:var(--dsw-alias-state-accent-primary);color:#fff}
-.qc-bp-actions .qc-bp-save:hover:not(:disabled){opacity:.88;
-  background:var(--dsw-alias-state-accent-primary)}
+  background:var(--dsw-alias-state-accent-primary);color:#fff;font-weight:600}
+.qc-bp-actions .qc-bp-save:hover:not(:disabled){
+  background:var(--dsw-alias-state-accent-primary);opacity:.86;
+  box-shadow:0 2px 8px rgba(47,125,246,.32)}
+.qc-bp-actions .qc-bp-save:active:not(:disabled){opacity:1;
+  box-shadow:0 1px 3px rgba(47,125,246,.3)}
+/* Delete is a destructive action: it only looks dangerous once you are on it. */
 .qc-bp-actions .qc-bp-delete{color:var(--dsw-alias-state-error-primary)}
+.qc-bp-actions .qc-bp-delete:hover:not(:disabled){
+  background:var(--dsw-alias-state-error-primary);color:#fff;
+  border-color:transparent}
+
+/* A short confirmation, so a save is not a silent state change. */
+.qc-bp-done{position:fixed;z-index:41;pointer-events:none;
+  padding:5px 10px;border-radius:8px;font-size:12px;color:#fff;
+  background:rgba(24,24,24,.88);box-shadow:0 4px 14px rgba(0,0,0,.2);
+  animation:qc-done .9s ease forwards}
+@keyframes qc-done{
+  0%{opacity:0;transform:translateY(3px)}
+  18%{opacity:1;transform:translateY(0)}
+  75%{opacity:1;transform:translateY(0)}
+  100%{opacity:0;transform:translateY(-3px)}}
 
 .qc-table-add{position:fixed;z-index:2147482000;appearance:none;border:1px solid var(--dsw-alias-border-l2);
   background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;
@@ -295,11 +343,26 @@ window.__ModuleLoader__.load({
 /* The jump flash is a range highlight painted by the browser, not a positioned
    box: the ::highlight pseudo-element follows the text through scrolling and
    reflow, so it can never end up glowing over the composer while the passage is
-   off-screen. */
+   off-screen.
+
+   The highlight pseudo-element cannot be transitioned — it takes no transition
+   property — so the fade is produced by animating the painted colour itself. Two names are used:
+   the transient jump ADDS the highlight and lets qc-flash-in run its own
+   fade-in/fade-out; the editor HOLD registers a highlight that stays, so it does
+   not animate out at all. */
 ::highlight(quote-chat-flash){background-color:rgba(255,214,0,.42);
   text-decoration:underline;text-decoration-color:rgba(255,196,0,.55);
-  text-decoration-thickness:2px}
-@keyframes qc-flash{0%,100%{opacity:.12}50%{opacity:1}}
+  text-decoration-thickness:2px;
+  animation:qc-hl-in .22s ease-out}
+@keyframes qc-hl-in{
+  from{background-color:rgba(255,214,0,0);text-decoration-color:rgba(255,196,0,0)}
+  to{background-color:rgba(255,214,0,.42);text-decoration-color:rgba(255,196,0,.55)}}
+/* The held highlight (used while a bubble's editor is open) fades in the same
+   way but never fades out on its own. */
+::highlight(quote-chat-hold){background-color:rgba(255,214,0,.42);
+  text-decoration:underline;text-decoration-color:rgba(255,196,0,.55);
+  text-decoration-thickness:2px;
+  animation:qc-hl-in .22s ease-out}
 
 /* ── The inline annotation chip ──────────────────────────────────────────────
 
@@ -402,6 +465,13 @@ window.__ModuleLoader__.load({
 @keyframes qc-card-in{
   from{opacity:0;transform:translateY(4px) scale(.98)}
   to{opacity:1;transform:translateY(0) scale(1)}}
+/* The exit runs while the card is still mounted; the parent unmounts it after
+   CARD_EXIT_MS. Filled mode keeps the final keyframe's state, so the card does not
+   flash back to full opacity on the last frame. */
+.qc-card-out{animation:qc-card-out .13s ease-in forwards}
+@keyframes qc-card-out{
+  from{opacity:1;transform:translateY(0) scale(1)}
+  to{opacity:0;transform:translateY(3px) scale(.985)}}
 .qc-card-comment{margin:0 0 7px;padding:6px 9px;border-radius:8px;
   background:#f6f6f6;color:#4b4b4b;font-size:12px;line-height:1.55;
   white-space:pre-wrap;word-break:break-word}
@@ -1679,7 +1749,15 @@ function ChipCards(props) {
         if (closeTimer === 0) {
           closeTimer = setTimeout(() => {
             closeTimer = 0
-            setHover(null)
+            // Mark it closing so the exit animation can run before unmount; the
+            // card would otherwise vanish between two frames.
+            setHover((current) => (current === null
+              ? current
+              : { ...current, closing: true }))
+            closeTimer = setTimeout(() => {
+              closeTimer = 0
+              setHover(null)
+            }, CARD_EXIT_MS)
           }, HOVER_LINGER_MS)
         }
         return
@@ -1796,6 +1874,7 @@ function ChipCards(props) {
       h(AnnotationCard, {
         annotation: hover.annotation,
         anchor: hover.anchor,
+        closing: hover.closing === true,
       }),
     ),
     document.body,
@@ -1813,7 +1892,7 @@ function ChipCards(props) {
  * @param props - the annotation and its chip rectangle.
  */
 function AnnotationCard(props) {
-  const { annotation, anchor } = props
+  const { annotation, anchor, closing = false } = props
   const ref = React.useRef(null)
   const [size, setSize] = React.useState({ width: 0, height: 0 })
 
@@ -1835,7 +1914,9 @@ function AnnotationCard(props) {
   )
   return h('div', {
     ref,
-    className: 'qc-card',
+    // The closing class runs the exit animation; the parent keeps the card
+    // mounted for CARD_EXIT_MS so it can finish.
+    className: closing ? 'qc-card qc-card-out' : 'qc-card',
     style: {
       left: `${left}px`,
       top: `${top}px`,
@@ -2026,8 +2107,9 @@ function escapeHtml(text) {
      * @param props - the annotation, the anchor point, labels, and the handlers.
      */
     function BubblePanel(props) {
-      const { annotation, anchor, labels, onJump, onSave, onDelete, onClose } = props
+      const { annotation, anchor, labels, onSave, onDelete, onClose } = props
       const [text, setText] = React.useState(annotation.comment)
+      const [flash, setFlash] = React.useState('')
       const ref = React.useRef(null)
       const areaRef = React.useRef(null)
       const [size, setSize] = React.useState({ width: 0, height: 0 })
@@ -2068,6 +2150,18 @@ function escapeHtml(text) {
         Math.max(VIEWPORT_MARGIN, anchor.top),
         Math.max(VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN),
       )
+      /**
+       * Save, with a visible acknowledgement.
+       *
+       * The panel closes on save, so without a brief confirmation the save is
+       * indistinguishable from a dismissal. The toast outlives the panel because
+       * it is its own element; `onSave` is deferred a frame so the toast paints
+       * before the panel unmounts.
+       */
+      const commit = () => {
+        setFlash(labels.saved)
+        setTimeout(() => onSave(text), 160)
+      }
       return h('div', {
         ref,
         className: 'qc-bubble-panel',
@@ -2079,7 +2173,10 @@ function escapeHtml(text) {
           visibility: size.width === 0 ? 'hidden' : 'visible',
         },
       },
-      h('div', { className: 'qc-bp-quote' }, previewOf(annotation)),
+      // No passage preview and no jump button: the passage is already lit in the
+      // transcript behind this panel, which is a better answer than a truncated
+      // copy of it, and jumping is folded into opening the panel.
+      h('div', { className: 'qc-bp-label' }, labels.comment),
       h('textarea', {
         ref: areaRef,
         value: text,
@@ -2089,7 +2186,7 @@ function escapeHtml(text) {
         onKeyDown: (event) => {
           if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
             event.preventDefault()
-            onSave(text)
+            commit()
           }
         },
       }),
@@ -2097,34 +2194,39 @@ function escapeHtml(text) {
         h('button', {
           type: 'button',
           className: 'qc-bp-delete',
-          onClick: onDelete,
+          onClick: () => {
+            setFlash(labels.deleted)
+            onDelete()
+          },
         }, labels.delete),
-        // Jumping lives here now that a bubble click opens this panel.
-        h('button', {
-          type: 'button',
-          className: 'qc-bp-jump',
-          onClick: onJump,
-        }, labels.jump),
         h('button', {
           type: 'button',
           className: 'qc-bp-save',
-          onClick: () => onSave(text),
+          onClick: commit,
         }, labels.save),
       ),
+      flash === ''
+        ? null
+        : h('span', {
+          className: 'qc-bp-done',
+          style: { left: `${left}px`, top: `${top + height + 6}px` },
+        }, flash),
       )
     }
 
     /**
      * The right-gutter bubbles that mark where each annotation came from.
      *
-     * They are portaled and re-measured on scroll, because the chat flow is a
-     * scroll container: a marker drawn inside it would be clipped by its own
-     * overflow and would fight the row layout.
-     * @param props - the annotations, labels, and the jump handler.
+     * They are rendered INSIDE the transcript's scroll container, absolutely
+     * positioned. That is what makes them behave: the container's overflow clips
+     * them so they cannot paint over the tab strip or the composer, and they
+     * scroll with the content instead of being re-measured on every frame.
+     * @param props - the annotations, labels, and the handlers.
      */
     function MarkerLayer(props) {
-      const { annotations, occurrences, labels, onJump, onUpdate, onRemove } = props
+      const { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove } = props
       const [positions, setPositions] = React.useState([])
+      const [host, setHost] = React.useState(null)
       const [editing, setEditing] = React.useState(null)
 
       React.useEffect(() => {
@@ -2138,6 +2240,22 @@ function escapeHtml(text) {
             setPositions((current) => (current.length === 0 ? current : []))
             return
           }
+          // The bubble's offset parent: the element that scrolls the transcript.
+          // Without it there is no coordinate space to place bubbles in, so this
+          // is also the mount check.
+          const scroller = scrollContainerOf(flow)
+          if (scroller === null) {
+            setPositions((current) => (current.length === 0 ? current : []))
+            return
+          }
+          setHost((current) => (current === scroller ? current : scroller))
+          // A positioned offset parent is required for absolute children; the
+          // container is usually `position:static`, so mark it. `relative` keeps
+          // its box and its scrolling behaviour.
+          if (getComputedStyle(scroller).position === 'static') {
+            scroller.style.position = 'relative'
+          }
+          const scrollerRect = scroller.getBoundingClientRect()
           // The flow element is the slot anchor, rendered with `display:contents`
           // so it has NO box — `flow.getBoundingClientRect()` is all zeros. Using
           // it as the reference frame put the gutter at 8px (the left edge) and
@@ -2178,15 +2296,25 @@ function escapeHtml(text) {
             // line — which is exactly the intended anchor point.
             const rect = range.getBoundingClientRect()
             if (rect.width === 0 && rect.height === 0) continue
-            // Skip passages scrolled out of the viewport; they get a bubble when
-            // they come back. Compared against the viewport, not the flow box,
-            // because the flow box is the box-less anchor.
-            if (rect.bottom < 0 || rect.top > window.innerHeight) continue
+            // Coordinates are relative to the SCROLL CONTAINER (which is also the
+            // bubble's offset parent), not the viewport. Two reasons: the bubbles
+            // are absolutely positioned inside that container, and doing the
+            // arithmetic here means a scroll does not have to re-measure — the
+            // browser moves them with the content.
+            const origin = scrollerRect
+            const topInScroller = rect.top - origin.top + scroller.scrollTop
+            const leftInScroller = gutter - origin.left + scroller.scrollLeft
+            // Culling is done in container coordinates against the visible band,
+            // so a row that is mounted but scrolled far above gets no bubble.
+            const viewTop = scroller.scrollTop
+            const viewBottom = viewTop + scroller.clientHeight
+            const centre = topInScroller + Math.min(rect.height, 20) / 2
+            if (centre < viewTop - 40 || centre > viewBottom + 40) continue
             next.push({
               id: annotation.id,
               // Centre the bubble on the passage's first line.
-              top: Math.round(rect.top + Math.min(rect.height, 20) / 2 - 9),
-              left: Math.round(gutter),
+              top: Math.round(topInScroller + Math.min(rect.height, 20) / 2 - 9),
+              left: Math.round(leftInScroller),
               // The base class is already the blue bubble; only tables recolour.
               tone: annotation.kind === 'table' ? 'qc-marker-table' : '',
               number,
@@ -2230,7 +2358,10 @@ function escapeHtml(text) {
             && columnObserver.__qcTarget === target) return
           if (columnObserver !== null) columnObserver.disconnect()
           if (typeof ResizeObserver !== 'function') return
-          columnObserver = new ResizeObserver(debounced)
+          // `schedule` (one animation frame), not `debounced` (80ms + frame):
+          // resizing is a continuous drag, and the debounce made the bubble trail
+          // the text visibly. A frame is enough to coalesce a burst.
+          columnObserver = new ResizeObserver(schedule)
           columnObserver.__qcTarget = target
           columnObserver.observe(target)
         }
@@ -2246,47 +2377,69 @@ function escapeHtml(text) {
       }, [annotations, occurrences, labels])
 
       if (typeof document === 'undefined' || positions.length === 0) return null
+      // Mount into the scroll container so overflow clips the bubbles and they
+      // travel with the content. Until the container is found there is nowhere
+      // correct to put them, so render nothing rather than flashing at 0,0.
+      if (host === null) return null
       return createPortal(
         h(React.Fragment, null,
           positions.map((position) => h('button', {
             key: position.id,
             type: 'button',
-            className: `qc-marker ${position.tone}`,
+            className: `qc-marker ${position.tone}`
+              + (editing !== null && editing.id === position.id ? ' qc-marker-active' : ''),
             style: { left: `${position.left}px`, top: `${position.top}px` },
             title: position.title,
             'aria-label': position.title,
-            // A click on the bubble opens the editor, as asked: the bubble is the
-            // annotation's handle in the transcript, and the editor is where its
-            // comment is changed. Jumping moved into that panel (and stays on the
-            // chip), so the two gestures do not fight over one click.
+            // A click on the bubble opens the editor, and lights the passage for as
+            // long as the editor is open. Jumping moved into that panel (and stays
+            // on the chip), so one click is not asked to do two things.
             onClick: () => {
-              setEditing({ id: position.id, left: position.left + 22, top: position.top })
+              const annotation = annotations.find((item) => item.id === position.id)
+              if (annotation === undefined) return
+              const already = editing !== null && editing.id === position.id
+              setEditing(already ? null : { id: position.id, left: position.left, top: position.top })
+              if (!already) onHighlight(annotation, true)
+              else onHighlight(annotation, false)
             },
           }, String(position.number))),
+          // The editor is a separate portal into `document.body`: it must not be
+          // clipped by the scroll container the bubbles live in.
           editing === null ? null : (() => {
             const annotation = annotations.find((item) => item.id === editing.id)
             if (annotation === undefined) return null
-            return h(BubblePanel, {
+            const position = positions.find((item) => item.id === editing.id)
+            const box = host.getBoundingClientRect()
+            const anchor = position === undefined
+              ? { left: box.left + 24, top: box.top }
+              : { left: box.left + position.left + 24, top: box.top + position.top }
+            return createPortal(h(BubblePanel, {
               annotation,
-              anchor: editing,
+              anchor,
               labels,
               onJump: () => {
                 setEditing(null)
+                onHighlight(annotation, false)
                 onJump(annotation)
               },
               onSave: (comment) => {
-                onUpdate(annotation, comment)
                 setEditing(null)
+                onHighlight(annotation, false)
+                onUpdate(annotation, comment)
               },
               onDelete: () => {
                 setEditing(null)
+                onHighlight(annotation, false)
                 onRemove(annotation)
               },
-              onClose: () => setEditing(null),
-            })
+              onClose: () => {
+                setEditing(null)
+                onHighlight(annotation, false)
+              },
+            }), document.body)
           })(),
         ),
-        document.body,
+        host,
       )
     }
 
@@ -2504,6 +2657,35 @@ function escapeHtml(text) {
     function clearFlashRange() {
       if (!canPaintHighlight()) return
       window.CSS.highlights.delete(FLASH_HIGHLIGHT)
+    }
+
+    /**
+     * Paint a highlight that stays until it is cleared.
+     *
+     * Same registry as the jump flash, but with no timer: an editor is open for as
+     * long as the user needs, so the passage it refers to has to stay lit. It
+     * re-resolves once after the reveal settles for the same reason the flash
+     * does — the virtualiser replaces the nodes the first range pointed at — and
+     * then leaves the highlight alone.
+     * @param range - the passage to keep lit.
+     * @param resolve - re-resolution used once after the reveal settles.
+     */
+    function holdRange(range, resolve = null) {
+      if (!canPaintHighlight()) return
+      try {
+        let highlight = new Highlight(range)
+        window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight)
+        if (resolve === null) return
+        setTimeout(() => {
+          if (window.CSS.highlights.get(FLASH_HIGHLIGHT) !== highlight) return
+          const live = resolve()
+          if (live === null) return
+          highlight = new Highlight(live)
+          window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight)
+        }, 90)
+      } catch (failure) {
+        console.error('[dsh-quote-chat] hold highlight failed:', failure)
+      }
     }
 
     /**
@@ -3015,6 +3197,9 @@ function escapeHtml(text) {
           jump: t('marker.jump'),
           tableAdd: t('table.add'),
           edit: t('bubble.edit'),
+          comment: t('bubble.comment'),
+          saved: t('bubble.saved'),
+          deleted: t('bubble.deleted'),
           placeholder: t('bubble.placeholder'),
           save: t('bubble.save'),
           delete: t('bubble.delete'),
@@ -3192,6 +3377,33 @@ function escapeHtml(text) {
           clearSelection()
         }, [])
 
+        /**
+         * Light a passage while its editor is open, and clear it after.
+         *
+         * This is the same paint the jump uses, but without an expiry: the point is
+         * to show WHICH passage is being commented on for as long as the editor is
+         * open. It also scrolls the passage into view first, so opening the editor
+         * on a bubble whose row has drifted off-screen still shows what is being
+         * edited — which is the jump, folded into the same gesture.
+         * @param annotation - the annotation being edited.
+         * @param on - whether to light it or clear it.
+         */
+        const onHighlight = React.useCallback((annotation, on) => {
+          const flow = findFlow()
+          if (flow === null) return
+          if (!on) {
+            clearFlashRange()
+            return
+          }
+          revealWithSearch(flow, annotation).then((range) => {
+            if (range === null) return
+            holdRange(range, () => {
+              const live = findFlow()
+              return live === null ? null : resolveAnchor(live, annotation.anchor)
+            })
+          }, () => { /* a miss just means no glow; the editor still works */ })
+        }, [])
+
         const onJump = React.useCallback((annotation) => {
           const flow = findFlow()
           if (flow === null) {
@@ -3320,7 +3532,7 @@ function escapeHtml(text) {
               onCancel: () => setOverlay(null),
             }),
           h(ChipCards, { annotations, occurrences, labels, onJump, onRemove }),
-          h(MarkerLayer, { annotations, occurrences, labels, onJump, onUpdate, onRemove }),
+          h(MarkerLayer, { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
           h(TableAddButton, { label: labels.tableAdd, onAdd: annotateTable }),
           notice === '' ? null : h('div', { className: 'qc-notice' }, notice),
         )

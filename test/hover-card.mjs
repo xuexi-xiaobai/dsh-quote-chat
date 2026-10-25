@@ -50,9 +50,9 @@ check('the card renders no number badge',
 check('the card renders no removal button',
   !/qc-card-remove/.test(source) && !/qc-card-hint/.test(source),
   'the card still builds a removal control')
-check('the card markup is only comment + body',
-  /className: 'qc-card',[\s\S]{0,700}qc-card-body/.test(source),
-  'the card has extra furniture')
+check('the card carries a comment block and a body',
+  /className: 'qc-card-comment'/.test(source) && /className: 'qc-card-body'/.test(source),
+  'the card is missing its comment or body block')
 
 // ── 4. Compact sizing ──────────────────────────────────────────────────────
 const cardRule = /\.qc-card\{([\s\S]*?)\}/.exec(css)?.[1] ?? ''

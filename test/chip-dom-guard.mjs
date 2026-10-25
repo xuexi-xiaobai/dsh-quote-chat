@@ -45,7 +45,7 @@ for (const [pattern, label] of forbidden) {
 check('chip gets data attributes',
   /chip\.dataset\.qcNum\s*=/.test(source), 'chip.dataset.qcNum assignment missing')
 check('annotation card is portaled to body',
-  /className: 'qc-card'/.test(source) && /createPortal\(/.test(source),
+  /(className: 'qc-card'|'qc-card qc-card-out')/.test(source) && /createPortal\(/.test(source),
   'qc-card portal missing')
 check('card is pinned to the chip rectangle',
   /anchor\.left/.test(source) && /getBoundingClientRect\(\)/.test(source),

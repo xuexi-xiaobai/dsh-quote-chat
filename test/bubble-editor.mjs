@@ -91,7 +91,7 @@ check('saving keeps the codec payload in step',
   /chipPayloads\.set\(annotation\.id, \{[\s\S]{0,160}comment:/.test(source),
   'the model would still receive the old comment')
 check('deleting from the editor removes the annotation',
-  /onDelete: \(\) => \{[\s\S]{0,80}onRemove\(annotation\)/.test(source),
+  /className: 'qc-bp-delete'[\s\S]{0,200}onDelete\(\)/.test(source),
   'the editor cannot delete')
 check('the editor closes on Escape and on an outside press',
   /event\.key === 'Escape'/.test(source) && /addEventListener\('mousedown', onDown, true\)/.test(source),
@@ -99,14 +99,68 @@ check('the editor closes on Escape and on an outside press',
 // The user asked for a bubble click to OPEN THE EDITOR. Jumping moved into the
 // panel (and stays available on the chip), so one click is not asked to do both.
 check('a bubble click opens the editor',
-  /onClick: \(\) => \{[\s\S]{0,140}setEditing\(\{/.test(source),
+  /onClick: \(\) => \{[\s\S]{0,700}setEditing\(/.test(source),
   'a bubble click does not open the editor')
-check('jumping is available from the panel',
-  /className: 'qc-bp-jump'/.test(source) && /onClick: onJump/.test(source),
-  'the panel offers no way to jump')
+check('the panel keeps only edit, save and delete',
+  !/qc-bp-jump/.test(source) && !/qc-bp-quote/.test(source),
+  'the panel still carries a jump button or a passage preview')
 check('a chip click still jumps',
   /actionsRef\.current\.onJump\(annotation\)/.test(source),
   'clicking a chip no longer jumps')
+
+// ── 5. The bubble is clipped by the transcript, not floating over chrome ──
+check('the bubble is absolutely positioned inside the container',
+  /\.qc-marker\{position:absolute/.test(css),
+  'a fixed bubble cannot be clipped by the container overflow')
+check('the bubble has a small z-index',
+  (() => { const m = /z-index:(\d+)/.exec(markerRule); return m !== null && Number(m[1]) < 100 }),
+  'the bubble still uses a chrome-beating z-index')
+check('bubbles mount into the scroll container',
+  /const scroller = scrollContainerOf\(flow\)/.test(source)
+    && /setHost\(/.test(source)
+    && /\n\s*host,\n/.test(source),
+  'the bubbles are still portaled to body')
+check('the container is made a positioned ancestor',
+  /scroller\.style\.position = 'relative'/.test(source),
+  'absolute children have no offset parent')
+check('bubble coordinates are container-relative',
+  /topInScroller = rect\.top - origin\.top \+ scroller\.scrollTop/.test(source),
+  'bubble coordinates are viewport-relative')
+
+// ── 6. Motion ─────────────────────────────────────────────────────────────
+check('the hover card has an exit animation',
+  /\.qc-card-out\{animation:qc-card-out/.test(css) && /@keyframes qc-card-out/.test(css),
+  'the card still vanishes between frames')
+check('the card is kept mounted for the exit',
+  /CARD_EXIT_MS/.test(source) && /closing: true/.test(source),
+  'the card unmounts before its exit animation runs')
+check('the highlight fades in',
+  /::highlight\(quote-chat-flash\)\{[\s\S]{0,300}animation:qc-hl-in/.test(css),
+  'the highlight appears with no transition')
+check('a held highlight exists for the editor',
+  /::highlight\(quote-chat-hold\)/.test(css) && /function holdRange\(/.test(source),
+  'opening the editor does not light the passage')
+check('the held highlight is cleared on close',
+  /onHighlight\(annotation, false\)/.test(source),
+  'the highlight outlives the editor')
+
+// ── 7. Button feedback ────────────────────────────────────────────────────
+check('action buttons have a hover background',
+  /\.qc-bp-actions button:hover[^{]*\{[\s\S]{0,120}background:/.test(css),
+  'buttons only change the cursor on hover')
+check('action buttons have a press state',
+  /\.qc-bp-actions button:active/.test(css), 'no press feedback')
+check('action buttons have a focus ring',
+  /\.qc-bp-actions button:focus-visible/.test(css), 'no keyboard focus feedback')
+check('delete looks destructive on hover',
+  /\.qc-bp-delete:hover[^{]*\{[\s\S]{0,160}state-error-primary/.test(css),
+  'delete does not warn on hover')
+check('save shows a confirmation',
+  /qc-bp-done/.test(source) && /labels\.saved/.test(source),
+  'saving gives no visible acknowledgement')
+check('the ResizeObserver tracks without a debounce',
+  /new ResizeObserver\(schedule\)/.test(source),
+  'the bubble lags the column while dragging')
 
 let failed = 0
 for (const item of cases) {
