@@ -1040,7 +1040,15 @@ window.__ModuleLoader__.load({
      * @returns text, range, flow, anchor, kind, and preview, or null when the
      * selection is empty, outside the chat flow, or inside an input surface.
      */
-    function readSelection() {
+    /**
+     * What the user has selected, if it is one annotatable passage.
+     * @param pointer - where the pointer was released, in viewport coordinates. The
+     *   popup opens there, because that is where the user's attention is at the end of
+     *   the drag; the selection's bounding box is not usable for this, since it spans
+     *   every line and its left edge is always the leftmost one.
+     * @returns the source descriptor, or null.
+     */
+    function readSelection(pointer) {
       if (typeof window === 'undefined' || typeof document === 'undefined') return null
       const selection = window.getSelection()
       if (selection === null || selection.rangeCount === 0 || selection.isCollapsed) return null
@@ -1058,12 +1066,27 @@ window.__ModuleLoader__.load({
       if (startElement.closest('[data-sidebar-right-tab]') !== null) return null
       if (startElement.closest(NON_ANSWER_SELECTOR) !== null) return null
       const range = selection.getRangeAt(0)
-      let rect
+      let box
       try {
-        rect = range.getBoundingClientRect()
+        box = range.getBoundingClientRect()
       } catch {
         return null
       }
+      if (box === undefined || (box.width === 0 && box.height === 0)) return null
+      // Where the popup should open: the release point when we have one, otherwise the
+      // selection's right edge (a keyboard selection has no pointer).
+      const rect = pointer === null || pointer === undefined
+        ? { left: box.right, top: box.top, right: box.right, bottom: box.bottom, width: box.width, height: box.height }
+        : {
+          left: pointer.x,
+          top: pointer.y,
+          right: pointer.x,
+          bottom: pointer.y,
+          width: box.width,
+          height: box.height,
+          // The passage box, kept so the action popup can sit relative to the text too.
+          passage: box,
+        }
       if (rect === undefined || (rect.width === 0 && rect.height === 0)) return null
       // A table is its own card, never merged with prose: the requirement is
       // explicit that a table gets a separate annotation. If the selection simply
@@ -3839,11 +3862,15 @@ function escapeHtml(text) {
           if (typeof document === 'undefined') return undefined
           let frame = 0
           let pointerDown = false
+          // Where the drag ended. The popup opens here: it is the point the user was
+          // looking at when they finished selecting, so it reads as "next to my mouse"
+          // rather than "at the start of the passage".
+          let releasePoint = null
           const evaluate = () => {
             frame = 0
             if (overlayRef.current !== null) return
             if (pointerDown) return
-            const next = readSelection()
+            const next = readSelection(releasePoint)
             if (next === null) {
               setOverlay((current) => (current === null || current.kind === 'actions' ? null : current))
               return
@@ -3861,9 +3888,17 @@ function escapeHtml(text) {
           }
           const onDown = () => {
             pointerDown = true
+            // A new gesture: the previous release point must not leak into this one.
+            releasePoint = null
           }
-          const onUp = () => {
+          const onUp = (event) => {
             pointerDown = false
+            if (typeof event?.clientX === 'number' && typeof event?.clientY === 'number') {
+              releasePoint = { x: event.clientX, y: event.clientY }
+            } else {
+              // A keyboard-driven selection has no pointer: fall back to the passage box.
+              releasePoint = null
+            }
             // Let the browser finish committing the selection before reading it.
             schedule()
           }

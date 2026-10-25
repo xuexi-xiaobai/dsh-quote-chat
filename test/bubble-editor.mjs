@@ -300,6 +300,28 @@ check('no surface claims an absurd z-index',
   [...source.matchAll(/z-index:\s*(\d+)/g)].every((m) => Number(m[1]) < 100),
   'a surface would paint over the chat chrome')
 
+// --- The popup opens at the point where the drag ENDED ---------------------
+// A selection's bounding box is the union of every line it covers, so its left edge is
+// always the leftmost point of the passage. Anchoring to it put the popup at the start of
+// the selection no matter which way the user dragged. The release point is what the user
+// is looking at, so that is where the popup belongs.
+check('readSelection accepts the pointer release point',
+  /function readSelection\(pointer\)/.test(source),
+  'the selection cannot report where the drag ended')
+check('the release point comes from the pointerup event',
+  /releasePoint = \{ x: event\.clientX, y: event\.clientY \}/.test(source),
+  'the popup has no release coordinate to anchor to')
+check('the release point is cleared when a new drag starts',
+  /pointerDown = true[\s\S]{0,140}releasePoint = null/.test(source),
+  'a stale release point leaks into the next selection')
+check('the popup anchors to the release point, not the passage box',
+  /rect = pointer === null \|\| pointer === undefined/.test(source)
+    && /left: pointer\.x,/.test(source),
+  'the popup falls back to the selection box, so it lands at the passage start')
+check('a keyboard selection falls back to the passage right edge',
+  /left: box\.right, top: box\.top/.test(source),
+  'a keyboard selection has no sensible anchor')
+
 let failed = 0
 for (const item of cases) {
   if (!item.ok) failed += 1
