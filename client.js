@@ -316,7 +316,10 @@ window.__ModuleLoader__.load({
 
 /* The bubble's own editor: change or delete the comment, without touching the
    annotated passage. Sits above the bubble but still below app chrome. */
-.qc-bubble-panel{position:fixed;z-index:40;box-sizing:border-box;
+/* In-flow placement: the panel is a child of the annotated paragraph, so it rides
+   with the text (scroll, zoom, reflow) and needs no reposition listener. It sits just
+   clear of the bubble so the two never overlap. */
+.qc-bubble-panel{position:absolute;z-index:40;box-sizing:border-box;
   width:min(320px,80vw);padding:10px;
   border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:12px;
   background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);
@@ -2336,7 +2339,7 @@ function escapeHtml(text) {
      * @param props - the annotation, the anchor point, labels, and the handlers.
      */
     function BubblePanel(props) {
-      const { annotation, anchor, labels, onSave, onDelete, onClose } = props
+      const { annotation, anchor, labels, onSave, onDelete, onClose, inFlow = false } = props
       const [text, setText] = React.useState(annotation.comment)
       const [flash, setFlash] = React.useState('')
       const ref = React.useRef(null)
@@ -2371,25 +2374,28 @@ function escapeHtml(text) {
 
       const width = size.width || 320
       const height = size.height || 200
-      // Keep the annotated passage readable while editing its comment.
+      // Two placement modes.
       //
-      // The old rule pinned the panel to the passage's own top, so the panel covered
-      // the very text the user is annotating. The passage is the subject; the editor
-      // is the tool. So the panel goes BELOW the passage when there is room, and
-      // only flips above it when the viewport is too short - in which case it is
-      // clamped to the bottom edge rather than sitting over the text.
-      const below = (anchor.bottom ?? anchor.top) + 8
-      const fitsBelow = below + height + VIEWPORT_MARGIN <= window.innerHeight
-      const above = anchor.top - height - 8
-      const preferredTop = fitsBelow ? below : (above >= VIEWPORT_MARGIN ? above : below)
-      const left = Math.min(
-        Math.max(VIEWPORT_MARGIN, anchor.left),
-        Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN),
-      )
-      const top = Math.min(
-        Math.max(VIEWPORT_MARGIN, preferredTop),
-        Math.max(VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN),
-      )
+      // inFlow: the panel is mounted INSIDE the annotated paragraph, so its offsets
+      // are relative to that paragraph's own box. It therefore rides with the text -
+      // scrolling, zooming and re-wrapping all keep it beside its passage - and needs
+      // no scroll listener. It is pinned to the paragraph's top-right, which is the
+      // spot beside the gutter bubble.
+      //
+      // Otherwise (no paragraph to attach to) it falls back to viewport coordinates,
+      // clamped to stay on screen.
+      const left = inFlow
+        ? Math.max(0, anchor.width - width)
+        : Math.min(
+          Math.max(VIEWPORT_MARGIN, anchor.left),
+          Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN),
+        )
+      const top = inFlow
+        ? 0
+        : Math.min(
+          Math.max(VIEWPORT_MARGIN, anchor.top),
+          Math.max(VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN),
+        )
       /**
        * Save, with a visible acknowledgement.
        *
@@ -2793,12 +2799,19 @@ function escapeHtml(text) {
           : { left: 0, top: 0, right: window.innerWidth, bottom: 0 }
         return createPortal(h(BubblePanel, {
           annotation,
-          // The passage must stay visible while its comment is edited, so the panel
-          // anchors to the passage's BOTTOM edge and opens downward.
+          // The panel rides with the passage instead of floating over the viewport.
+          //
+          // It is mounted INSIDE the paragraph (like the bubble) and positioned with
+          // CSS against that paragraph's box, so scrolling the transcript carries it
+          // along and no scroll listener has to reposition it. `box` is still passed
+          // for the first paint, where the panel measures itself before anchoring.
+          inFlow: true,
           anchor: {
             left: Math.min(box.right, window.innerWidth - 40),
             top: box.top,
             bottom: box.bottom,
+            // Width of the paragraph, so the in-flow panel can align to its right edge.
+            width: box.width,
           },
           labels,
           onJump: () => {
@@ -2820,7 +2833,7 @@ function escapeHtml(text) {
             setEditing(null)
             onHighlight(annotation, false)
           },
-        }), document.body)
+        }), row ?? document.body)
       })()
       return h(React.Fragment, null, ...nodes, editor)
     }

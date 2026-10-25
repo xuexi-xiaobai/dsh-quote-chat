@@ -203,12 +203,21 @@ check('the hosting block reserves its gutter',
 check('the gutter is applied once, behind the host flag',
   /if \(row\.dataset\.qcHost === '1'\) continue[\s\S]{0,900}classList\.add\('qc-hosts-bubble'\)[\s\S]{0,80}row\.dataset\.qcHost = '1'/.test(source),
   'the gutter is re-applied every pass, re-wrapping the prose and flickering')
-check('the comment panel opens below the passage',
-  /const below = \(anchor\.bottom \?\? anchor\.top\) \+ 8/.test(source),
-  'the panel covers the annotated passage')
-check('the panel flips above only when there is no room below',
-  /fitsBelow \? below : \(above >= VIEWPORT_MARGIN \? above : below\)/.test(source),
-  'the panel ignores available space')
+// The panel must ride with its passage rather than float over the viewport: it is
+// mounted inside the paragraph and positioned against that box, so scrolling needs
+// no reposition listener at all.
+check('the comment panel is mounted into the passage',
+  /inFlow: true/.test(source) && /\}\), row \?\? document\.body\)/.test(source),
+  'the panel floats over the viewport and drifts away from its passage')
+check('the panel is positioned in flow, not fixed',
+  /\.qc-bubble-panel\{position:absolute/.test(css),
+  'a fixed panel cannot ride with the passage')
+check('the panel needs no scroll listener of its own',
+  (() => {
+    const body = /function BubblePanel\(props\) \{([\s\S]*?)\n    \}\n/.exec(source)?.[1] ?? ''
+    return body !== '' && !/addEventListener\('scroll'/.test(body)
+  })(),
+  'the panel is repositioned on every scroll event instead of riding the text')
 check('the panel receives the passage bottom edge',
   /bottom: box\.bottom/.test(source),
   'the panel cannot tell where the passage ends')
