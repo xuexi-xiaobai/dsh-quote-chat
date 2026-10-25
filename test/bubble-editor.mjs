@@ -162,6 +162,49 @@ check('the ResizeObserver tracks without a debounce',
   /new ResizeObserver\(schedule\)/.test(source),
   'the bubble lags the column while dragging')
 
+// ── 8. Contrast and the stray notice ──────────────────────────────────────
+// The save button must be readable: a pale accent fill with white text is not.
+const lum = (hex) => {
+  const v = hex.replace('#', '')
+  const c = [0, 2, 4].map((i) => parseInt(v.slice(i, i + 2), 16) / 255)
+    .map((x) => (x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4)))
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+}
+const contrast = (a, b) => {
+  const l1 = lum(a)
+  const l2 = lum(b)
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)
+}
+const saveRule = /\.qc-bp-save\{([\s\S]*?)\}/.exec(css)?.[1] ?? ''
+const saveBg = /background:(#[0-9a-f]{3,8})/i.exec(saveRule)?.[1]
+check('the save button has a saturated fill token',
+  saveBg !== undefined, 'no explicit background on the save button')
+if (saveBg !== undefined) {
+  check('white text on the save fill meets WCAG AA',
+    contrast('#ffffff', saveBg) >= 4.5,
+    `contrast is ${contrast('#ffffff', saveBg).toFixed(2)}:1`)
+}
+check('the save button does not use an accent token as its fill',
+  !/.qc-bp-save\{[\s\S]{0,200}background:var\(--dsw-alias-state-accent-primary\)/.test(css),
+  'a border/text accent token is being used as a button fill')
+check('the save button has a distinct hover fill',
+  /\.qc-bp-save:hover[^{]*\{[\s\S]{0,120}background:#/.test(css),
+  'hover does not change the fill')
+check('hover, press and base are all readable',
+  (() => {
+    const all = [...css.matchAll(/\.qc-bp-save(?::hover|:active)?:?[^{]*\{[\s\S]{0,160}?background:(#[0-9a-f]{6})/gi)]
+      .map((m) => contrast('#ffffff', m[1]))
+    return all.length > 0 && all.every((r) => r >= 4.5)
+  })(), 'one of the save button states is below AA')
+
+// A notice with no text still paints an empty box pinned above the composer.
+check('an empty notice renders nothing',
+  /typeof notice === 'string' && notice !== ''/.test(source),
+  'an empty/nil notice still renders a box')
+check('clearing a notice keeps the state a string',
+  !/setNotice\(null\)/.test(source),
+  'setNotice(null) makes the emptiness check miss')
+
 let failed = 0
 for (const item of cases) {
   if (!item.ok) failed += 1

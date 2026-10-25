@@ -310,13 +310,22 @@ window.__ModuleLoader__.load({
 .qc-bp-actions button:focus-visible{outline:none;
   box-shadow:0 0 0 2px var(--dsw-alias-state-accent-primary)}
 .qc-bp-actions button:disabled{opacity:.45;cursor:default}
+/* The save button is the panel's primary action, so it uses a solid, saturated
+   fill with white text.
+   It previously painted with --dsw-alias-state-accent-primary, which is a BORDER
+   and TEXT accent token, not a button fill: as a background it is pale, so white
+   text on it was almost unreadable. The token is still used for the focus ring,
+   which is what it is for. */
 .qc-bp-actions .qc-bp-save{margin-left:auto;border-color:transparent;
-  background:var(--dsw-alias-state-accent-primary);color:#fff;font-weight:600}
+  background:#1f6ae0;color:#fff;font-weight:600;
+  box-shadow:0 1px 2px rgba(16,63,145,.28)}
 .qc-bp-actions .qc-bp-save:hover:not(:disabled){
-  background:var(--dsw-alias-state-accent-primary);opacity:.86;
-  box-shadow:0 2px 8px rgba(47,125,246,.32)}
-.qc-bp-actions .qc-bp-save:active:not(:disabled){opacity:1;
-  box-shadow:0 1px 3px rgba(47,125,246,.3)}
+  background:#1a5cc4;color:#fff;
+  box-shadow:0 3px 10px rgba(31,106,224,.38)}
+.qc-bp-actions .qc-bp-save:active:not(:disabled){
+  background:#1550ac;box-shadow:0 1px 3px rgba(16,63,145,.35)}
+.qc-bp-actions .qc-bp-save:focus-visible{
+  box-shadow:0 0 0 2px #fff,0 0 0 4px #1f6ae0}
 /* Delete is a destructive action: it only looks dangerous once you are on it. */
 .qc-bp-actions .qc-bp-delete{color:var(--dsw-alias-state-error-primary)}
 .qc-bp-actions .qc-bp-delete:hover:not(:disabled){
@@ -3410,7 +3419,7 @@ function escapeHtml(text) {
             setNotice(diagnoseMiss(null, annotation))
             return
           }
-          setNotice(null)
+          setNotice('')
           // Async because the transcript unmounts distant rows: a passage from an
           // older answer has no DOM until it is paged back in, so a miss means
           // "scroll and look again", not "gone".
@@ -3534,7 +3543,9 @@ function escapeHtml(text) {
           h(ChipCards, { annotations, occurrences, labels, onJump, onRemove }),
           h(MarkerLayer, { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
           h(TableAddButton, { label: labels.tableAdd, onAdd: annotateTable }),
-          notice === '' ? null : h('div', { className: 'qc-notice' }, notice),
+          typeof notice === 'string' && notice !== ''
+            ? h('div', { className: 'qc-notice' }, notice)
+            : null,
         )
       }
     }
