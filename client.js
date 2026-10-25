@@ -207,13 +207,30 @@ window.__ModuleLoader__.load({
   color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;border-radius:7px;
   padding:4px 10px;cursor:pointer;flex:none}
 
-.qc-marker{position:fixed;z-index:2147482000;display:flex;align-items:center;justify-content:center;
-  width:19px;height:19px;border-radius:999px;border:0;cursor:pointer;padding:0;
+/* ── The right-gutter bubble ────────────────────────────────────────────────
+
+   A blue speech bubble pinned to the right of the text column, level with the
+   TOP of the annotated passage, carrying the same ordinal as the annotation's
+   chip. It marks where a passage came from without touching the prose itself.
+
+   Drawn with a tail, so it reads as a bubble rather than a plain badge: the tail
+   points back at the passage it belongs to. */
+.qc-marker{position:fixed;z-index:2147482000;
+  display:flex;align-items:center;justify-content:center;
+  min-width:19px;height:19px;padding:0 5px;
+  border-radius:9.5px 9.5px 9.5px 3px;border:0;cursor:pointer;
   font-size:11px;font-weight:600;line-height:1;color:#fff;font-family:inherit;
-  box-shadow:0 1px 4px rgba(0,0,0,.22);transition:transform .12s ease}
-.qc-marker:hover{transform:scale(1.18)}
-.qc-marker-text{background:#2f7df6}
+  background:#2f7df6;
+  box-shadow:0 1px 4px rgba(0,0,0,.22);
+  transform-origin:left center;
+  transition:transform .12s ease,background .12s ease}
+.qc-marker::after{content:"";position:absolute;left:-3px;bottom:0;
+  width:6px;height:6px;background:inherit;
+  clip-path:polygon(100% 0,100% 100%,0 100%)}
+.qc-marker:hover{transform:scale(1.16);background:#1f6ae0}
+/* Tables keep a distinct hue so a glance tells the two kinds apart. */
 .qc-marker-table{background:#17a673}
+.qc-marker-table:hover{background:#128a5f}
 
 .qc-table-add{position:fixed;z-index:2147482000;appearance:none;border:1px solid var(--dsw-alias-border-l2);
   background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;
@@ -684,12 +701,22 @@ window.__ModuleLoader__.load({
 
     /**
      * Whether two passages say the same thing, ignoring whitespace differences.
+     *
+     * Whitespace is normalised beyond `\s`: an answer's markup may contain
+     * non-breaking spaces, ideographic spaces and zero-width characters that the
+     * selection captured but that a rebuilt row renders differently. Treating them
+     * as equivalent is what keeps a stored anchor resolving after the transcript
+     * re-renders — without it the exact-path check failed and the jump fell
+     * through to a text search that could also miss.
      * @param left - the first passage.
      * @param right - the second passage.
-     * @returns true when they match after collapsing runs of whitespace.
+     * @returns true when they match after normalising whitespace.
      */
     function sameText(left, right) {
-      const flat = (value) => value.replace(/\s+/g, ' ').trim()
+      const flat = (value) => value
+        .replace(/[\u200b-\u200d\ufeff]/g, '')
+        .replace(/[\s\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/g, ' ')
+        .trim()
       return flat(left) === flat(right)
     }
 
@@ -1793,7 +1820,33 @@ function escapeHtml(text) {
     }
 
     /**
-     * The right-gutter buttons that mark where each annotation came from.
+     * The ordinal each annotation currently shows on its composer chip.
+     *
+     * The chip number is the chip's position in the live draft, not a stored
+     * field, so anything else that displays a number (the gutter bubble) has to
+     * read the same source or the two disagree. Pairing is by reference id, the
+     * same rule the hover cards use, because a chip the user deleted by hand
+     * drops out of `occurrences` and a positional pairing would shift every
+     * later number by one.
+     * @param occurrences - the composer's live reference occurrences.
+     * @returns a map of annotation id to the ordinal its chip displays.
+     */
+    function chipOrdinals(occurrences) {
+      const ordinals = new Map()
+      if (typeof document === 'undefined') return ordinals
+      const refs = occurrences
+        .filter((item) => item.source === CHIP_SOURCE)
+        .map((item) => item.ref)
+      const chips = [...document.querySelectorAll('[data-composer-chip="quote-chat"]')]
+        .filter((element) => element.closest('[data-sidebar-right-tab]') === null)
+      for (let index = 0; index < chips.length && index < refs.length; index += 1) {
+        ordinals.set(refs[index], index + 1)
+      }
+      return ordinals
+    }
+
+    /**
+     * The right-gutter bubbles that mark where each annotation came from.
      *
      * They are portaled and re-measured on scroll, because the chat flow is a
      * scroll container: a marker drawn inside it would be clipped by its own
@@ -1801,7 +1854,7 @@ function escapeHtml(text) {
      * @param props - the annotations, labels, and the jump handler.
      */
     function MarkerLayer(props) {
-      const { annotations, labels, onJump } = props
+      const { annotations, occurrences, labels, onJump } = props
       const [positions, setPositions] = React.useState([])
 
       React.useEffect(() => {
@@ -1816,21 +1869,39 @@ function escapeHtml(text) {
             return
           }
           const flowRect = flow.getBoundingClientRect()
-          const right = Math.min(flowRect.right - 12, window.innerWidth - 26)
+          // Dock the bubble just past the flow's right edge, inside the viewport.
+          // Hanging it off the text column keeps it out of the prose while staying
+          // adjacent to the line it marks.
+          const gutter = Math.min(flowRect.right + 8, window.innerWidth - 28)
+          // The chip's ordinal is the authoritative number: it is the position in
+          // the current draft, so a bubble reading anything else would disagree
+          // with the chip the user is looking at. It is read off the chips
+          // themselves rather than recomputed, so the two can never drift.
+          const ordinals = chipOrdinals(occurrences)
           const next = []
           for (const annotation of annotations) {
             const range = resolveAnchor(flow, annotation.anchor)
             if (range === null) continue
+            // Vertical position comes from the TOP of the annotated passage, as
+            // asked: the bubble marks where the passage begins, not its middle.
+            // `getBoundingClientRect` on a range that wraps returns the union of
+            // its line boxes, so for multi-line passages the top edge is the first
+            // line — which is exactly the intended anchor point.
             const rect = range.getBoundingClientRect()
             if (rect.width === 0 && rect.height === 0) continue
             if (rect.bottom < flowRect.top || rect.top > flowRect.bottom) continue
+            // An annotation whose chip has left the draft has no number to show;
+            // the passage is still marked, from its stored number.
+            const number = ordinals.get(annotation.id) ?? annotation.number
             next.push({
               id: annotation.id,
-              top: Math.round(rect.top + rect.height / 2 - 9),
-              left: Math.round(right),
-              tone: annotation.kind === 'table' ? 'qc-marker-table' : 'qc-marker-text',
-              number: annotation.number,
-              title: labels.jump.replace('{n}', String(annotation.number)),
+              // Centre the bubble on the passage's first line.
+              top: Math.round(rect.top + Math.min(rect.height, 20) / 2 - 9),
+              left: Math.round(gutter),
+              // The base class is already the blue bubble; only tables recolour.
+              tone: annotation.kind === 'table' ? 'qc-marker-table' : '',
+              number,
+              title: labels.jump.replace('{n}', String(number)),
             })
           }
           setPositions((current) => {
@@ -1838,6 +1909,7 @@ function escapeHtml(text) {
               && current.every((item, index) => {
                 const other = next[index]
                 return item.id === other.id && item.top === other.top && item.left === other.left
+                  && item.number === other.number
               })) return current
             return next
           })
@@ -1863,7 +1935,7 @@ function escapeHtml(text) {
           window.removeEventListener('resize', schedule)
           observer.disconnect()
         }
-      }, [annotations, labels])
+      }, [annotations, occurrences, labels])
 
       if (typeof document === 'undefined' || positions.length === 0) return null
       return createPortal(
@@ -2040,19 +2112,50 @@ function escapeHtml(text) {
      *
      * The range itself is handed to the registry, so scrolling keeps the glow on
      * the text; nothing has to be re-measured.
+     *
+     * `resolve` is re-run AFTER the scroll settles. `scrollIntoView` only starts a
+     * scroll, and the transcript's virtualiser then rebuilds the rows around it —
+     * the nodes the caller's range pointed at are unmounted by that rebuild, so a
+     * Highlight bound to them paints nothing. Re-resolving on the next frame
+     * yields a range over the nodes that actually exist now.
      * @param range - the passage to highlight.
      * @param ms - how long the flash lasts.
+     * @param resolve - optional re-resolution, called once after paint settles.
      */
-    function flashRange(range, ms = FLASH_MS) {
+    function flashRange(range, ms = FLASH_MS, resolve = null) {
       if (!canPaintHighlight()) return
       try {
-        const highlight = new Highlight(range)
+        let highlight = new Highlight(range)
         CSS.highlights.set(FLASH_HIGHLIGHT, highlight)
-        // The passage may be scrolled into view after this call; the highlight
-        // follows on its own, so a plain timeout is enough.
-        setTimeout(() => {
-          if (CSS.highlights.get(FLASH_HIGHLIGHT) === highlight) CSS.highlights.delete(FLASH_HIGHLIGHT)
-        }, ms)
+        const deadline = Date.now() + ms
+
+        /**
+         * Re-resolve once, shortly after the scroll settles, then expire.
+         *
+         * `scrollIntoView` only starts a scroll; the virtualiser then rebuilds the
+         * rows around it, unmounting the nodes the original range pointed at — a
+         * Highlight over dead nodes paints nothing, which is why the jump looked
+         * like it had no highlight at all. One re-resolve on the next frames picks
+         * up the live nodes. If re-resolution fails the original range is kept,
+         * since a stale range is still better than no highlight.
+         */
+        const settle = () => {
+          if (CSS.highlights.get(FLASH_HIGHLIGHT) !== highlight) return
+          if (resolve !== null) {
+            const live = resolve()
+            if (live !== null) {
+              highlight = new Highlight(live)
+              CSS.highlights.set(FLASH_HIGHLIGHT, highlight)
+            }
+          }
+          setTimeout(() => {
+            if (CSS.highlights.get(FLASH_HIGHLIGHT) === highlight) {
+              CSS.highlights.delete(FLASH_HIGHLIGHT)
+            }
+          }, Math.max(0, deadline - Date.now()))
+        }
+        if (resolve === null) settle()
+        else setTimeout(settle, 90)
       } catch (failure) {
         console.error('[dsh-quote-chat] highlight failed:', failure)
       }
@@ -2691,8 +2794,14 @@ function escapeHtml(text) {
               return
             }
             // The registry keeps the glow on the text from here on, so scrolling
-            // or a later reflow cannot leave it stranded.
-            flashRange(range)
+            // or a later reflow cannot leave it stranded. It is re-resolved once
+            // after the scroll settles, because the virtualiser rebuilds the rows
+            // the returned range points at and a highlight over removed nodes
+            // paints nothing.
+            flashRange(range, FLASH_MS, () => {
+              const live = findFlow()
+              return live === null ? null : resolveAnchor(live, annotation.anchor)
+            })
           }, (failure) => {
             console.error('[dsh-quote-chat] jump failed:', failure)
             setNotice(diagnoseMiss(findFlow(), annotation))
@@ -2776,7 +2885,7 @@ function escapeHtml(text) {
               onCancel: () => setOverlay(null),
             }),
           h(ChipCards, { annotations, occurrences, labels, onJump, onRemove }),
-          h(MarkerLayer, { annotations, labels, onJump }),
+          h(MarkerLayer, { annotations, occurrences, labels, onJump }),
           h(TableAddButton, { label: labels.tableAdd, onAdd: annotateTable }),
           notice === '' ? null : h('div', { className: 'qc-notice' }, notice),
         )
