@@ -39,6 +39,9 @@ const VIEWPORT_MARGIN = 8
 /** Gap between a floating surface and its anchor, in px. */
 const ANCHOR_GAP = 8
 
+/** Breathing room between the top bar and a jumped-to passage, in px. */
+const ANCHOR_TOP_GAP = 28
+
 /** How long the jump-back highlight stays, in ms. */
 const FLASH_MS = 2600
 
@@ -224,8 +227,10 @@ window.__ModuleLoader__.load({
 .qc-popup svg{flex:none;opacity:.8}
 
 .qc-compose{position:fixed;z-index:2147483000;width:min(420px,92vw);box-sizing:border-box;
-  border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-overlay);
-  box-shadow:0 12px 32px rgba(0,0,0,.2);padding:10px;color:var(--dsw-alias-label-primary);
+  border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:12px;
+  background:var(--dsw-alias-bg-overlay);
+  box-shadow:0 16px 40px rgba(0,0,0,.32),0 2px 8px rgba(0,0,0,.18);
+  padding:10px;color:var(--dsw-alias-label-primary);
   font-size:12.5px;animation:qc-pop .1s ease-out}
 .qc-compose-preview{max-height:88px;overflow-y:auto;padding:6px 8px;border-radius:8px;
   background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);
@@ -266,10 +271,19 @@ window.__ModuleLoader__.load({
   
    position:absolute against the row keeps it out of the text flow; the row is
    given position:relative only while it hosts a bubble. */
-/* A hosting block reserves room on its right so the bubble can never sit on top
-   of the text. Applied only to paragraphs that actually carry a bubble. */
-.qc-hosts-bubble{padding-right:30px}
-.qc-marker{position:absolute;right:4px;top:0;z-index:2;
+/* The bubble sits at the paragraph's top-right corner, INSIDE its box, in a
+   gutter created with padding-inline-end on the HOSTING BLOCK.
+
+   Why padding after all: reserving room outside the box (negative right) lets the
+   scroll container clip the bubble, and reserving it with a border or by shrinking
+   the content box re-wraps the prose. Padding is applied once, when the bubble is
+   attached, and never changes afterwards - so the paragraph lays out exactly once
+   and cannot flicker on subsequent passes. */
+/* A hosting block reserves a right-hand gutter for its bubble.
+   Applied once per block: the paragraph lays out with the gutter from the start, so
+   adding a bubble never re-wraps the text and never changes the measured height. */
+.qc-hosts-bubble{padding-right:28px}
+.qc-marker{position:absolute;right:2px;top:0;z-index:2;
   display:flex;align-items:center;justify-content:center;
   min-width:19px;height:19px;padding:0 5px;
   border-radius:9.5px 9.5px 9.5px 3px;border:0;cursor:pointer;
@@ -290,9 +304,9 @@ window.__ModuleLoader__.load({
    annotated passage. Sits above the bubble but still below app chrome. */
 .qc-bubble-panel{position:fixed;z-index:40;box-sizing:border-box;
   width:min(320px,80vw);padding:10px;
-  border:1px solid var(--dsw-alias-border-l2);border-radius:12px;
+  border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:12px;
   background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);
-  box-shadow:0 10px 30px rgba(0,0,0,.18);
+  box-shadow:0 16px 40px rgba(0,0,0,.32),0 2px 8px rgba(0,0,0,.18);
   display:flex;flex-direction:column;gap:8px;
   animation:qc-card-in .14s cubic-bezier(.2,.8,.3,1)}
 .qc-bubble-panel .qc-bp-label{font-size:11.5px;font-weight:600;
@@ -404,14 +418,16 @@ window.__ModuleLoader__.load({
    rather than guessed at; the fallbacks only apply outside the host. */
 [data-composer-chip="quote-chat"]{display:inline-flex;align-items:center;
   vertical-align:baseline;max-width:20em;padding:2px 9px 2px 7px;margin:0 1px;
-  border-radius:999px;border:0;
+  border-radius:999px;
+  border:1px solid var(--dsw-alias-border-l2, rgba(0,0,0,.08));
   background:var(--qc-chip-bg, var(--dsw-alias-bg-layer-2, #f2f2f2));
   color:var(--dsw-alias-label-primary, #181818);
   font-size:12.5px;line-height:1.5;cursor:pointer;position:relative;
   transition:background .14s ease}
 [data-composer-chip="quote-chat"]:hover,
 [data-composer-chip="quote-chat"]:focus-within{
-  background:var(--qc-chip-bg-hover, var(--dsw-alias-bg-layer-3, #e8e8e8))}
+  background:var(--qc-chip-bg-hover, var(--dsw-alias-bg-layer-3, #e8e8e8));
+  border-color:var(--dsw-alias-border-l3, rgba(0,0,0,.16))}
 /* The host's own marker glyph is the first child; it is hidden and replaced by a
    CSS glyph so the node's contents are never touched. */
 [data-composer-chip="quote-chat"] > span:first-child{display:none}
@@ -483,7 +499,8 @@ window.__ModuleLoader__.load({
    No ordinal and no removal control inside — the chip carries both. */
 .qc-card{position:fixed;z-index:2147482000;
   width:max-content;max-width:min(380px,80vw);box-sizing:border-box;
-  border:1px solid rgba(0,0,0,.07);border-radius:12px;background:var(--dsw-alias-bg-overlay, #fff);
+  border:1px solid var(--dsw-alias-border-l3, rgba(0,0,0,.07));border-radius:12px;
+  background:var(--dsw-alias-bg-overlay, #fff);
   box-shadow:0 8px 26px rgba(0,0,0,.15),0 2px 6px rgba(0,0,0,.05);
   padding:8px 10px;color:var(--dsw-alias-label-primary, #181818);
   animation:qc-card-in .16s cubic-bezier(.2,.8,.3,1)}
@@ -2651,9 +2668,11 @@ function escapeHtml(text) {
           hosting.add(row)
           if (row.dataset.qcHost === '1') continue
           if (getComputedStyle(row).position === 'static') row.style.position = 'relative'
-          // Reserve a right-hand gutter so the bubble never covers the prose. The
-          // class is used rather than an inline style so the padding can respond to
-          // the theme and be undone cleanly.
+          // Reserve the bubble's gutter ONCE. Doing it here, behind the qcHost flag,
+          // means the paragraph adopts its final width before the bubble is drawn and
+          // keeps it afterwards - so the prose never re-wraps and the measured height
+          // never changes underneath a later pass. That stability is what stops the
+          // bubble flickering.
           row.classList.add('qc-hosts-bubble')
           row.dataset.qcHost = '1'
         }
@@ -3073,15 +3092,18 @@ function escapeHtml(text) {
         host.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
         return range
       }
-      // Scroll so the PASSAGE sits in the middle of the VISIBLE transcript area —
-      // the window minus the app's top bar and the composer at the bottom — not
-      // the middle of the viewport. The composer grows as the user types or adds
-      // attachments, so its top edge moves; measuring it each time keeps the
-      // passage centred in what is actually readable right now.
+      // Align the passage's TOP edge with the top of the readable area, less a
+      // small gap.
+      //
+      // Centring was the earlier behaviour, and it wastes the upper half of the
+      // view for a long passage: the annotated text should BEGIN just under the top
+      // bar and then flow downward, so as much of it as possible is on screen at
+      // once. The readable area is measured each time because the composer is
+      // height-fluid — it grows with multi-line input and with attachments.
       const area = visibleChatArea(scroller)
       const target = scroller.scrollTop
         + (rect.top - area.top)
-        - ((area.height - rect.height) / 2)
+        - ANCHOR_TOP_GAP
       const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
       scroller.scrollTop = Math.min(Math.max(0, target), max)
       return range

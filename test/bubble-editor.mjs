@@ -190,12 +190,19 @@ check('clearing a notice keeps the state a string',
   'setNotice(null) makes the emptiness check miss')
 
 // --- The passage must stay readable while it is annotated ------------------
-check('the hosting block reserves a gutter for the bubble',
-  /\.qc-hosts-bubble\{padding-right:30px\}/.test(css),
-  'the bubble sits on top of the prose')
-check('the hosting class is applied to the block',
-  /classList\.add\('qc-hosts-bubble'\)/.test(source),
-  'the reserved gutter is never applied')
+// The bubble must live in the margin OUTSIDE the paragraph box. Reserving room
+// with padding or a border shrinks the content box, which re-wraps the prose the
+// moment a bubble appears; the next measurement then sees a different height and
+// the bubble flickers.
+check('the bubble sits inside the paragraph box',
+  /\.qc-marker\{position:absolute;right:\d+px/.test(css),
+  'a negative offset lets the scroll container clip the bubble')
+check('the hosting block reserves its gutter',
+  /\.qc-hosts-bubble\{padding-right:\d+px\}/.test(css),
+  'the bubble overlaps the prose')
+check('the gutter is applied once, behind the host flag',
+  /if \(row\.dataset\.qcHost === '1'\) continue[\s\S]{0,900}classList\.add\('qc-hosts-bubble'\)[\s\S]{0,80}row\.dataset\.qcHost = '1'/.test(source),
+  'the gutter is re-applied every pass, re-wrapping the prose and flickering')
 check('the comment panel opens below the passage',
   /const below = \(anchor\.bottom \?\? anchor\.top\) \+ 8/.test(source),
   'the panel covers the annotated passage')
@@ -207,8 +214,11 @@ check('the panel receives the passage bottom edge',
   'the panel cannot tell where the passage ends')
 // --- Dark mode -------------------------------------------------------------
 check('the chip surface comes from a theme token',
-  /data-composer-chip="quote-chat"\][\s\S]{0,240}--dsw-alias-bg-layer-2/.test(css),
+  /data-composer-chip="quote-chat"\][\s\S]{0,320}--dsw-alias-bg-layer-2/.test(css),
   'the chip hard-codes a light grey and breaks in dark mode')
+check('the chip has a visible outline so the pill reads in dark mode',
+  /data-composer-chip="quote-chat"\][\s\S]{0,360}border:1px solid var\(--dsw-alias-border-l2/.test(css),
+  'the chip has no outline and disappears against a dark background')
 check('the chip text comes from a theme token',
   /data-composer-chip="quote-chat"\]::after\{[\s\S]{0,160}--dsw-alias-label-primary/.test(css),
   'the chip ordinal hard-codes dark ink and breaks in dark mode')

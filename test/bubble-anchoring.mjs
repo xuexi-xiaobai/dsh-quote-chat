@@ -29,7 +29,7 @@ const markerLayer = /function MarkerLayer\(props\) \{([\s\S]*?)\n    \}\n/.exec(
 
 // ── 1. Anchored by layout, not by arithmetic ──────────────────────────────
 check('the bubble is positioned horizontally by CSS',
-  /right:\s*\d+px/.test(markerRule),
+  /right:\s*-?\d+px/.test(markerRule),
   'the bubble has no CSS right offset; its x must come from measurement')
 check('the bubble is not given an inline x/y',
   !/qc-marker[\\s\\S]{0,400}style: \\{ left:/.test(source),
@@ -122,7 +122,7 @@ check('no vertical offset is measured at all',
   !/rangeBox\.top - rowBox\.top/.test(source),
   'a per-frame vertical measurement survives, which jitters under a pane drag')
 check('the bubble relies on top:0 inside its block',
-  /right:4px;top:0/.test(css),
+  /right:-?\d+px;top:0/.test(css),
   'the bubble still needs a computed top')
 let failed = 0
 for (const item of cases) {

@@ -78,9 +78,9 @@ check('canPaintHighlight does not trust a shadowable identifier',
 // ── 2b. The jump lands in the middle of the READABLE area ─────────────────
 // `scrollIntoView` on the containing ROW aligns the row, and a row can be taller
 // than the viewport, so its centre is nowhere near the quoted line.
-check('the jump centres on the passage, not the row',
-  /scroller\.scrollTop\s*[\s\S]{0,220}\(area\.height - rect\.height\) \/ 2/.test(source),
-  'the jump still centres the row instead of the passage')
+check('the jump aligns on the passage, not the row',
+  /scroller\.scrollTop\s*[\s\S]{0,220}rect\.top - area\.top/.test(source),
+  'the jump ignores the passage and scrolls by the row instead')
 // The composer grows with multi-line input and attachments, so "the middle of the
 // screen" is not the middle of what the user can read.
 check('the visible area is bounded by the composer',
@@ -130,6 +130,16 @@ check('locateText uses the shared space class',
   /new RegExp\(`\[\\\\s\$\{EXTRA_SPACE\}\]`\)/.test(source),
   'locateText has its own whitespace test')
 
+// --- The jump must align the passage top, not centre it -------------------
+check('a jump aligns the passage top with the top bar',
+  /rect\.top - area\.top\)\s*-\s*ANCHOR_TOP_GAP/.test(source),
+  'the passage is centred, wasting the upper half of the viewport')
+check('centring is gone',
+  !/\(\(area\.height - rect\.height\) \/ 2\)/.test(source),
+  'the old centring formula survives')
+check('the top gap is a named constant',
+  /const ANCHOR_TOP_GAP = \d+/.test(source),
+  'the gap is a magic number')
 let failed = 0
 for (const item of cases) {
   if (!item.ok) failed += 1
