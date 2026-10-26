@@ -64,6 +64,12 @@ try {
       + " return [...f.querySelectorAll('p, li')].filter((el) => (el.innerText ?? '').trim().length > 40).length >= 2 })()",
     { timeoutMs: 20000 },
   )
+
+  // The right sidebar is created when a chat opens and squeezes the conversation to ~424px of
+  // 1280, which changes every placement measurement and hides the app from a human watching the
+  // run. Collapse it here, after the conversation exists, and log what changed.
+  const layoutNormalisation = await browser.collapseRightSidebar()
+  if (layoutNormalisation.length > 0) console.log(`     layout: ${layoutNormalisation.join(' | ')}`)
   check('the transcript has at least two selectable passages', prose !== null)
 
   // ── Step 1: select the LAST passage ────────────────────────────────────

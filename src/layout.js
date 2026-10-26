@@ -301,6 +301,106 @@ export function createLayout() {
   }
 
   /**
+   * The vertical space a floating surface may occupy, in viewport pixels.
+   *
+   * The top edge comes from the app's header when one is present; the bottom edge from the composer.
+   * Both are found the same way the rest of this module finds them, so there is one notion of where
+   * the chat chrome is.
+   *
+   * @returns `{ top, bottom, height }` in viewport pixels.
+   */
+  function readableBand() {
+    const viewportHeight = typeof window === 'undefined' ? 0 : window.innerHeight
+    let top = 0
+    if (typeof document !== 'undefined') {
+      // The app's header: the first element that is fixed or sticky at the top of the page.
+      const header = document.querySelector('header')
+        ?? document.querySelector('[data-slot="conversation.chat.header"]')
+      if (header !== null) {
+        const box = header.getBoundingClientRect()
+        if (box.height > 0 && box.top <= 0) top = Math.max(0, box.bottom)
+      }
+    }
+    let bottom = viewportHeight
+    const dock = findComposerDock()
+    if (dock !== null) {
+      const box = dock.getBoundingClientRect()
+      if (box.height > 0 && box.top > top) bottom = box.top
+    }
+    return { top, bottom, height: Math.max(1, bottom - top) }
+  }
+
+  /**
+   * The resting place for the compose panel: centred horizontally, sitting just above the selection.
+   *
+   * Above the selection, never over it — that is the requirement, and it also means the panel cannot
+   * cover the passage it is describing. When there is not enough room above (a selection near the top
+   * of the window) the panel is pushed down to the band's top edge instead, so it stays visible.
+   *
+   * @param selectionBox - the selection's viewport box.
+   * @param size - `{ width, height }` of the panel.
+   * @param options - `{ gap, margin }`; `gap` is the clearance kept from the selection.
+   * @returns `{ left, top }` in viewport pixels.
+   */
+  function anchorAboveSelection(selectionBox, size, options = {}) {
+    const gap = options.gap ?? 10
+    const margin = options.margin ?? 8
+    const viewportWidth = typeof window === 'undefined' ? 0 : window.innerWidth
+    const band = readableBand()
+
+    const left = Math.max(margin, Math.round((viewportWidth - size.width) / 2))
+
+    // Room available on each side of the passage.
+    const spaceAbove = selectionBox.top - band.top
+    const spaceBelow = band.bottom - selectionBox.bottom
+    const needed = size.height + gap + margin
+
+    /** Above the selection: bottom edge one gap above the passage's top. */
+    const above = selectionBox.top - gap - size.height
+    /** Below the selection: top edge one gap under the passage's bottom. */
+    const below = selectionBox.bottom + gap
+
+    if (spaceAbove >= needed) return { left, top: above }
+    if (spaceBelow >= needed) return { left, top: below }
+
+    // Neither side has room. Pick the side with more space and clamp into the band, which keeps the
+    // overlap as small as the geometry allows. Keeping the panel fully visible matters more than which
+    // side it lands on.
+    const preferred = spaceAbove >= spaceBelow ? above : below
+    const highest = band.top + margin
+    const lowest = Math.max(highest, band.bottom - size.height - margin)
+    return { left, top: Math.min(Math.max(highest, preferred), lowest) }
+  }
+
+  /**
+   * The docked place used once the user starts typing: flush against the nearer edge of the band.
+   *
+   * "Nearer" is decided from the panel's current resting position, so the panel moves the short way
+   * and does not cross the text it belongs to.
+   *
+   * @param restingTop - where the panel currently sits, in viewport pixels.
+   * @param size - `{ width, height }` of the panel.
+   * @param options - `{ gap, margin }`; `gap` is the clearance kept from the header or composer.
+   * @returns `{ left, top, edge }` in viewport pixels; `edge` is 'top' or 'bottom'.
+   */
+  function snapPosition(restingTop, size, options = {}) {
+    const gap = options.gap ?? 8
+    const margin = options.margin ?? 8
+    const viewportWidth = typeof window === 'undefined' ? 0 : window.innerWidth
+    const band = readableBand()
+    const top = band.top + gap
+    const bottom = Math.max(band.top + gap, band.bottom - gap - size.height)
+    // Distance to each docked slot from where it rests now.
+    const toTop = Math.abs(restingTop - top)
+    const toBottom = Math.abs(bottom - restingTop)
+    return {
+      left: Math.max(margin, Math.round((viewportWidth - size.width) / 2)),
+      top: toTop <= toBottom ? top : bottom,
+      edge: toTop <= toBottom ? 'top' : 'bottom',
+    }
+  }
+
+  /**
    * Place the comment panel above a gutter bubble, right edges flush.
    *
    * The bubble is the thing the user clicked, so the panel is positioned against IT rather than
@@ -437,6 +537,9 @@ export function createLayout() {
     visibleChatArea,
     anchorInTranscript,
     anchorAboveBubble,
+    anchorAboveSelection,
+    snapPosition,
+    readableBand,
     flowColumnBox,
     flowColumn,
     columnElement,

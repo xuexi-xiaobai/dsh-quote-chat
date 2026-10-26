@@ -26,24 +26,30 @@ export const STYLESHEET = `
 .qc-popup button+button{box-shadow:inset 1px 0 0 var(--dsw-alias-border-l1)}
 .qc-popup svg{flex:none;opacity:.8}
 
+/* The compose panel: a compact dialog, larger radii to match the composer it sits above.
+ *
+ * The transition is declared here but only engages once the panel is DOCKED. A plain transition on the
+ * top property would animate the first paint as well, so the panel would fly in from wherever it
+ * rendered instead of appearing at its resting place above the selection.
+ *
+ * z-index 60 keeps it above the transcript but BELOW the app's chrome: the composer dock and the
+ * header are rendered by the host at higher layers, so when the panel is pushed under them it is
+ * covered rather than floating on top. That is the requested behaviour.
+ */
 .qc-compose{position:fixed;z-index:60;width:min(420px,92vw);box-sizing:border-box;
-  border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:12px;
+  border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:18px;
   background:var(--dsw-alias-bg-overlay);
   box-shadow:0 16px 40px rgba(0,0,0,.32),0 2px 8px rgba(0,0,0,.18);
-  padding:10px;color:var(--dsw-alias-label-primary);
-  font-size:12.5px;animation:qc-pop .1s ease-out}
-.qc-compose-preview{max-height:88px;overflow-y:auto;padding:6px 8px;border-radius:8px;
-  background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);
-  color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.55;word-break:break-word;
-  white-space:pre-wrap;margin-bottom:8px}
-.qc-compose-preview table{border-collapse:collapse;font-size:11px}
-.qc-compose-preview td,.qc-compose-preview th{border:1px solid var(--dsw-alias-border-l1);padding:2px 5px}
-.qc-compose-preview .katex{font-size:1em}
-.qc-compose textarea{width:100%;box-sizing:border-box;resize:none;min-height:2.6em;max-height:9em;
-  font:inherit;line-height:1.5;padding:7px 9px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);
+  padding:12px;color:var(--dsw-alias-label-primary);
+  font-size:12.5px;animation:qc-pop .1s ease-out;
+  /* Smooth glide between the resting place and the docked slots. */
+  transition:top .26s cubic-bezier(.22,.61,.36,1),left .26s cubic-bezier(.22,.61,.36,1)}
+.qc-compose[data-docked="false"]{transition:none}
+.qc-compose textarea{width:100%;box-sizing:border-box;resize:none;min-height:2.8em;max-height:9em;
+  font:inherit;line-height:1.5;padding:9px 11px;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);
   background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);outline:none}
 .qc-compose textarea:focus{border-color:var(--dsw-alias-brand-primary)}
-.qc-compose-row{display:flex;align-items:center;gap:8px;margin-top:8px}
+.qc-compose-row{display:flex;align-items:center;gap:8px;margin-top:10px}
 .qc-compose-hint{flex:1;min-width:0;font-size:11px;color:var(--dsw-alias-label-secondary);opacity:.85;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .qc-compose-confirm{appearance:none;border:0;border-radius:999px;min-width:26px;height:26px;

@@ -63,7 +63,16 @@ function placeNear(rect, size) {
  * @param services - `{ findFlow, anchorInTranscript }` from the instance's layout.
  * @returns `{ ActionPopup, ComposerPopover }`.
  */
-export function createPopovers({ findFlow, anchorInTranscript }) {
+/**
+ * Create the two selection-driven surfaces.
+ *
+ * @param services - findFlow, anchorInTranscript, anchorAboveSelection, snapPosition.
+ *   The last two place the compose panel in viewport space: above the selection at rest, docked to
+ *   the header or the composer once the user types.
+ */
+export function createPopovers({
+  findFlow, anchorInTranscript, anchorAboveSelection, snapPosition,
+}) {
   /**
    * The floating action pair shown over a selected passage.
    * @param props - anchor rect, capability flags, labels, and handlers.
@@ -121,11 +130,20 @@ export function createPopovers({ findFlow, anchorInTranscript }) {
     const [comment, setComment] = React.useState('')
     const [size, setSize] = React.useState({ width: 0, height: 0 })
 
+    // Measured on mount AND whenever the content changes height: typing grows the textarea, and a
+    // stale height would place the panel against a box that no longer exists — which is what produced
+    // a 2px overlap with the passage.
     React.useLayoutEffect(() => {
       const element = ref.current
       if (element === null) return
       const rect = element.getBoundingClientRect()
-      setSize({ width: rect.width, height: rect.height })
+      if (rect.width !== size.width || rect.height !== size.height) {
+        setSize({ width: rect.width, height: rect.height })
+      }
+    })
+
+    // Focus once, not on every measurement.
+    React.useEffect(() => {
       inputRef.current?.focus()
     }, [])
 
@@ -151,23 +169,42 @@ export function createPopovers({ findFlow, anchorInTranscript }) {
       }
     }, [onCancel])
 
-    // Pinned to the annotated block, not to the viewport.
+    // Positioned in VIEWPORT space, mounted on document.body.
     //
-    // The popover used to be position:fixed at a viewport coordinate, so scrolling the page left it
-    // hovering over unrelated text. It now mounts as a SIBLING of the annotated block and is
-    // positioned from that block's own offset, so it travels with the passage. Being a sibling also
-    // keeps it outside the paragraph, and therefore outside any passage highlight.
+    // Three things forced this away from the scroller:
+    //
+    //   - the scroll container is 417px wide and the panel is 420, so a `left` computed inside it
+    //     clamps to the inset and the panel reads 142px left of the window's centre;
+    //   - the requirement is expressed in window terms ("above the selected text", "never covered by
+    //     the chat box"), which is viewport reasoning;
+    //   - the panel now docks against the header or the composer once the user types, and both of
+    //     those are viewport-anchored chrome.
     const width = size.width || 420
+    // The first paint has no measurement; 170 is a rough guess that survives one frame only. Every
+    // later render uses the real height, which is what the placement needs to be exact.
     const height = size.height || 170
-    // Same placement rule as the action toolbar: inside the transcript so the container clips it
-    // against the chat chrome, clamped to the visible band so it is never cut off at an edge.
-    const flow = findFlow()
-    const anchored = flow === null
-      ? null
-      : anchorInTranscript(flow, source.rect, { width, height }, 'below')
-    const position = anchored === null
-      ? placeNear(source.rect, { width, height })
-      : anchored.position
+
+    // The resting place: centred, just above the PASSAGE.
+    //
+    // Not `source.rect`: for a mouse gesture that is the pointer release point, which can sit anywhere
+    // inside the passage. Placing "above the pointer" therefore put the panel over the text it was
+    // describing. `source.passage` is the selection's own box, which is the thing the requirement
+    // refers to. Falls back to the pointer only when no passage box exists.
+    // The passage box lives INSIDE rect (selection.js sets rect.passage), not on the source itself.
+    // Reading source.passage silently fell back to the pointer rect, which is why three attempts at
+    // this fix changed nothing at all.
+    const passageBox = source.rect?.passage ?? source.rect
+    const resting = anchorAboveSelection
+      ? anchorAboveSelection(passageBox, { width, height })
+      : placeNear(passageBox, { width, height })
+
+    // Once the user has typed something, the panel glides to the nearer edge of the band. The
+    // resting position is kept as the "no input yet" answer, so clearing the text puts it back.
+    const hasInput = comment.trim() !== ''
+    const docked = hasInput && snapPosition
+      ? snapPosition(resting.top, { width, height })
+      : null
+    const target = docked ?? { left: resting.left, top: resting.top }
 
     return createPortal(
       h('div', {
@@ -175,10 +212,13 @@ export function createPopovers({ findFlow, anchorInTranscript }) {
         className: 'qc-compose',
         role: 'dialog',
         'aria-label': labels.title,
+        // The docked slot is a data attribute so the stylesheet can add the transition only when a
+        // move is actually happening — the first paint must not animate from the origin.
+        'data-docked': docked === null ? 'false' : docked.edge,
         style: {
-          left: `${position.left}px`,
-          top: `${position.top}px`,
-          position: anchored === null ? 'fixed' : 'absolute',
+          left: `${target.left}px`,
+          top: `${target.top}px`,
+          position: 'fixed',
         },
         onMouseDown: (event) => event.stopPropagation(),
         onKeyDown: (event) => {
@@ -188,14 +228,6 @@ export function createPopovers({ findFlow, anchorInTranscript }) {
           }
         },
       },
-      source.previewHtml !== ''
-        // The model's own markup, replayed: the preview shows the passage the way the answer showed
-        // it, emphasis and math included.
-        ? h('div', {
-          className: 'qc-compose-preview',
-          dangerouslySetInnerHTML: { __html: source.previewHtml },
-        })
-        : h('div', { className: 'qc-compose-preview' }, source.previewText),
       source.kind === 'table'
         ? null
         : h('textarea', {
@@ -226,7 +258,8 @@ export function createPopovers({ findFlow, anchorInTranscript }) {
         }, h(IconCheck, null), h('span', { className: 'qc-compose-confirm-text' }, labels.confirm)),
       ),
       ),
-      anchored === null ? document.body : anchored.scroller,
+      // Mounted on body: a fixed dialog whose coordinates are viewport coordinates.
+      document.body,
     )
   }
 

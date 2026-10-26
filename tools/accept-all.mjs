@@ -64,6 +64,11 @@ try {
     }
     let outcome
     try {
+      // Every suite gets the same starting state: the launch profile persists layout, so a side-chat
+      // run would otherwise leave the right sidebar open and squeeze the conversation for the next
+      // suite. It also keeps a run watchable by a human.
+      const normalised = await browser.prepareSession()
+      if (normalised.length > 0) console.log(`     prepared: ${normalised.join(', ')}`)
       outcome = await suite.run({ browser, check, url })
     } catch (error) {
       // The suite's own body reports a throw; this catches a crash in its setup instead.

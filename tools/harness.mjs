@@ -66,7 +66,20 @@ export async function openBrowser(options = {}) {
       executablePath: CHROME,
       // Maximised so the run is watchable, and positioned at the origin so two concurrent runs do not
       // land on top of each other at an arbitrary offset.
-      args: ['--start-maximized', '--window-position=0,0'],
+      args: [
+        '--start-maximized',
+        '--window-position=0,0',
+        // The translation bubble and the crash-restore bubble are browser UI, not app UI, and both sit
+        // in the top-right corner — over the header edge where the compose panel docks. They covered
+        // the app during both measurement and human inspection, so they are switched off here.
+        '--disable-translate',
+        '--disable-features=Translate,TranslateUI,TranslateLanguageDetection',
+        '--hide-crash-restore-bubble',
+        '--no-first-run',
+        '--no-default-browser-check',
+        // Keep the window focused, so screenshots show the app rather than a dimmed background.
+        '--disable-backgrounding-occluded-windows',
+      ],
       // null = use the window's size. With a fixed viewport the page would stay 1280x800 regardless of
       // the window, and the point of maximising is lost.
       viewport,
@@ -290,9 +303,102 @@ export async function openBrowser(options = {}) {
     if (options.context === undefined) await context.close()
   }
 
+  /**
+   * Collapse the RIGHT sidebar, which squeezes the conversation once a chat is open.
+   *
+   * The sidebar is identified by the app's own column element, and the control by its label — the left
+   * rail has a similar-looking control ("收起侧边栏" at left=240) that must not be used.
+   *
+   * Call this AFTER entering a conversation: the sidebar does not exist on the landing view, so a
+   * check made there finds nothing and lets the squeeze happen later.
+   *
+   * @returns the changes it made, for logging.
+   */
+  const collapseRightSidebar = async () => {
+    const changes = []
+
+    const before = await read(() => {
+      const bar = document.querySelector('.pI_x6G_rightbarCol')
+      if (bar === null) return { present: false }
+      const box = bar.getBoundingClientRect()
+      const column = document.querySelector('.pI_x6G_centerCol')
+      return {
+        present: true,
+        width: Math.round(box.width),
+        columnWidth: column === null ? null : Math.round(column.getBoundingClientRect().width),
+      }
+    })
+    if (!before.present) return changes
+    changes.push(`rightbar: ${before.width}px, column ${before.columnWidth}px`)
+
+    if (before.width === 0) return changes
+
+    const clicked = await read(() => {
+      for (const element of document.querySelectorAll('[aria-label], [title]')) {
+        const label = element.getAttribute('aria-label') ?? element.getAttribute('title') ?? ''
+        // Exact: "收起右侧边栏". The left rail's control is "收起侧边栏" and must be left alone.
+        if (!/收起右侧边栏|收起右侧栏|collapse right sidebar/i.test(label)) continue
+        const box = element.getBoundingClientRect()
+        if (box.width === 0 || box.height === 0) continue
+        element.click()
+        return label
+      }
+      return null
+    })
+    if (clicked === null) {
+      changes.push('rightbar: no collapse control found')
+      return changes
+    }
+
+    await page.waitForTimeout(260)
+    const after = await read(() => {
+      const bar = document.querySelector('.pI_x6G_rightbarCol')
+      const column = document.querySelector('.pI_x6G_centerCol')
+      return {
+        width: bar === null ? 0 : Math.round(bar.getBoundingClientRect().width),
+        columnWidth: column === null ? null : Math.round(column.getBoundingClientRect().width),
+      }
+    })
+    changes.push(`collapsed via "${clicked}": ${after.width}px, column ${after.columnWidth}px`)
+    return changes
+  }
+
+  /**
+   * Put the app into a known state before a run.
+   *
+   * The launch profile persists layout, so a previous side-chat run leaves the right sidebar open and
+   * squeezes the conversation to 424px of 1280 — which changes every placement measurement and hides
+   * the app while a human is watching.
+   *
+   * This only handles what can be handled before a conversation exists. The right sidebar is created
+   * when a chat opens, so suites that open one must call `collapseRightSidebar` after entering.
+   *
+   * @returns the changes it made, for logging.
+   */
+  const prepareSession = async () => {
+    const changes = await collapseRightSidebar()
+
+    // Dismiss anything of ours still showing; Escape is what the plugin itself listens for.
+    const leftover = await read(() => ({
+      compose: document.querySelector('.qc-compose') !== null,
+      panel: document.querySelector('.qc-bubble-panel') !== null,
+      popup: document.querySelector('.qc-popup') !== null,
+    }))
+    if (leftover.compose || leftover.panel || leftover.popup) {
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(120)
+      changes.push('dismissed a leftover surface')
+    }
+
+    // Drop any inherited selection, so no suite starts with something already selected.
+    await read(() => window.getSelection()?.removeAllRanges())
+
+    return changes
+  }
+
   return {
     page, context, goto, waitFor, read, count, click, tripleClick, hover, type, press,
-    moveAway, rightClickAt, clickAt, dragSelect, textOf, pluginErrors, errors, close,
+    moveAway, rightClickAt, clickAt, dragSelect, textOf, pluginErrors, errors, close, prepareSession, collapseRightSidebar,
   }
 }
 

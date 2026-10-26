@@ -58,6 +58,12 @@ export async function run({ browser, check: report, url }) {
       + " return [...f.querySelectorAll('p, li')].some((el) => (el.innerText ?? '').trim().length > 40) })()",
     { timeoutMs: 20000 },
   )
+
+  // The right sidebar is created when a chat opens and squeezes the conversation to ~424px of
+  // 1280, which changes every placement measurement and hides the app from a human watching the
+  // run. Collapse it here, after the conversation exists, and log what changed.
+  const layoutNormalisation = await browser.collapseRightSidebar()
+  if (layoutNormalisation.length > 0) console.log(`     layout: ${layoutNormalisation.join(' | ')}`)
   check('the transcript has selectable prose', prose !== null)
 
   // ── Clean slate ────────────────────────────────────────────────────────
@@ -204,10 +210,13 @@ export async function run({ browser, check: report, url }) {
   check('the compose box is inside the viewport',
     composeGeometry !== null && composeGeometry.inViewport === true,
     JSON.stringify(composeGeometry))
-  check('the compose box is anchored near the selection, not parked at a corner',
+  // Attached to the passage, not parked: within a small distance of one of its edges. It no longer
+  // OVERLAPS the passage, because the panel now sits clear of the selected text — overlapping was the
+  // bug this placement replaced.
+  check('the compose box is anchored to the passage, not parked at a corner',
     composeGeometry !== null
       && Math.abs(composeGeometry.topVersusPassage) <= 340
-      && composeGeometry.overlapVertically === true,
+      && composeGeometry.overlapVertically === false,
     JSON.stringify(composeGeometry))
 
 
@@ -334,6 +343,111 @@ export async function run({ browser, check: report, url }) {
       : { supported: true, held: registry.get('quote-chat-flash') !== undefined }
   })
   check('opening the editor lights the passage', held.held === true, JSON.stringify(held))
+
+  // ── The compose panel must never cover the selected text ───────────────
+  // Earlier assertions checked that the panel exists and is "near" the selection. Neither would have
+  // caught the reported bug: measured across three block positions, the panel covered the passage in
+  // half of them. The cause was twofold — placement came from the pointer release point rather than
+  // the passage box, and the height used was a 170px guess made before the panel had measured itself.
+  //
+  // The selected RANGE is recorded before the toolbar click, because the click consumes the selection.
+  // That is why an assertion written against a live selection could pass while the panel covered text.
+  const scenarioResults = []
+  for (const which of ["first", "middle", "last"]) {
+    await press('Escape')
+    await browser.page.waitForTimeout(120)
+
+    const placed = await read(({ sel, position }) => {
+      const flow = document.querySelector(sel)
+      if (flow === null) return null
+      const blocks = [...flow.querySelectorAll("p, li")]
+        .filter((element) => (element.innerText ?? "").trim().length > 40)
+      if (blocks.length === 0) return null
+      for (const element of document.querySelectorAll("[data-qc-probe=\"1\"]")) {
+        element.removeAttribute("data-qc-probe")
+      }
+      const index = position === "first" ? 0
+        : position === "last" ? blocks.length - 1 : Math.floor(blocks.length / 2)
+      const block = blocks[index]
+      block.setAttribute("data-qc-probe", "1")
+      block.scrollIntoView({ block: "center" })
+      const box = block.getBoundingClientRect()
+      if (box.top < 0 || box.bottom > window.innerHeight) return null
+      return {
+        from: { x: Math.round(box.left + 14), y: Math.round(box.top + Math.min(12, box.height / 2)) },
+        to: { x: Math.round(box.left + 120), y: Math.round(box.top + Math.min(12, box.height / 2)) },
+      }
+    }, { sel: flowSelector, position: which })
+
+    if (placed === null) continue
+    await browser.page.waitForTimeout(140)
+    await browser.dragSelect(placed.from, placed.to)
+
+    // The requirement is about the selected text, so measure THAT, before it is consumed.
+    const selectionBox = await read(() => {
+      const selection = window.getSelection()
+      const range = selection === null || selection.rangeCount === 0 ? null : selection.getRangeAt(0)
+      if (range === null) return null
+      const box = range.getBoundingClientRect()
+      return { top: Math.round(box.top), bottom: Math.round(box.bottom), height: Math.round(box.height) }
+    })
+    if (selectionBox === null) continue
+
+    const toolbarReady = await waitFor("document.querySelectorAll('.qc-popup button').length === 2",
+      { timeoutMs: 5000 })
+    if (toolbarReady === null) continue
+    await click('.qc-popup button:first-child')
+    const opened = await waitFor("document.querySelector('.qc-compose') !== null", { timeoutMs: 5000 })
+    if (opened === null) continue
+    await browser.page.waitForTimeout(220)
+
+    const measured = await read((selectionTop, selectionBottom) => {
+      const panel = document.querySelector('.qc-compose')
+      if (panel === null) return null
+      const box = panel.getBoundingClientRect()
+      const overlaps = box.top < selectionBottom && box.bottom > selectionTop
+      return {
+        panelTop: Math.round(box.top),
+        panelBottom: Math.round(box.bottom),
+        overlap: overlaps,
+        // Clearance from the nearer edge of the selection; must be positive and roughly the gap.
+        gapAbove: Math.round(selectionTop - box.bottom),
+        gapBelow: Math.round(box.top - selectionBottom),
+        inViewport: box.top >= 0 && box.bottom <= window.innerHeight,
+      }
+    }, selectionBox.top, selectionBox.bottom)
+
+    scenarioResults.push({ which, selectionBox, measured })
+  }
+
+  const coveting = scenarioResults.filter((entry) => entry.measured?.overlap === true)
+  check('the compose panel never covers the selected text',
+    scenarioResults.length > 0 && coveting.length === 0,
+    JSON.stringify({
+      tried: scenarioResults.map((entry) => entry.which),
+      covered: coveting.map((entry) => ({
+        block: entry.which,
+        panel: [entry.measured?.panelTop, entry.measured?.panelBottom],
+        selection: [entry.selectionBox.top, entry.selectionBox.bottom],
+      })),
+    }))
+  check('the compose panel stays inside the viewport in every position',
+    scenarioResults.length > 0 && scenarioResults.every((entry) => entry.measured?.inViewport === true),
+    JSON.stringify(scenarioResults.map((entry) => ({
+      block: entry.which, inViewport: entry.measured?.inViewport,
+    }))))
+  check('the compose panel keeps a gap from the selection, above or below',
+    scenarioResults.length > 0 && scenarioResults.every((entry) => {
+      const gap = entry.measured?.gapAbove >= 0 ? entry.measured?.gapAbove : entry.measured?.gapBelow
+      return typeof gap === "number" && gap >= 4 && gap <= 24
+    }),
+    JSON.stringify(scenarioResults.map((entry) => ({
+      block: entry.which, above: entry.measured?.gapAbove, below: entry.measured?.gapBelow,
+    }))))
+
+  // Leave a clean state for the dismissal checks that follow.
+  await press('Escape')
+  await waitFor("document.querySelector('.qc-compose') === null", { timeoutMs: 4000 })
 
   // ── Dismissing the compose box must also clear the highlight ───────────
   // Two listeners used to compete for this dismissal: the dock's called setOverlay(null)

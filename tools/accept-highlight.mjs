@@ -75,6 +75,14 @@ export async function run({ browser, check: report, url }) {
       if (hit !== undefined) hit.click()
     })
 
+  // The right sidebar is created when a chat opens and squeezes the conversation to ~424px of 1280.
+  // Collapsing it here — after the conversation exists, before anything is measured — keeps every
+  // geometry result meaningful and lets a human watch the app instead of a narrow strip.
+  {
+    const layoutNormalisation = await browser.collapseRightSidebar()
+    if (layoutNormalisation.length > 0) console.log(`     layout: ${layoutNormalisation.join(' | ')}`)
+  }
+
     const flowSelector = '[data-slot="conversation.chat.flow"]'
     const prose = await waitFor(
       `(() => { const f = document.querySelector('${flowSelector}'); if (f === null) return false;`

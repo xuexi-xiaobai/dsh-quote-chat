@@ -339,12 +339,27 @@ check('a shared anchoring helper exists',
 check('the selection toolbar is anchored inside the transcript',
   /anchorInTranscript\(flow, anchor, measured, 'below'\)/.test(popoversSource),
   'the toolbar is placed against the viewport and follows the screen')
-check('the compose popover is anchored inside the transcript',
-  /anchorInTranscript\(flow, source\.rect, \{ width, height \}, 'below'\)/.test(popoversSource),
-  'the popover is placed against the viewport and follows the screen')
-check('both surfaces mount into the transcript when anchored',
-  /anchored === null \? document\.body : anchored\.scroller/.test(popoversSource),
-  'a surface is mounted at body, where nothing clips it against the composer')
+check('the compose popover sits above the selection',
+  // Viewport placement now: centred, just above the selected passage. The container-based
+  // anchorInTranscript call remains for the ACTION TOOLBAR, which is still a small anchored popup.
+  // The passage box, not the pointer rect: for a mouse drag `source.rect` is the release point,
+  // which can sit anywhere inside the passage and caused the panel to cover the text.
+  /anchorAboveSelection\(passageBox, \{ width, height \}\)/.test(popoversSource)
+    && /source\.rect\?\.passage \?\? source\.rect/.test(popoversSource)
+    && !/anchorInTranscript\(flow, source\.rect/.test(popoversSource),
+  'the compose panel is not placed above the selection')
+check('the compose popover docks once the user types',
+  /snapPosition\(resting\.top, \{ width, height \}\)/.test(popoversSource)
+    && /comment\.trim\(\) !== ''/.test(popoversSource),
+  'the compose panel does not dock to the header or the composer')
+check('the compose popover is mounted at body for fixed coordinates',
+  /document\.body,\n\s*\)\n\s*\}/.test(popoversSource)
+    && /position: 'fixed'/.test(popoversSource),
+  'a fixed panel inside the scroller would be offset by the scroll amount')
+check('the docking move is animated, not a jump',
+  /transition:top .*cubic-bezier/.test(css)
+    && /data-docked/.test(popoversSource),
+  'the panel would jump between its resting and docked places')
 check('the anchor is clamped into the scroll band',
   /bandBottom - height - ANCHOR_INSET/.test(layoutSource)
     && /Math\.max\(bandTop \+ ANCHOR_INSET, top\)/.test(layoutSource),

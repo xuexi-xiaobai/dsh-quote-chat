@@ -168,7 +168,10 @@ const { SideChat, SideChatTab } = createSideChat({
 
 const { ActionPopup, ComposerPopover } = createPopovers({
   findFlow: layout.findFlow,
-  anchorInTranscript: (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer)
+  anchorInTranscript: (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer),
+  // Viewport-space placement for the compose panel: above the selection, then docked once it has text.
+  anchorAboveSelection: layout.anchorAboveSelection,
+  snapPosition: layout.snapPosition,
 })
 
 /**

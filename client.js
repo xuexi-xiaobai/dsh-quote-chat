@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:2b999de4a552f833
+ * Artifact: sha256:9d335179719d1868
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -849,6 +849,57 @@ function __dshQuoteChatFactory(hostRequire) {
       const left = Math.min(Math.max(ANCHOR_INSET, localLeft), maxLeft);
       return { scroller, position: { top, left } };
     }
+    function readableBand() {
+      const viewportHeight = typeof window === "undefined" ? 0 : window.innerHeight;
+      let top = 0;
+      if (typeof document !== "undefined") {
+        const header = document.querySelector("header") ?? document.querySelector('[data-slot="conversation.chat.header"]');
+        if (header !== null) {
+          const box = header.getBoundingClientRect();
+          if (box.height > 0 && box.top <= 0) top = Math.max(0, box.bottom);
+        }
+      }
+      let bottom = viewportHeight;
+      const dock = findComposerDock();
+      if (dock !== null) {
+        const box = dock.getBoundingClientRect();
+        if (box.height > 0 && box.top > top) bottom = box.top;
+      }
+      return { top, bottom, height: Math.max(1, bottom - top) };
+    }
+    function anchorAboveSelection(selectionBox, size, options = {}) {
+      const gap = options.gap ?? 10;
+      const margin = options.margin ?? 8;
+      const viewportWidth = typeof window === "undefined" ? 0 : window.innerWidth;
+      const band = readableBand();
+      const left = Math.max(margin, Math.round((viewportWidth - size.width) / 2));
+      const spaceAbove = selectionBox.top - band.top;
+      const spaceBelow = band.bottom - selectionBox.bottom;
+      const needed = size.height + gap + margin;
+      const above = selectionBox.top - gap - size.height;
+      const below = selectionBox.bottom + gap;
+      if (spaceAbove >= needed) return { left, top: above };
+      if (spaceBelow >= needed) return { left, top: below };
+      const preferred = spaceAbove >= spaceBelow ? above : below;
+      const highest = band.top + margin;
+      const lowest = Math.max(highest, band.bottom - size.height - margin);
+      return { left, top: Math.min(Math.max(highest, preferred), lowest) };
+    }
+    function snapPosition(restingTop, size, options = {}) {
+      const gap = options.gap ?? 8;
+      const margin = options.margin ?? 8;
+      const viewportWidth = typeof window === "undefined" ? 0 : window.innerWidth;
+      const band = readableBand();
+      const top = band.top + gap;
+      const bottom = Math.max(band.top + gap, band.bottom - gap - size.height);
+      const toTop = Math.abs(restingTop - top);
+      const toBottom = Math.abs(bottom - restingTop);
+      return {
+        left: Math.max(margin, Math.round((viewportWidth - size.width) / 2)),
+        top: toTop <= toBottom ? top : bottom,
+        edge: toTop <= toBottom ? "top" : "bottom"
+      };
+    }
     function anchorAboveBubble(flow, bubble, size) {
       const scroller = containerFor(flow);
       if (scroller === null || scroller === void 0 || bubble === null) return null;
@@ -932,6 +983,9 @@ function __dshQuoteChatFactory(hostRequire) {
       visibleChatArea,
       anchorInTranscript,
       anchorAboveBubble,
+      anchorAboveSelection,
+      snapPosition,
+      readableBand,
       flowColumnBox,
       flowColumn,
       columnElement
@@ -1130,24 +1184,30 @@ function __dshQuoteChatFactory(hostRequire) {
   .qc-popup button+button{box-shadow:inset 1px 0 0 var(--dsw-alias-border-l1)}
   .qc-popup svg{flex:none;opacity:.8}
 
+  /* The compose panel: a compact dialog, larger radii to match the composer it sits above.
+   *
+   * The transition is declared here but only engages once the panel is DOCKED. A plain transition on the
+   * top property would animate the first paint as well, so the panel would fly in from wherever it
+   * rendered instead of appearing at its resting place above the selection.
+   *
+   * z-index 60 keeps it above the transcript but BELOW the app's chrome: the composer dock and the
+   * header are rendered by the host at higher layers, so when the panel is pushed under them it is
+   * covered rather than floating on top. That is the requested behaviour.
+   */
   .qc-compose{position:fixed;z-index:60;width:min(420px,92vw);box-sizing:border-box;
-    border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:12px;
+    border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:18px;
     background:var(--dsw-alias-bg-overlay);
     box-shadow:0 16px 40px rgba(0,0,0,.32),0 2px 8px rgba(0,0,0,.18);
-    padding:10px;color:var(--dsw-alias-label-primary);
-    font-size:12.5px;animation:qc-pop .1s ease-out}
-  .qc-compose-preview{max-height:88px;overflow-y:auto;padding:6px 8px;border-radius:8px;
-    background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);
-    color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.55;word-break:break-word;
-    white-space:pre-wrap;margin-bottom:8px}
-  .qc-compose-preview table{border-collapse:collapse;font-size:11px}
-  .qc-compose-preview td,.qc-compose-preview th{border:1px solid var(--dsw-alias-border-l1);padding:2px 5px}
-  .qc-compose-preview .katex{font-size:1em}
-  .qc-compose textarea{width:100%;box-sizing:border-box;resize:none;min-height:2.6em;max-height:9em;
-    font:inherit;line-height:1.5;padding:7px 9px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);
+    padding:12px;color:var(--dsw-alias-label-primary);
+    font-size:12.5px;animation:qc-pop .1s ease-out;
+    /* Smooth glide between the resting place and the docked slots. */
+    transition:top .26s cubic-bezier(.22,.61,.36,1),left .26s cubic-bezier(.22,.61,.36,1)}
+  .qc-compose[data-docked="false"]{transition:none}
+  .qc-compose textarea{width:100%;box-sizing:border-box;resize:none;min-height:2.8em;max-height:9em;
+    font:inherit;line-height:1.5;padding:9px 11px;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);
     background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);outline:none}
   .qc-compose textarea:focus{border-color:var(--dsw-alias-brand-primary)}
-  .qc-compose-row{display:flex;align-items:center;gap:8px;margin-top:8px}
+  .qc-compose-row{display:flex;align-items:center;gap:8px;margin-top:10px}
   .qc-compose-hint{flex:1;min-width:0;font-size:11px;color:var(--dsw-alias-label-secondary);opacity:.85;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .qc-compose-confirm{appearance:none;border:0;border-radius:999px;min-width:26px;height:26px;
@@ -1622,7 +1682,12 @@ function __dshQuoteChatFactory(hostRequire) {
     }
     return { left: Math.max(VIEWPORT_MARGIN, left), top: Math.max(VIEWPORT_MARGIN, top) };
   }
-  function createPopovers({ findFlow, anchorInTranscript }) {
+  function createPopovers({
+    findFlow,
+    anchorInTranscript,
+    anchorAboveSelection,
+    snapPosition
+  }) {
     function ActionPopup2(props) {
       const { anchor, canAnnotate, canAsk, labels, onAnnotate, onAsk } = props;
       const ref = import_react3.default.useRef(null);
@@ -1679,7 +1744,11 @@ function __dshQuoteChatFactory(hostRequire) {
         const element = ref.current;
         if (element === null) return;
         const rect = element.getBoundingClientRect();
-        setSize({ width: rect.width, height: rect.height });
+        if (rect.width !== size.width || rect.height !== size.height) {
+          setSize({ width: rect.width, height: rect.height });
+        }
+      });
+      import_react3.default.useEffect(() => {
         inputRef.current?.focus();
       }, []);
       import_react3.default.useEffect(() => {
@@ -1699,9 +1768,11 @@ function __dshQuoteChatFactory(hostRequire) {
       }, [onCancel]);
       const width = size.width || 420;
       const height = size.height || 170;
-      const flow = findFlow();
-      const anchored = flow === null ? null : anchorInTranscript(flow, source.rect, { width, height }, "below");
-      const position = anchored === null ? placeNear(source.rect, { width, height }) : anchored.position;
+      const passageBox = source.rect?.passage ?? source.rect;
+      const resting = anchorAboveSelection ? anchorAboveSelection(passageBox, { width, height }) : placeNear(passageBox, { width, height });
+      const hasInput = comment.trim() !== "";
+      const docked = hasInput && snapPosition ? snapPosition(resting.top, { width, height }) : null;
+      const target = docked ?? { left: resting.left, top: resting.top };
       return (0, import_react_dom.createPortal)(
         h2(
           "div",
@@ -1710,10 +1781,13 @@ function __dshQuoteChatFactory(hostRequire) {
             className: "qc-compose",
             role: "dialog",
             "aria-label": labels.title,
+            // The docked slot is a data attribute so the stylesheet can add the transition only when a
+            // move is actually happening — the first paint must not animate from the origin.
+            "data-docked": docked === null ? "false" : docked.edge,
             style: {
-              left: `${position.left}px`,
-              top: `${position.top}px`,
-              position: anchored === null ? "fixed" : "absolute"
+              left: `${target.left}px`,
+              top: `${target.top}px`,
+              position: "fixed"
             },
             onMouseDown: (event) => event.stopPropagation(),
             onKeyDown: (event) => {
@@ -1723,10 +1797,6 @@ function __dshQuoteChatFactory(hostRequire) {
               }
             }
           },
-          source.previewHtml !== "" ? h2("div", {
-            className: "qc-compose-preview",
-            dangerouslySetInnerHTML: { __html: source.previewHtml }
-          }) : h2("div", { className: "qc-compose-preview" }, source.previewText),
           source.kind === "table" ? null : h2("textarea", {
             ref: inputRef,
             value: comment,
@@ -1758,7 +1828,8 @@ function __dshQuoteChatFactory(hostRequire) {
             }, h2(IconCheck, null), h2("span", { className: "qc-compose-confirm-text" }, labels.confirm))
           )
         ),
-        anchored === null ? document.body : anchored.scroller
+        // Mounted on body: a fixed dialog whose coordinates are viewport coordinates.
+        document.body
       );
     }
     return { ActionPopup: ActionPopup2, ComposerPopover: ComposerPopover2 };
@@ -3300,7 +3371,10 @@ function __dshQuoteChatFactory(hostRequire) {
   });
   var { ActionPopup, ComposerPopover } = createPopovers({
     findFlow: layout.findFlow,
-    anchorInTranscript: (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer)
+    anchorInTranscript: (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer),
+    // Viewport-space placement for the compose panel: above the selection, then docked once it has text.
+    anchorAboveSelection: layout.anchorAboveSelection,
+    snapPosition: layout.snapPosition
   });
   var highlighter = createHighlighter();
   var annotationStore = createAnnotationStore({ maxAnnotations: MAX_ANNOTATIONS });
