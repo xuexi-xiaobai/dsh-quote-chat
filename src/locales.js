@@ -1,10 +1,10 @@
 /**
  * Locale dictionaries for this package.
  *
- * Both languages are declared here and registered together in `apply`. They are keyed
- * identically — the parity test (`test/locale-parity` in the build chain) fails if one gains
- * a key the other lacks, which is the only failure mode that would show up as an untranslated
- * string in the UI.
+ * Both languages are declared here and registered together in `apply`. They must stay keyed
+ * identically: a key present in one and missing from the other reaches the screen as raw
+ * jargon, which survives review. `test/locale-parity.mjs` enforces that, and also checks that
+ * every literal `t('…')` call in the source resolves to a real key.
  *
  * What this module does NOT do: choose a language, format numbers, or interpolate
  * placeholders. Selection is the locale service's job and interpolation belongs to the

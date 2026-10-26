@@ -80,6 +80,7 @@ import { createPortal } from 'react-dom'
 const h = React.createElement
 
 import { zh, en } from './locales.js'
+import { createAnnotationStore } from './annotation-store.js'
 import { elementOf, cssEscape } from './dom.js'
 import {
   rangeAt, captureAnchor, resolveAnchor, locateText, textOf, nodePath, nodeAtPath,
@@ -724,54 +725,13 @@ import {
     // #region annotation store
 
     /**
-     * Per-session annotation lists, kept in memory for the lifetime of the page.
+     * This plugin instance's annotations.
      *
-     * A tiny external store rather than a framework service: the only readers
-     * are this package's own components, and the list has to be shared between
-     * the dock strip and the gutter markers.
+     * One store per Host factory call, so two plugin instances never share annotations while
+     * a single instance fans them out across sessions by `sessionId`. The store itself lives
+     * in `annotation-store.js`; what remains here is the React adapter.
      */
-    const annotationStores = new Map()
-
-    /**
-     * The store for one session, created on demand.
-     * @param sessionId - the session key.
-     * @returns the store.
-     */
-    function storeFor(sessionId) {
-      let store = annotationStores.get(sessionId)
-      if (store === undefined) {
-        store = { list: [], listeners: new Set(), seq: 0 }
-        annotationStores.set(sessionId, store)
-      }
-      return store
-    }
-
-    /**
-     * Publish a new list to every reader.
-     * @param store - the store being written.
-     * @param list - the replacement list.
-     */
-    function publish(store, list) {
-      store.list = list
-      for (const listener of [...store.listeners]) listener()
-    }
-
-    /**
-     * Renumber a list so the visible numbers are always 1, 2, 3 … in order.
-     *
-     * The number is a position, not an identity. A monotonic counter was wrong in
-     * the way the user described: after deleting an annotation the next one keeps
-     * climbing (1, 2, 3 → delete 2 → 4), and a session that already had
-     * annotations pushes the first new one past 1. Renumbering on every mutation
-     * keeps each draft's numbering starting at 1.
-     * @param list - the annotations in insertion order.
-     * @returns the same annotations with fresh `number` values.
-     */
-    function renumber(list) {
-      return list.map((item, index) => (item.number === index + 1
-        ? item
-        : { ...item, number: index + 1 }))
-    }
+    const annotationStore = createAnnotationStore({ maxAnnotations: MAX_ANNOTATIONS })
 
     /**
      * Add one annotation to a session.
@@ -779,46 +739,23 @@ import {
      * @param draft - the annotation draft (without id or number).
      * @returns the stored annotation, or null when the list is full.
      */
-    function addAnnotation(sessionId, draft) {
-      const store = storeFor(sessionId)
-      if (store.list.length >= MAX_ANNOTATIONS) return null
-      store.seq += 1
-      const annotation = { ...draft, id: `qc-${Date.now()}-${store.seq}`, number: store.list.length + 1 }
-      publish(store, renumber([...store.list, annotation]))
-      return annotation
-    }
+    const addAnnotation = (sessionId, draft) => annotationStore.add(sessionId, draft)
 
     /**
      * Remove one annotation.
      * @param sessionId - the session key.
      * @param id - the annotation id.
      */
-    function removeAnnotation(sessionId, id) {
-      const store = storeFor(sessionId)
-      publish(store, renumber(store.list.filter((item) => item.id !== id)))
-    }
+    const removeAnnotation = (sessionId, id) => annotationStore.remove(sessionId, id)
 
     /**
-     * Change one annotation's comment, keeping everything else.
-     *
-     * The comment is the only editable part: the passage it points at is fixed by
-     * the selection, and the ordinal is a position. Editing is a replace, not a
-     * re-add, so the chip, its id, and its place in the draft all survive.
+     * Change one annotation's comment.
      * @param sessionId - the session key.
      * @param id - the annotation id.
      * @param comment - the new comment text (may be empty).
      * @returns the updated annotation, or null when it is gone.
      */
-    function updateAnnotation(sessionId, id, comment) {
-      const store = storeFor(sessionId)
-      let updated = null
-      publish(store, store.list.map((item) => {
-        if (item.id !== id) return item
-        updated = { ...item, comment: typeof comment === 'string' ? comment.trim() : '' }
-        return updated
-      }))
-      return updated
-    }
+    const updateAnnotation = (sessionId, id, comment) => annotationStore.update(sessionId, id, comment)
 
     /**
      * Look up one annotation.
@@ -826,40 +763,31 @@ import {
      * @param id - the annotation id.
      * @returns the annotation, or null.
      */
-    function findAnnotation(sessionId, id) {
-      return storeFor(sessionId).list.find((item) => item.id === id) ?? null
-    }
+    const findAnnotation = (sessionId, id) => annotationStore.find(sessionId, id)
 
     /**
      * Remove every annotation of a session.
      * @param sessionId - the session key.
      */
-    function clearAnnotations(sessionId) {
-      const store = storeFor(sessionId)
-      if (store.list.length > 0) publish(store, [])
-    }
-
-    /** The empty list shared by sessions that never annotated anything. */
-    const NO_ANNOTATIONS = Object.freeze([])
+    const clearAnnotations = (sessionId) => annotationStore.clear(sessionId)
 
     /**
      * Subscribe to one session's annotations.
+     *
+     * Kept here rather than in the store because it is a React binding: the store exposes a
+     * plain subscribe/snapshot pair, and this adapts them to `useSyncExternalStore`.
+     *
      * @param sessionId - the session key (may be undefined).
      * @returns the current list.
      */
     function useAnnotations(sessionId) {
-      const store = sessionId === undefined ? undefined : storeFor(sessionId)
       const subscribe = React.useCallback(
-        (listener) => {
-          if (store === undefined) return () => {}
-          store.listeners.add(listener)
-          return () => { store.listeners.delete(listener) }
-        },
-        [store],
+        (listener) => annotationStore.subscribe(sessionId, listener),
+        [sessionId],
       )
       const snapshot = React.useCallback(
-        () => (store === undefined ? NO_ANNOTATIONS : store.list),
-        [store],
+        () => annotationStore.snapshot(sessionId),
+        [sessionId],
       )
       return React.useSyncExternalStore(subscribe, snapshot, snapshot)
     }

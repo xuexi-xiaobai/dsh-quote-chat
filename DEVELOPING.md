@@ -109,10 +109,12 @@ node test/boot.mjs      # boots the SHIPPED client.js under a React stub
 - **Source is real ES modules.** Each file imports what it uses and exports what it offers, and
   a missing or misspelled export fails the build. Nothing may rely on one shared scope: the
   bundler does not create one.
-- **React is reached through `src/platform.js`.** A top-level `import React from 'react'` cannot
-  work — module evaluation happens before the Host calls the factory, and only the factory
-  receives `require`. `bindPlatform(require)` captures it; everything else reads it through
-  `getReact()` / `getReactDom()`. `h` is therefore a function, not a captured reference.
+- **The module graph is evaluated inside the Host factory.** `build.mjs` emits the bundle as
+  a function body (`__dshQuoteChatFactory`) and the envelope's `factory` calls it, so each
+  factory call builds a fresh instance of every module-scope value. A plain top-level
+  `import React from 'react'` therefore works: by the time the graph runs, the factory's
+  `require` parameter is in scope and esbuild's external helper resolves through it. Do not
+  move that call to module scope — it would reintroduce one shared instance for the whole page.
 - `test/boot.mjs` boots the shipped `client.js`; that is the artifact test. Its structural
   assertions read the authored modules instead, because they describe how the code is written
   and must not break when the bundler re-formats its output.

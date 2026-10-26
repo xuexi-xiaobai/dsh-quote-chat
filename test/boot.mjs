@@ -178,19 +178,19 @@ function makeReact() {
 const React = makeReact()
 const ReactDOM = { createPortal: (node) => node, render: () => {}, flushSync: (fn) => fn() }
 
-const registered = []
-
 /**
  * Build a fresh client context.
  *
- * A factory rather than one shared literal, because the per-instance test applies two plugin
- * instances and needs each to register into a context it owns. A shared context would make
- * the second apply indistinguishable from the first.
+ * Each context records its own registrations, so two plugin instances can be told apart.
+ * A shared array would make "both registered" look like proof of independence even when the
+ * instances share state — registration is driven by `apply`, not by the annotation map.
  *
  * @returns a context object in the shape `apply` expects.
  */
 function makeContext() {
-  return {
+  const registered = []
+  const context = {
+    registered,
     locale: { register: () => {}, bind: () => (key) => key, t: (key) => key },
     effect: (fn) => {
       const dispose = fn()
@@ -213,9 +213,9 @@ function makeContext() {
     },
     inputTriggers: { registerSource: () => () => {} },
   }
+  return context
 }
 
-const context = makeContext()
 
 const sandbox = {
   document: documentStub,
@@ -302,8 +302,11 @@ check('the bundle evaluates inside the factory, not at load',
   `envelope=${registersOnlyTheEnvelope} noTopLevelIife=${noTopLevelIife}`)
 
 // --- Per-call instances ----------------------------------------------------
-// Two factory calls must produce two independent plugin instances. A bundle that evaluates
-// once at load fails this by construction.
+// Two factory calls must produce two independent plugin instances, including independent
+// annotation state. Note what does NOT prove this: both instances registering a dock. Two
+// instances sharing one annotation map would still register twice, because registration is
+// driven by `apply`, not by the map. The proof has to observe the state itself — so both
+// instances are driven with the SAME sessionId and their annotations are compared.
 let secondError = null
 let secondExported = null
 try {
@@ -322,34 +325,66 @@ check('a second factory call returns its own export object',
     && typeof secondExported.apply === 'function',
   'the second call did not produce an independent export object')
 
-// Applying the second instance must register into its own scope, which is the observable
-// form of "fresh module state".
-let secondRegistrations = null
+// Apply both instances, each into a context it owns, so their registrations are separable.
+// The first context is also the one the rest of this suite inspects, so it is applied once.
+const firstContext = makeContext()
+const secondContext = makeContext()
+const context = firstContext
 if (secondExported !== null && typeof secondExported.apply === 'function') {
-  const before = registered.length
-  try {
-    secondExported.apply(makeContext())
-    secondRegistrations = registered.length - before
-  } catch {
-    secondRegistrations = null
-  }
+  try { secondExported.apply(secondContext) } catch { /* reported by the boot checks */ }
 }
-check('a second instance registers independently of the first',
-  typeof secondRegistrations === 'number' && secondRegistrations > 0,
-  'the second apply() registered nothing, so the instances share state')
-
-let applyError = null
+/** Whatever the first instance's `apply` threw, reported by the check below. */
+let firstApplyError = null
 if (exported !== null && typeof exported.apply === 'function') {
-  try {
-    exported.apply(context)
-  } catch (error) {
-    applyError = error
-  }
+  try { exported.apply(firstContext) } catch (error) { firstApplyError = error }
 }
+check('each instance registers into its own context',
+  firstContext.registered.length > 0 && secondContext.registered.length > 0,
+  `first=${firstContext.registered.length} second=${secondContext.registered.length}`)
+
+// The annotation state must be per-instance. Registration count cannot show this: two
+// instances sharing one annotation map would still register a dock each, because registration
+// is driven by `apply`, not by the map. So the store itself is exercised directly — it is an
+// exported module, and two factory calls must yield two stores that do not see each other even
+// for the SAME sessionId.
+let stateIsolation = null
+/** The session both instances are driven with, to prove the stores do not share state. */
+const SHARED_SESSION = 'shared-session-id'
+try {
+  const storeModule = await import('../src/annotation-store.js')
+  const firstStore = storeModule.createAnnotationStore({ maxAnnotations: 12 })
+  const secondStore = storeModule.createAnnotationStore({ maxAnnotations: 12 })
+  firstStore.add(SHARED_SESSION, { kind: 'text', text: 'only in the first instance' })
+  let secondNotified = 0
+  secondStore.subscribe(SHARED_SESSION, () => { secondNotified += 1 })
+  firstStore.add(SHARED_SESSION, { kind: 'text', text: 'another in the first' })
+  stateIsolation = {
+    firstLength: firstStore.snapshot(SHARED_SESSION).length,
+    secondLength: secondStore.snapshot(SHARED_SESSION).length,
+    secondNotified,
+  }
+} catch (error) {
+  stateIsolation = { error: String(error) }
+}
+check('annotation state is per store instance, even for the same sessionId',
+  stateIsolation !== null
+    && stateIsolation.firstLength === 2
+    && stateIsolation.secondLength === 0
+    && stateIsolation.secondNotified === 0,
+  stateIsolation === null ? 'the store module was unreachable' : JSON.stringify(stateIsolation))
+
+// And the bundle must create that store inside the factory, so each Host call gets one.
+check('the bundle creates the annotation store inside the factory',
+  /factory\(hostRequire\) \{[\s\S]*__dshQuoteChatFactory\(hostRequire\)/.test(source)
+    && !/^const annotationStore = /m.test(source),
+  'the store is created at load time rather than per factory call')
+
+// The apply calls above already ran; record whether the first one threw.
+let applyError = firstApplyError
 check('apply() runs without throwing', applyError === null,
   applyError === null ? '' : `${applyError.name}: ${applyError.message}`)
 check('the annotation dock is registered',
-  registered.some((entry) => entry.spec?.name === 'conversation.input.dock'),
+  firstContext.registered.some((entry) => entry.spec?.name === 'conversation.input.dock'),
   'conversation.input.dock was not registered')
 
 // --- Render the dock with effects live -------------------------------------
@@ -392,7 +427,7 @@ React.useEffect = (fn) => { fn() }
 React.useLayoutEffect = (fn) => { fn() }
 
 const renderErrors = []
-for (const entry of registered) {
+for (const entry of firstContext.registered) {
   if (typeof entry.component !== 'function') continue
   try {
     renderValue(entry.component)
@@ -467,6 +502,6 @@ for (const item of cases) {
   if (!item.ok) failed += 1
   console.log(`${item.ok ? 'PASS' : 'FAIL'}  ${item.name}${item.ok || item.detail === '' ? '' : `  ->  ${item.detail}`}`)
 }
-console.log(`\nregistrations: ${registered.map((entry) => entry.spec?.name).join(', ') || '(none)'}`)
+console.log(`\nregistrations: ${firstContext.registered.map((entry) => entry.spec?.name).join(', ') || '(none)'}`)
 console.log(`\n${cases.length - failed}/${cases.length} passed`)
 process.exit(failed === 0 ? 0 : 1)

@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:31f33a47d6a1c57f
+ * Artifact: sha256:20d200ecf2a31dea
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -141,6 +141,142 @@ function __dshQuoteChatFactory(hostRequire) {
     "side.assistant": "Assistant",
     "side.noQuote": "Select a passage in an answer, then choose “Ask in side chat”."
   };
+
+  // src/annotation-store.js
+  function createAnnotationStore({ maxAnnotations = 12 } = {}) {
+    const sessions = /* @__PURE__ */ new Map();
+    const EMPTY = Object.freeze([]);
+    function stateFor(sessionId) {
+      let state = sessions.get(sessionId);
+      if (state === void 0) {
+        state = { list: EMPTY, listeners: /* @__PURE__ */ new Set(), seq: 0 };
+        sessions.set(sessionId, state);
+      }
+      return state;
+    }
+    function publish(state, list) {
+      state.list = list;
+      for (const listener of [...state.listeners]) listener();
+    }
+    function renumber(list) {
+      return list.map((item, index) => item.number === index + 1 ? item : { ...item, number: index + 1 });
+    }
+    return {
+      /**
+       * The current list for one session.
+       *
+       * Identity-stable: the previous array is returned until a mutation replaces it.
+       *
+       * @param sessionId - the session key (may be undefined).
+       * @returns the list, or a shared frozen empty array.
+       */
+      snapshot(sessionId) {
+        if (sessionId === void 0) return EMPTY;
+        return sessions.get(sessionId)?.list ?? EMPTY;
+      },
+      /**
+       * Subscribe to one session's changes.
+       *
+       * Subscribing before any annotation exists is supported and is not the same as
+       * subscribing to a non-existent session: the session is materialized on subscribe, so a
+       * later add still notifies.
+       *
+       * @param sessionId - the session key (may be undefined).
+       * @param listener - called after each mutation of that session.
+       * @returns an unsubscribe function.
+       */
+      subscribe(sessionId, listener) {
+        if (sessionId === void 0) return () => {
+        };
+        const state = stateFor(sessionId);
+        state.listeners.add(listener);
+        return () => {
+          state.listeners.delete(listener);
+        };
+      },
+      /**
+       * Add one annotation.
+       * @param sessionId - the session key.
+       * @param draft - the annotation draft, without id or number.
+       * @returns the stored annotation, or null when the session's list is full.
+       */
+      add(sessionId, draft) {
+        const state = stateFor(sessionId);
+        if (state.list.length >= maxAnnotations) return null;
+        state.seq += 1;
+        const annotation = {
+          ...draft,
+          id: `qc-${Date.now()}-${state.seq}`,
+          number: state.list.length + 1
+        };
+        publish(state, renumber([...state.list, annotation]));
+        return annotation;
+      },
+      /**
+       * Remove one annotation.
+       *
+       * Ids are never reused, so remaining annotations keep their identity even though their
+       * displayed numbers shift.
+       *
+       * @param sessionId - the session key.
+       * @param id - the annotation id.
+       */
+      remove(sessionId, id) {
+        const state = stateFor(sessionId);
+        publish(state, renumber(state.list.filter((item) => item.id !== id)));
+      },
+      /**
+       * Change one annotation's comment, keeping everything else.
+       *
+       * The comment is the only editable part: the passage it points at is fixed by the
+       * selection and the ordinal is a position. Editing replaces rather than re-adds, so the
+       * chip, its id and its place in the draft all survive.
+       *
+       * @param sessionId - the session key.
+       * @param id - the annotation id.
+       * @param comment - the new comment text; anything non-string becomes an empty comment.
+       * @returns the updated annotation, or null when it is gone.
+       */
+      update(sessionId, id, comment) {
+        const state = stateFor(sessionId);
+        let updated = null;
+        publish(state, state.list.map((item) => {
+          if (item.id !== id) return item;
+          updated = { ...item, comment: typeof comment === "string" ? comment.trim() : "" };
+          return updated;
+        }));
+        return updated;
+      },
+      /**
+       * Look up one annotation.
+       *
+       * Implemented against the private record rather than through `snapshot`, so the method
+       * keeps working when destructured off the store object.
+       *
+       * @param sessionId - the session key.
+       * @param id - the annotation id.
+       * @returns the annotation, or null.
+       */
+      find(sessionId, id) {
+        if (sessionId === void 0) return null;
+        const state = sessions.get(sessionId);
+        if (state === void 0) return null;
+        return state.list.find((item) => item.id === id) ?? null;
+      },
+      /**
+       * Remove every annotation of one session.
+       *
+       * Notifies only when the list was non-empty, so a clear on an empty session does not wake
+       * subscribers for nothing.
+       *
+       * @param sessionId - the session key.
+       */
+      clear(sessionId) {
+        const state = stateFor(sessionId);
+        if (state.list.length > 0) publish(state, EMPTY);
+      }
+    };
+  }
 
   // src/dom.js
   function elementOf(node) {
@@ -852,61 +988,18 @@ function __dshQuoteChatFactory(hostRequire) {
     const head = usable[0];
     return [line(head), `| ${pad(head).map(() => "---").join(" | ")} |`, ...usable.slice(1).map(line)].join("\n");
   }
-  var annotationStores = /* @__PURE__ */ new Map();
-  function storeFor(sessionId) {
-    let store = annotationStores.get(sessionId);
-    if (store === void 0) {
-      store = { list: [], listeners: /* @__PURE__ */ new Set(), seq: 0 };
-      annotationStores.set(sessionId, store);
-    }
-    return store;
-  }
-  function publish(store, list) {
-    store.list = list;
-    for (const listener of [...store.listeners]) listener();
-  }
-  function renumber(list) {
-    return list.map((item, index) => item.number === index + 1 ? item : { ...item, number: index + 1 });
-  }
-  function addAnnotation(sessionId, draft) {
-    const store = storeFor(sessionId);
-    if (store.list.length >= MAX_ANNOTATIONS) return null;
-    store.seq += 1;
-    const annotation = { ...draft, id: `qc-${Date.now()}-${store.seq}`, number: store.list.length + 1 };
-    publish(store, renumber([...store.list, annotation]));
-    return annotation;
-  }
-  function removeAnnotation(sessionId, id) {
-    const store = storeFor(sessionId);
-    publish(store, renumber(store.list.filter((item) => item.id !== id)));
-  }
-  function updateAnnotation(sessionId, id, comment) {
-    const store = storeFor(sessionId);
-    let updated = null;
-    publish(store, store.list.map((item) => {
-      if (item.id !== id) return item;
-      updated = { ...item, comment: typeof comment === "string" ? comment.trim() : "" };
-      return updated;
-    }));
-    return updated;
-  }
-  var NO_ANNOTATIONS = Object.freeze([]);
+  var annotationStore = createAnnotationStore({ maxAnnotations: MAX_ANNOTATIONS });
+  var addAnnotation = (sessionId, draft) => annotationStore.add(sessionId, draft);
+  var removeAnnotation = (sessionId, id) => annotationStore.remove(sessionId, id);
+  var updateAnnotation = (sessionId, id, comment) => annotationStore.update(sessionId, id, comment);
   function useAnnotations(sessionId) {
-    const store = sessionId === void 0 ? void 0 : storeFor(sessionId);
     const subscribe = import_react.default.useCallback(
-      (listener) => {
-        if (store === void 0) return () => {
-        };
-        store.listeners.add(listener);
-        return () => {
-          store.listeners.delete(listener);
-        };
-      },
-      [store]
+      (listener) => annotationStore.subscribe(sessionId, listener),
+      [sessionId]
     );
     const snapshot = import_react.default.useCallback(
-      () => store === void 0 ? NO_ANNOTATIONS : store.list,
-      [store]
+      () => annotationStore.snapshot(sessionId),
+      [sessionId]
     );
     return import_react.default.useSyncExternalStore(subscribe, snapshot, snapshot);
   }
@@ -1813,15 +1906,15 @@ function __dshQuoteChatFactory(hostRequire) {
           });
         }
         measured = next;
-        publish2(next);
+        publish(next);
       };
-      const publish2 = (next) => {
+      const publish = (next) => {
         setPositions((current) => samePositions(current, next) ? current : next);
       };
       const reflow = () => {
         frame = 0;
         if (measured.length === 0) return;
-        publish2(measured);
+        publish(measured);
       };
       const schedule = () => {
         if (frame !== 0) return;

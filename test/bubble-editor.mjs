@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Guard the bubble editor and the layering rules.
  *
  * Four behaviours the user asked for, each easy to regress:
@@ -82,9 +82,11 @@ check('the editor offers save and delete',
 check('the editor is seeded with the current comment',
   /useState\(annotation\.comment\)/.test(source),
   'the editor does not start from the stored comment')
+// Saving must reach the store's update path. The store now lives in its own module, so assert
+// the wiring rather than one exact signature: the adapter exists and calls the store.
 check('saving rewrites the comment in place',
-  /function updateAnnotation\(sessionId, id, comment\)/.test(source),
-  'no updateAnnotation in the store')
+  /const updateAnnotation = \(sessionId, id, comment\) => annotationStore\.update\(sessionId, id, comment\)/.test(source),
+  'the update adapter does not reach the store')
 check('saving keeps the codec payload in step',
   /chipPayloads\.set\(annotation\.id, \{[\s\S]{0,160}comment:/.test(source),
   'the model would still receive the old comment')
