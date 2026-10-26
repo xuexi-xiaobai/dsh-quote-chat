@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:c9268fbf5c6c7881
+ * Artifact: sha256:15a6bf6f00aec405
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -494,6 +494,62 @@ function __dshQuoteChatFactory(hostRequire) {
         return fresh ? text : "";
       }
     };
+  }
+
+  // src/side-chat-transport.js
+  function askUrl() {
+    const base = typeof document !== "undefined" && typeof document.baseURI === "string" && document.baseURI !== "" ? document.baseURI : "http://dsh.internal/";
+    return new URL("quote-chat/api/ask", base).href;
+  }
+  async function askSideChat(request, signal, onDelta, { fetch: fetchImpl } = {}) {
+    const doFetch = fetchImpl ?? fetch;
+    const response = await doFetch(askUrl(), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(request),
+      signal,
+      credentials: "same-origin"
+    });
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.includes("text/event-stream")) {
+      const body = await response.json().catch(() => null);
+      throw new Error(body?.error?.message ?? `HTTP ${response.status}`);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let answer = "";
+    const handleFrame = (line) => {
+      if (!line.startsWith("data:")) return false;
+      let event;
+      try {
+        event = JSON.parse(line.slice(5).trim());
+      } catch {
+        return false;
+      }
+      if (event.type === "delta" && typeof event.text === "string") {
+        answer += event.text;
+        onDelta(event.text);
+        return false;
+      }
+      if (event.type === "error") {
+        throw new Error(typeof event.message === "string" ? event.message : "the answer failed");
+      }
+      return event.type === "done";
+    };
+    for (; ; ) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary !== -1) {
+        const line = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf("\n\n");
+        if (handleFrame(line)) return answer;
+      }
+    }
+    return answer;
   }
 
   // src/dom.js
@@ -1270,59 +1326,6 @@ function __dshQuoteChatFactory(hostRequire) {
         "stroke-linejoin": "round"
       })
     );
-  }
-  function askUrl() {
-    const base = typeof document !== "undefined" && typeof document.baseURI === "string" && document.baseURI !== "" ? document.baseURI : "http://dsh.internal/";
-    return new URL("quote-chat/api/ask", base).href;
-  }
-  async function askSideChat(request, signal, onDelta) {
-    const response = await fetch(askUrl(), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(request),
-      signal,
-      credentials: "same-origin"
-    });
-    const contentType = response.headers.get("content-type") ?? "";
-    if (!contentType.includes("text/event-stream")) {
-      const body = await response.json().catch(() => null);
-      throw new Error(body?.error?.message ?? `HTTP ${response.status}`);
-    }
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let answer = "";
-    const handleFrame = (frame) => {
-      if (!frame.startsWith("data:")) return false;
-      let event;
-      try {
-        event = JSON.parse(frame.slice(5).trim());
-      } catch {
-        return false;
-      }
-      if (event.type === "delta" && typeof event.text === "string") {
-        answer += event.text;
-        onDelta(event.text);
-        return false;
-      }
-      if (event.type === "error") {
-        throw new Error(typeof event.message === "string" ? event.message : "the answer failed");
-      }
-      return event.type === "done";
-    };
-    for (; ; ) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let boundary = buffer.indexOf("\n\n");
-      while (boundary !== -1) {
-        const frame = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-        boundary = buffer.indexOf("\n\n");
-        if (handleFrame(frame)) return answer;
-      }
-    }
-    return answer;
   }
   function placeNear(rect, size) {
     const width = size.width;

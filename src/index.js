@@ -87,6 +87,7 @@ import {
 import { createChipRegistry } from './chip-registry.js'
 import { createDraftBridge } from './chip-bridge.js'
 import { createQuoteHandoff } from './quote-handoff.js'
+import { askSideChat } from './side-chat-transport.js'
 import { elementOf, cssEscape } from './dom.js'
 import {
   rangeAt, captureAnchor, resolveAnchor, locateText, textOf, nodePath, nodeAtPath,
@@ -878,79 +879,8 @@ import {
 
     // #region side-chat transport
 
-    /**
-     * The Host route for one side-chat answer, resolved against the page base so
-     * a reverse-proxy prefix (or the desktop shell's custom scheme) keeps
-     * working.
-     * @returns an absolute URL.
-     */
-    function askUrl() {
-      const base = typeof document !== 'undefined' && typeof document.baseURI === 'string' && document.baseURI !== ''
-        ? document.baseURI
-        : 'http://dsh.internal/'
-      return new URL('quote-chat/api/ask', base).href
-    }
-
-    /**
-     * Stream one answer from the Host half.
-     * @param request - quote, question, prior exchanges, and the interface language.
-     * @param signal - caller cancellation.
-     * @param onDelta - called with each text fragment.
-     * @returns the complete answer text.
-     * @throws an Error carrying the Host's own message.
-     */
-    async function askSideChat(request, signal, onDelta) {
-      const response = await fetch(askUrl(), {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(request),
-        signal,
-        credentials: 'same-origin',
-      })
-      const contentType = response.headers.get('content-type') ?? ''
-      if (!contentType.includes('text/event-stream')) {
-        // A refusal before the stream opens arrives as the JSON envelope.
-        const body = await response.json().catch(() => null)
-        throw new Error(body?.error?.message ?? `HTTP ${response.status}`)
-      }
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let answer = ''
-      const handleFrame = (frame) => {
-        if (!frame.startsWith('data:')) return false
-        let event
-        try {
-          event = JSON.parse(frame.slice(5).trim())
-        } catch {
-          return false
-        }
-        if (event.type === 'delta' && typeof event.text === 'string') {
-          answer += event.text
-          onDelta(event.text)
-          return false
-        }
-        if (event.type === 'error') {
-          throw new Error(typeof event.message === 'string' ? event.message : 'the answer failed')
-        }
-        return event.type === 'done'
-      }
-      for (;;) {
-        const { value, done } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        let boundary = buffer.indexOf('\n\n')
-        while (boundary !== -1) {
-          const frame = buffer.slice(0, boundary)
-          buffer = buffer.slice(boundary + 2)
-          boundary = buffer.indexOf('\n\n')
-          if (handleFrame(frame)) return answer
-        }
-      }
-      return answer
-    }
-
-    // #endregion
+    // The side-chat transport (URL, request, SSE parsing) lives in
+    // side-chat-transport.js; this module is imported above.
 
     // #region floating surfaces
 
