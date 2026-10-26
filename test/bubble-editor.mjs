@@ -22,6 +22,8 @@ const dockSource = await readFile(new URL('../src/ui/dock.js', import.meta.url),
 // The annotation strip moved to its own module.
 const cardsSource = await readFile(new URL('../src/ui/cards.js', import.meta.url), 'utf8')
 const markersSource = await readFile(new URL('../src/ui/markers.js', import.meta.url), 'utf8')
+// Selection reading moved to its own module.
+const selectionSource = await readFile(new URL('../src/selection.js', import.meta.url), 'utf8')
 // The stylesheet is its own module now.
 const stylesheetSource = await readFile(join(here, '..', 'src', 'stylesheet.js'), 'utf8')
 const css = /export const STYLESHEET = `([\s\S]*?)`\n/.exec(stylesheetSource)?.[1] ?? ''
@@ -349,7 +351,7 @@ check('no surface claims an absurd z-index',
 // the selection no matter which way the user dragged. The release point is what the user
 // is looking at, so that is where the popup belongs.
 check('readSelection accepts the pointer release point',
-  /function readSelection\(pointer\)/.test(source),
+  /function readSelection\(pointer\)/.test(selectionSource),
   'the selection cannot report where the drag ended')
 check('the release point comes from the pointerup event',
   /releasePoint = \{ x: event\.clientX, y: event\.clientY \}/.test(dockSource),
@@ -358,11 +360,11 @@ check('the release point is cleared when a new drag starts',
   /pointerDown = true[\s\S]{0,140}releasePoint = null/.test(dockSource),
   'a stale release point leaks into the next selection')
 check('the popup anchors to the release point, not the passage box',
-  /rect = pointer === null \|\| pointer === undefined/.test(source)
-    && /left: pointer\.x,/.test(source),
+  /rect = pointer === null \|\| pointer === undefined/.test(selectionSource)
+    && /left: pointer\.x,/.test(selectionSource),
   'the popup falls back to the selection box, so it lands at the passage start')
 check('a keyboard selection falls back to the passage right edge',
-  /left: box\.right, top: box\.top/.test(source),
+  /left: box\.right, top: box\.top/.test(selectionSource),
   'a keyboard selection has no sensible anchor')
 
 // --- The panel lines up with the bubble it belongs to ----------------------

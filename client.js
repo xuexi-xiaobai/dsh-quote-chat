@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:dee2fd478c5d527f
+ * Artifact: sha256:69c27a961f2eb3e1
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -3056,31 +3056,35 @@ function __dshQuoteChatFactory(hostRequire) {
     };
   }
 
-  // src/index.js
-  var MAX_QUOTE_CHARS = 8e3;
-  var MAX_ANNOTATIONS = 12;
-  var h8 = import_react9.default.createElement;
-  var NS = "quoteChat";
-  var TAB_ID = "dsh-quote-chat:side";
-  var TAB_KIND = "dsh-quote-chat";
+  // src/selection.js
   var NON_ANSWER_SELECTOR = 'textarea, input, [contenteditable="true"], [data-slot="conversation.composer"]';
   var UNSAFE_IN_CARD = "script, style, iframe, object, embed, link, meta";
-  function installStyles(ctx) {
-    ctx.effect(() => {
-      if (typeof document === "undefined") return void 0;
-      const tag = document.createElement("style");
-      tag.dataset.quoteChat = "";
-      tag.textContent = STYLESHEET;
-      document.head.appendChild(tag);
-      return () => {
-        tag.remove();
-      };
-    }, "quote-chat: stylesheet");
-  }
   function clearSelection() {
     if (typeof window === "undefined") return;
     const selection = window.getSelection();
     if (selection !== null && selection.rangeCount > 0) selection.removeAllRanges();
+  }
+  function fragmentHtml(fragment) {
+    const host = document.createElement("div");
+    host.appendChild(fragment);
+    for (const node of host.querySelectorAll(UNSAFE_IN_CARD)) node.remove();
+    for (const node of host.querySelectorAll("*")) {
+      for (const attribute of [...node.attributes]) {
+        const name = attribute.name.toLowerCase();
+        if (name.startsWith("on")) node.removeAttribute(attribute.name);
+      }
+    }
+    return host.innerHTML;
+  }
+  function tableToMarkdown(table) {
+    const rows = [...table.rows].map((row) => [...row.cells].map((cell) => cell.innerText.replace(/\s+/g, " ").trim()));
+    const usable = rows.filter((row) => row.length > 0);
+    if (usable.length === 0) return "";
+    const width = Math.max(...usable.map((row) => row.length));
+    const pad = (row) => [...row, ...Array(Math.max(0, width - row.length)).fill("")];
+    const line = (row) => `| ${pad(row).map((cell) => cell.replace(/\|/g, "\\|")).join(" | ")} |`;
+    const head = usable[0];
+    return [line(head), `| ${pad(head).map(() => "---").join(" | ")} |`, ...usable.slice(1).map(line)].join("\n");
   }
   function readSelection(pointer) {
     if (typeof window === "undefined" || typeof document === "undefined") return null;
@@ -3132,33 +3136,31 @@ function __dshQuoteChatFactory(hostRequire) {
       previewHtml: fragmentHtml(range.cloneContents()),
       previewText: text.trim(),
       rect,
-      // The block that holds the selection. The popover mounts beside it (not against
-      // the viewport), so it stays pinned to the passage while the page scrolls.
+      // The block that holds the selection. The popover mounts beside it (not against the viewport),
+      // so it stays pinned to the passage while the page scrolls.
       block: startElement.closest(BLOCK_SELECTOR) ?? flow,
       anchor: captureAnchor(range, flow)
     };
   }
-  function fragmentHtml(fragment) {
-    const host = document.createElement("div");
-    host.appendChild(fragment);
-    for (const node of host.querySelectorAll(UNSAFE_IN_CARD)) node.remove();
-    for (const node of host.querySelectorAll("*")) {
-      for (const attribute of [...node.attributes]) {
-        const name = attribute.name.toLowerCase();
-        if (name.startsWith("on")) node.removeAttribute(attribute.name);
-      }
-    }
-    return host.innerHTML;
-  }
-  function tableToMarkdown(table) {
-    const rows = [...table.rows].map((row) => [...row.cells].map((cell) => cell.innerText.replace(/\s+/g, " ").trim()));
-    const usable = rows.filter((row) => row.length > 0);
-    if (usable.length === 0) return "";
-    const width = Math.max(...usable.map((row) => row.length));
-    const pad = (row) => [...row, ...Array(Math.max(0, width - row.length)).fill("")];
-    const line = (row) => `| ${pad(row).map((cell) => cell.replace(/\|/g, "\\|")).join(" | ")} |`;
-    const head = usable[0];
-    return [line(head), `| ${pad(head).map(() => "---").join(" | ")} |`, ...usable.slice(1).map(line)].join("\n");
+
+  // src/index.js
+  var MAX_QUOTE_CHARS = 8e3;
+  var MAX_ANNOTATIONS = 12;
+  var h8 = import_react9.default.createElement;
+  var NS = "quoteChat";
+  var TAB_ID = "dsh-quote-chat:side";
+  var TAB_KIND = "dsh-quote-chat";
+  function installStyles(ctx) {
+    ctx.effect(() => {
+      if (typeof document === "undefined") return void 0;
+      const tag = document.createElement("style");
+      tag.dataset.quoteChat = "";
+      tag.textContent = STYLESHEET;
+      document.head.appendChild(tag);
+      return () => {
+        tag.remove();
+      };
+    }, "quote-chat: stylesheet");
   }
   var layout = createLayout();
   var navigation = createNavigation({ layout });
