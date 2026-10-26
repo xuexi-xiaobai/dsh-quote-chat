@@ -37,7 +37,7 @@ export async function run({ browser, check: report, url }) {
     results.push({ step, ok })
     report(step, ok, detail)
   }
-  const { goto, waitFor, read, count, click, hover, type, press, moveAway, pluginErrors } = browser
+  const { goto, waitFor, read, count, click, hover, type, press, moveAway, pluginErrors, tripleClick } = browser
 
   try {
   await goto(url)
@@ -334,6 +334,82 @@ export async function run({ browser, check: report, url }) {
       : { supported: true, held: registry.get('quote-chat-flash') !== undefined }
   })
   check('opening the editor lights the passage', held.held === true, JSON.stringify(held))
+
+  // ── Dismissing the compose box must also clear the highlight ───────────
+  // Two listeners used to compete for this dismissal: the dock's called setOverlay(null)
+  // directly and ran first, unmounting the popover before its own onCancel could clear the
+  // passage. The window was never observably open: the box vanished and the highlight stayed,
+  // and a snapshot taken later looks exactly like "the highlight was never painted".
+  //
+  // So the assertion checks both halves of the same frame, not just that the box is gone.
+  await tripleClick('[data-qc-probe="1"]')
+  await waitFor("document.querySelectorAll('.qc-popup button').length === 2", { timeoutMs: 6000 })
+  await click('.qc-popup button:first-child')
+  await waitFor("document.querySelector('.qc-compose') !== null", { timeoutMs: 6000 })
+
+  const composeLit = await read(() => ({
+    compose: document.querySelector('.qc-compose') !== null,
+    painted: window.CSS?.highlights?.get('quote-chat-flash') !== undefined,
+  }))
+  check('opening the compose box lights the passage',
+    composeLit.compose === true && composeLit.painted === true,
+    JSON.stringify(composeLit))
+
+  // Click a point that is provably outside the box AND outside the popover it replaced.
+  const outsidePoint = await read(() => {
+    const box = document.querySelector('.qc-compose').getBoundingClientRect()
+    const candidate = { x: Math.max(6, Math.round(box.left / 2)), y: Math.round(box.top + 12) }
+    const hit = document.elementFromPoint(candidate.x, candidate.y)
+    return {
+      ...candidate,
+      // Verified outside both surfaces, so a failure cannot be blamed on the coordinates.
+      outsideCompose: hit?.closest('.qc-compose') === null
+        && hit?.closest('.qc-popup') === null,
+    }
+  })
+  check('the dismissal point is outside both floating surfaces',
+    outsidePoint.outsideCompose === true,
+    JSON.stringify(outsidePoint))
+
+  await browser.clickAt({ x: outsidePoint.x, y: outsidePoint.y })
+  await waitFor("document.querySelector('.qc-compose') === null", { timeoutMs: 4000 })
+
+  const afterDismiss = await read(() => ({
+    compose: document.querySelector('.qc-compose') !== null,
+    painted: window.CSS?.highlights?.get('quote-chat-flash') !== undefined,
+  }))
+  check('clicking outside closes the compose box',
+    afterDismiss.compose === false,
+    JSON.stringify(afterDismiss))
+  check('clicking outside also clears the held highlight',
+    afterDismiss.painted === false,
+    JSON.stringify(afterDismiss))
+
+  // The 取消 button and Escape must reach the same state; the pointer path used to be the odd one
+  // out, and asserting all three keeps them from diverging again.
+  await tripleClick('[data-qc-probe="1"]')
+  await waitFor("document.querySelectorAll('.qc-popup button').length === 2", { timeoutMs: 6000 })
+  await click('.qc-popup button:first-child')
+  await waitFor("document.querySelector('.qc-compose') !== null", { timeoutMs: 6000 })
+  await click('.qc-compose .qc-compose-cancel')
+  await waitFor("document.querySelector('.qc-compose') === null", { timeoutMs: 4000 })
+  const afterCancel = await read(
+    () => window.CSS?.highlights?.get('quote-chat-flash') !== undefined,
+  )
+  check('the 取消 button clears the highlight too',
+    afterCancel === false, `painted=${afterCancel}`)
+
+  await tripleClick('[data-qc-probe="1"]')
+  await waitFor("document.querySelectorAll('.qc-popup button').length === 2", { timeoutMs: 6000 })
+  await click('.qc-popup button:first-child')
+  await waitFor("document.querySelector('.qc-compose') !== null", { timeoutMs: 6000 })
+  await press('Escape')
+  await waitFor("document.querySelector('.qc-compose') === null", { timeoutMs: 4000 })
+  const afterEscape = await read(
+    () => window.CSS?.highlights?.get('quote-chat-flash') !== undefined,
+  )
+  check('Escape clears the highlight too',
+    afterEscape === false, `painted=${afterEscape}`)
 
   // ── A secondary click must not open the toolbar ────────────────────────
   // Selecting text and then right-clicking is how a reader copies a passage. A secondary click

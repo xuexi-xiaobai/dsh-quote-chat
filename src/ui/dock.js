@@ -136,10 +136,13 @@ export function annotationDock(deps) {
       const onPointerDown = (event) => {
         const surface = document.querySelector('.qc-popup, .qc-compose')
         if (surface !== null && surface.contains(event.target)) return
-        setOverlay(null)
+        // Dismissing must go through cancelCompose, not setOverlay: the compose step paints the
+        // passage, and only cancelCompose clears it. Calling setOverlay here unmounted the popover
+        // before its own listener could run, so the highlight was left painted with nothing open.
+        cancelCompose()
       }
       const onKeyDown = (event) => {
-        if (event.key === 'Escape') setOverlay(null)
+        if (event.key === 'Escape') cancelCompose()
       }
       document.addEventListener('mousedown', onPointerDown, true)
       document.addEventListener('keydown', onKeyDown, true)
