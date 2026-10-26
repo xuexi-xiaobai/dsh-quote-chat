@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:960c23ca345fbd57
+ * Artifact: sha256:3757c41d52766606
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -1557,6 +1557,19 @@ function __dshQuoteChatFactory(hostRequire) {
     );
   }
 
+  // src/html.js
+  function tableHtml(markdown) {
+    const rows = markdown.split("\n").map((line) => line.trim()).filter((line) => line.startsWith("|")).map((line) => line.replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell2) => cell2.trim())).filter((cells) => cells.length > 0 && !cells.every((cell2) => /^:?-{2,}:?$/.test(cell2)));
+    if (rows.length === 0) return `<pre class="qc-card-md">${escapeHtml(markdown)}</pre>`;
+    const head = rows[0];
+    const body = rows.slice(1);
+    const cell = (tag, text) => `<${tag}>${escapeHtml(text)}</${tag}>`;
+    return `<table><thead><tr>${head.map((text) => cell("th", text)).join("")}</tr></thead><tbody>${body.map((cells) => `<tr>${cells.map((text) => cell("td", text)).join("")}</tr>`).join("")}</tbody></table>`;
+  }
+  function escapeHtml(text) {
+    return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
   // src/index.js
   var MAX_QUOTE_CHARS = 8e3;
   var MAX_ANNOTATIONS = 12;
@@ -2116,17 +2129,6 @@ function __dshQuoteChatFactory(hostRequire) {
         annotation.kind === "table" ? h2("div", { dangerouslySetInnerHTML: { __html: tableHtml(annotation.text) } }) : h2("div", { dangerouslySetInnerHTML: { __html: annotation.previewHtml ?? "" } })
       )
     );
-  }
-  function tableHtml(markdown) {
-    const rows = markdown.split("\n").map((line) => line.trim()).filter((line) => line.startsWith("|")).map((line) => line.replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell2) => cell2.trim())).filter((cells) => cells.length > 0 && !cells.every((cell2) => /^:?-{2,}:?$/.test(cell2)));
-    if (rows.length === 0) return `<pre class="qc-card-md">${escapeHtml(markdown)}</pre>`;
-    const head = rows[0];
-    const body = rows.slice(1);
-    const cell = (tag, text) => `<${tag}>${escapeHtml(text)}</${tag}>`;
-    return `<table><thead><tr>${head.map((text) => cell("th", text)).join("")}</tr></thead><tbody>${body.map((cells) => `<tr>${cells.map((text) => cell("td", text)).join("")}</tr>`).join("")}</tbody></table>`;
-  }
-  function escapeHtml(text) {
-    return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
   function chipOrdinals(occurrences) {
     const ordinals = /* @__PURE__ */ new Map();

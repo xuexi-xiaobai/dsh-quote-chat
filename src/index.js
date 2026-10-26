@@ -91,6 +91,7 @@ import { createHighlighter, canPaintHighlight, FLASH_HIGHLIGHT, FLASH_MS } from 
 import { createNavigation } from './navigation.js'
 import { STYLESHEET } from './stylesheet.js'
 import { IconAnnotate, IconSideChat, IconCheck } from './icons.js'
+import { tableHtml, escapeHtml } from './html.js'
 import { elementOf, cssEscape } from './dom.js'
 import {
   rangeAt, captureAnchor, resolveAnchor, locateText, textOf, nodePath, nodeAtPath,
@@ -1061,42 +1062,6 @@ annotation.kind === 'table'
   )
 }
 
-/**
- * Render a Markdown table as an HTML table for the preview.
- *
- * The preview shows the passage as the reader saw it, so a table has to be a real
- * table — pipes and header rules would not read as the same thing.
- * @param markdown - the captured Markdown table.
- * @returns HTML for the table, or a plain-text fallback.
- */
-function tableHtml(markdown) {
-  const rows = markdown
-.split('\n')
-.map((line) => line.trim())
-.filter((line) => line.startsWith('|'))
-.map((line) => line.replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim()))
-// Drop the `|---|---|` separator row.
-.filter((cells) => cells.length > 0 && !cells.every((cell) => /^:?-{2,}:?$/.test(cell)))
-  if (rows.length === 0) return `<pre class="qc-card-md">${escapeHtml(markdown)}</pre>`
-  const head = rows[0]
-  const body = rows.slice(1)
-  const cell = (tag, text) => `<${tag}>${escapeHtml(text)}</${tag}>`
-  return `<table><thead><tr>${head.map((text) => cell('th', text)).join('')}</tr></thead>`
-+ `<tbody>${body.map((cells) => `<tr>${cells.map((text) => cell('td', text)).join('')}</tr>`).join('')}</tbody></table>`
-}
-
-/**
- * Escape text for safe insertion into HTML.
- * @param text - the raw text.
- * @returns the escaped text.
- */
-function escapeHtml(text) {
-  return String(text)
-.replace(/&/g, '&amp;')
-.replace(/</g, '&lt;')
-.replace(/>/g, '&gt;')
-.replace(/"/g, '&quot;')
-}
 
 // #endregion
 
