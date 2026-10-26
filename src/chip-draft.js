@@ -23,6 +23,20 @@
  */
 
 /**
+ * The source name this plugin registers its chips under.
+ *
+ * The Host's reference system identifies a chip by (source, ref). This string is that source,
+ * so it is part of the wire contract: changing it orphans every chip already in a draft.
+ */
+export const CHIP_SOURCE = 'quote-chat'
+
+/** The trigger this source registers under; `@` and `/` belong to the host. */
+export const CHIP_TRIGGER = '#'
+
+/** One character standing in for the chip in the draft text. */
+export const CHIP_PLACEHOLDER = '\uFFFC'
+
+/**
  * The text one chip contributes to the message the model receives.
  *
  * The block is fenced with newlines because a chip can sit mid-sentence: the expansion is

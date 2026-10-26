@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:9736709628cacf28
+ * Artifact: sha256:5c5fdd4f62a446d7
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -282,6 +282,9 @@ function __dshQuoteChatFactory(hostRequire) {
   }
 
   // src/chip-draft.js
+  var CHIP_SOURCE = "quote-chat";
+  var CHIP_TRIGGER = "#";
+  var CHIP_PLACEHOLDER = "￼";
   function serializeChipForModel(payload) {
     const head = `[${payload.label}]`;
     const note = payload.comment === "" ? "" : `
@@ -320,6 +323,87 @@ function __dshQuoteChatFactory(hostRequire) {
     const shift = removed.length;
     const kept = references.filter((_, position) => position !== index).map((item) => item.offset >= stop ? { ...item, offset: item.offset - shift } : item);
     return { text: nextText, references: kept };
+  }
+
+  // src/chip-registry.js
+  function createChipRegistry() {
+    const payloads = /* @__PURE__ */ new Map();
+    return {
+      /**
+       * Record what one chip stands for, and return the reference that places it in a draft.
+       *
+       * Registering here is what makes the chip resolvable later, so this must happen before the
+       * draft is written — the Host can serialize as soon as the chip exists.
+       *
+       * @param annotation - the annotation being placed.
+       * @param label - the inline label the chip shows.
+       * @returns the reference record, without its offset (the bridge fills that in).
+       */
+      register(annotation, label) {
+        payloads.set(annotation.id, {
+          kind: annotation.kind,
+          number: annotation.number,
+          text: annotation.text,
+          comment: annotation.comment,
+          label
+        });
+        return {
+          source: CHIP_SOURCE,
+          ref: annotation.id,
+          offset: 0,
+          // The placeholder's length in UTF-16 units; the composer counts in those.
+          length: CHIP_PLACEHOLDER.length,
+          label,
+          clipboardText: CHIP_PLACEHOLDER
+        };
+      },
+      /**
+       * The payload for one chip, or undefined.
+       *
+       * Returns the stored object itself rather than a copy: `serialize` runs inside the submit
+       * attempt and the reference system compares nothing here, so copying on every read would
+       * cost without buying isolation the callers need.
+       *
+       * @param ref - the chip id.
+       * @returns the payload, or undefined when this instance never minted it.
+       */
+      get(ref) {
+        return payloads.get(ref);
+      },
+      /**
+       * Replace one chip's comment.
+       *
+       * The comment is the only part that changes after placement: the passage is fixed by the
+       * selection and the ordinal is a position. When the chip was never registered this is a
+       * no-op rather than an error — the caller may be updating an annotation whose chip the user
+       * already removed from the draft, and that must not fail the edit.
+       *
+       * @param ref - the chip id.
+       * @param comment - the new comment text; anything non-string becomes empty.
+       * @returns true when a payload was updated.
+       */
+      updateComment(ref, comment) {
+        const payload = payloads.get(ref);
+        if (payload === void 0) return false;
+        payloads.set(ref, {
+          ...payload,
+          comment: typeof comment === "string" ? comment.trim() : ""
+        });
+        return true;
+      },
+      /**
+       * Whether this instance minted the given chip.
+       *
+       * Exposed instead of the map so a caller can distinguish "unknown chip" from "payload with
+       * empty fields" without reaching into storage.
+       *
+       * @param ref - the chip id.
+       * @returns true when a payload exists.
+       */
+      has(ref) {
+        return payloads.has(ref);
+      }
+    };
   }
 
   // src/dom.js
@@ -1047,28 +1131,10 @@ function __dshQuoteChatFactory(hostRequire) {
     );
     return import_react.default.useSyncExternalStore(subscribe, snapshot, snapshot);
   }
-  var CHIP_SOURCE = "quote-chat";
-  var CHIP_TRIGGER = "#";
-  var CHIP_PLACEHOLDER = "￼";
-  var chipPayloads = /* @__PURE__ */ new Map();
+  var chipRegistry = createChipRegistry();
   var chipJumpHandler = { current: null };
   function chipReference(annotation, labels) {
-    const label = chipLabel(annotation, labels);
-    chipPayloads.set(annotation.id, {
-      kind: annotation.kind,
-      number: annotation.number,
-      text: annotation.text,
-      comment: annotation.comment,
-      label
-    });
-    return {
-      source: CHIP_SOURCE,
-      ref: annotation.id,
-      offset: 0,
-      length: CHIP_PLACEHOLDER.length,
-      label,
-      clipboardText: CHIP_PLACEHOLDER
-    };
+    return chipRegistry.register(annotation, chipLabel(annotation, labels));
   }
   function IconAnnotate() {
     return h(
@@ -2833,13 +2899,7 @@ function __dshQuoteChatFactory(hostRequire) {
       }, [draft, inputActions, sessionId]);
       const onUpdate = import_react.default.useCallback((annotation, comment) => {
         if (sessionId === void 0) return;
-        const payload = chipPayloads.get(annotation.id);
-        if (payload !== void 0) {
-          chipPayloads.set(annotation.id, {
-            ...payload,
-            comment: typeof comment === "string" ? comment.trim() : ""
-          });
-        }
+        chipRegistry.updateComment(annotation.id, comment);
         updateAnnotation(sessionId, annotation.id, comment);
       }, [sessionId]);
       const onAsk = import_react.default.useCallback((source) => {
@@ -2954,7 +3014,7 @@ function __dshQuoteChatFactory(hostRequire) {
           codec: {
             clipboardText: () => CHIP_PLACEHOLDER,
             serialize(ref) {
-              const payload = chipPayloads.get(ref);
+              const payload = chipRegistry.get(ref);
               if (payload === void 0) {
                 return Promise.reject(new Error(`quote-chat: unknown chip "${ref}"`));
               }

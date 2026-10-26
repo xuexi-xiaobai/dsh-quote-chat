@@ -87,8 +87,11 @@ check('the editor is seeded with the current comment',
 check('saving rewrites the comment in place',
   /const updateAnnotation = \(sessionId, id, comment\) => annotationStore\.update\(sessionId, id, comment\)/.test(source),
   'the update adapter does not reach the store')
+// The payload now lives behind the registry, so this asserts the wiring end to end: the edit
+// path calls the registry's update, and serialization reads back through the same registry.
 check('saving keeps the codec payload in step',
-  /chipPayloads\.set\(annotation\.id, \{[\s\S]{0,160}comment:/.test(source),
+  /chipRegistry\.updateComment\(annotation\.id, comment\)/.test(source)
+    && /const payload = chipRegistry\.get\(ref\)/.test(source),
   'the model would still receive the old comment')
 check('deleting from the editor removes the annotation',
   /className: 'qc-bp-delete'[\s\S]{0,200}onDelete\(\)/.test(source),

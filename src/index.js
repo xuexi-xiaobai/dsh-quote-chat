@@ -83,7 +83,9 @@ import { zh, en } from './locales.js'
 import { createAnnotationStore } from './annotation-store.js'
 import {
   serializeChipForModel, chipLabel, withAppendedChip, withoutChip,
+  CHIP_SOURCE, CHIP_TRIGGER, CHIP_PLACEHOLDER,
 } from './chip-draft.js'
+import { createChipRegistry } from './chip-registry.js'
 import { elementOf, cssEscape } from './dom.js'
 import {
   rangeAt, captureAnchor, resolveAnchor, locateText, textOf, nodePath, nodeAtPath,
@@ -800,39 +802,13 @@ import {
     // #region inline chips
 
     /**
-     * The source name this package registers its chips under.
+     * The chips this instance has minted, keyed by id.
      *
-     * `setDraft({ text, references })` runs the composer's `restoreDraft`, which
-     * mints a real `ReferenceChipNode` per reference: an atomic, inline,
-     * non-editable decorator that lives in the text flow beside ordinary
-     * characters. That is the only way a plugin can put something in the middle
-     * of the draft — and it is exactly what an annotation needs, because the
-     * card then sits *inside* the message the user is writing, between their own
-     * sentences, instead of being appended as a detached block.
-     *
-     * The chip carries only an id. Its content lives in this plugin's registry,
-     * and the framework pulls it out at two moments: `codec.serialize` when the
-     * draft is submitted (the model form), and `openReference` when the chip is
-     * clicked (the preview). That is why neither the passage nor the comment has
-     * to sit in the draft as loose text.
+     * One registry per Host factory call, so two plugin instances never resolve each other's
+     * chips. Within an instance it is shared across sessions, because chip ids are annotation
+     * ids and those are unique per instance. Entries are never removed — see chip-registry.js.
      */
-    const CHIP_SOURCE = 'quote-chat'
-
-    /** The trigger this source registers under; `@` and `/` belong to the host. */
-    const CHIP_TRIGGER = '#'
-
-    /** One character standing in for the chip in the draft text. */
-    const CHIP_PLACEHOLDER = '\uFFFC'
-
-    /**
-     * The chips this browser has minted, keyed by id.
-     *
-     * `codec.serialize` and `openReference` receive only the ref string, so the
-     * payload has to be findable from here. A `Map` on the module keeps the
-     * lookup synchronous, which matters because `serialize` runs inside the
-     * submit attempt.
-     */
-    const chipPayloads = new Map()
+    const chipRegistry = createChipRegistry()
 
     /**
      * The dock's jump function, published for the reference source.
@@ -869,22 +845,7 @@ import {
      * @returns the placeholder text plus its reference record.
      */
     function chipReference(annotation, labels) {
-      const label = chipLabel(annotation, labels)
-      chipPayloads.set(annotation.id, {
-        kind: annotation.kind,
-        number: annotation.number,
-        text: annotation.text,
-        comment: annotation.comment,
-        label,
-      })
-      return {
-        source: CHIP_SOURCE,
-        ref: annotation.id,
-        offset: 0,
-        length: CHIP_PLACEHOLDER.length,
-        label,
-        clipboardText: CHIP_PLACEHOLDER,
-      }
+      return chipRegistry.register(annotation, chipLabel(annotation, labels))
     }
 
     // #endregion
@@ -3659,13 +3620,7 @@ function escapeHtml(text) {
           if (sessionId === undefined) return
           // Keep the codec's payload in step with the store, or the model would
           // receive the previous comment while the chip shows the new one.
-          const payload = chipPayloads.get(annotation.id)
-          if (payload !== undefined) {
-            chipPayloads.set(annotation.id, {
-              ...payload,
-              comment: typeof comment === 'string' ? comment.trim() : '',
-            })
-          }
+          chipRegistry.updateComment(annotation.id, comment)
           updateAnnotation(sessionId, annotation.id, comment)
         }, [sessionId])
 
@@ -3808,7 +3763,7 @@ function escapeHtml(text) {
             codec: {
               clipboardText: () => CHIP_PLACEHOLDER,
               serialize(ref) {
-                const payload = chipPayloads.get(ref)
+                const payload = chipRegistry.get(ref)
                 if (payload === undefined) {
                   return Promise.reject(new Error(`quote-chat: unknown chip "${ref}"`))
                 }
