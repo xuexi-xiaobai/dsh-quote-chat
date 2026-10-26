@@ -54,7 +54,9 @@ const { chromium } = require(PLAYWRIGHT)
  * @returns the harness handle.
  */
 export async function openBrowser(options = {}) {
-  const viewport = options.viewport ?? { width: 1280, height: 800 }
+  // A fixed viewport is opt-in. By default the page follows the window, which is maximised below, so a
+  // human watching the run sees the whole app instead of a 1280x800 frame.
+  const viewport = options.viewport ?? null
   // Attach to an existing context when one is supplied. Launching is the single most expensive
   // step (~3.4s), and a campaign of several suites pays it once instead of once per suite.
   const context = options.context ?? await (async () => {
@@ -62,6 +64,11 @@ export async function openBrowser(options = {}) {
     return chromium.launchPersistentContext(PROFILE, {
       headless: false,
       executablePath: CHROME,
+      // Maximised so the run is watchable, and positioned at the origin so two concurrent runs do not
+      // land on top of each other at an arbitrary offset.
+      args: ['--start-maximized', '--window-position=0,0'],
+      // null = use the window's size. With a fixed viewport the page would stay 1280x800 regardless of
+      // the window, and the point of maximising is lost.
       viewport,
     })
   })()
