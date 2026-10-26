@@ -72,7 +72,7 @@ check('a resize only refreshes which bubbles exist',
   'a resize recomputes geometry')
 check('reflow does not read layout',
   (() => {
-    const body = /const reflow = \(\) => \{([\s\S]*?)\n        \}/.exec(source)?.[1] ?? ''
+    const body = /const reflow = \(\) => \{([\s\S]*?)\n\s*\}/.exec(source)?.[1] ?? ''
     return body !== '' && !/getBoundingClientRect|clientWidth|getComputedStyle/.test(body)
   })(), 'the resize path still reads layout')
 
@@ -93,7 +93,7 @@ check('the diff compares row identity, not coordinates',
 // that reaches it. That is how a resize listener registered before its
 // declaration killed conversation.input.dock and took the selection toolbar
 // with it: every syntax check passed.
-const markerSource = /function MarkerLayer\(props\) \{([\s\S]*?)\n    \}\n/.exec(source)?.[1] ?? ''
+const markerSource = /function MarkerLayer\(props\) \{([\s\S]*?)\n\}\n/.exec(source)?.[1] ?? ''
 check('every resize listener is registered after its handler is declared',
   (() => {
     const declaredAt = markerSource.indexOf('const onWindowResize =')

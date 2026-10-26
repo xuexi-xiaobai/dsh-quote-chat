@@ -148,7 +148,9 @@ check('the top gap is a named constant',
 // --- Only the chip jumps; the bubble must not move the view -----------------
 // Clicking a bubble asks to edit a comment, not to relocate. The highlight still
 // appears in place, but scrollTop is left alone.
-const onHighlightBody = /const onHighlight = React\.useCallback\(\(annotation, on\) => \{([\s\S]*?)\n        \}, \[\]\)/.exec(source)?.[1] ?? ''
+// Indentation-tolerant: the closing fence is matched by shape, not by a fixed column, so a
+// reformat does not silently empty this body and turn the assertions into no-ops.
+const onHighlightBody = /const onHighlight = React\.useCallback\(\(annotation, on\) => \{([\s\S]*?)\n\s*\}, \[\]\)/.exec(source)?.[1] ?? ''
 check('clicking a bubble never scrolls the transcript',
   onHighlightBody !== '' && !/revealWithSearch|scrollToRange|scrollIntoView/.test(onHighlightBody),
   'opening the comment editor yanks the page to the passage')
