@@ -66,6 +66,9 @@ import { createMarkerLayer } from './ui/markers.js'
 import { createSideChat } from './ui/side-chat.js'
 import { useDraft, useDraftOccurrences } from './ui/draft-hooks.js'
 import { annotationDock } from './ui/dock.js'
+import {
+  registerSideChatTab, registerReferenceSource, registerAnnotationDock,
+} from './registrations.js'
 import { TableAddButton, diagnoseMiss, tableAnchor } from './ui/table.js'
 import { clearSelection, readSelection, tableToMarkdown } from './selection.js'
 import {
@@ -224,23 +227,15 @@ const chipJumpHandler = { current: null }
 
 // #endregion
 
-// #region icons
-
-// #endregion
-
-// #region side-chat transport
-
-// The side-chat transport (URL, request, SSE parsing) lives in
-// side-chat-transport.js; this module is imported above.
-
-// #region floating surfaces
-
-// #endregion
-
 // #region apply
 
 /**
- * Browser plugin body.
+ * Browser plugin body: wiring, not behaviour.
+ *
+ * What this plugin is made of, in the order it is assembled. Each registration owns one host
+ * concern and lives in registrations.js; the components and stores above are created once here so
+ * two plugin instances never share state.
+ *
  * @param ctx - Client context.
  */
 function applyImpl(ctx) {
@@ -248,86 +243,22 @@ function applyImpl(ctx) {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'quote-chat: dictionaries')
   const t = ctx.locale.bind(NS)
 
-  // The side-chat tab type. Optional: a host without the right Sidebar keeps
-  // the annotation workflow and disables the other action.
-  ctx.effect(() => {
-    const handle = ctx.inject(['sidebarRightTabs'], (scope) => {
-      const tabs = scope.sidebarRightTabs
-      if (tabs === undefined || typeof tabs.register !== 'function') return
-      const disposers = []
-      try {
-        disposers.push(tabs.register({
-          id: TAB_ID,
-          kind: TAB_KIND,
-          title: () => t('side.title'),
-          guide: [{
-            id: 'quote-chat',
-            order: 55,
-            title: () => t('side.title'),
-            description: () => t('side.guide')
-          }]
-        }))
-        disposers.push(scope.slots.inject('sidebar.right.pane.tab', () => scope.slots.register({
-          name: 'sidebar.right.pane.tab',
-          key: TAB_ID,
-          locale: NS,
-          inject: () => ({ pluginCtx: ctx })
-        }, SideChatTab)))
-      } catch (error) {
-        for (const dispose of disposers.splice(0)) dispose()
-        console.error('[dsh-quote-chat] right-sidebar registration failed:', error)
-        return undefined
-      }
-      return () => { for (const dispose of disposers.splice(0)) dispose() }
-    })
-    const release = typeof handle === 'function' ? handle : handle?.dispose?.bind(handle)
-    return () => { if (typeof release === 'function') release() }
-  }, 'quote-chat: side-chat tab type')
+  registerSideChatTab({ ctx, t, TAB_ID, TAB_KIND, NS, SideChatTab })
 
-  // The reference source. This is what makes an annotation a chip rather
-  // than stray text: the framework calls `codec.serialize` on submit to turn
-  // the chip into the model's copy of the passage, and `openReference` when
-  // the chip is clicked. Both bug reports — "clicking does nothing" and "the
-  // content sits outside the card" — came from this registration not
-  // existing: without it a chip is an inert token with no owner.
-  ctx.effect(() => {
-    const handle = ctx.inject(['inputTriggers'], (scope) => {
-      const registry = scope.inputTriggers
-      if (registry === undefined || typeof registry.registerSource !== 'function') return undefined
-      return registry.registerSource({
-        trigger: CHIP_TRIGGER,
-        name: CHIP_SOURCE,
-        openReference(_session, reference) {
-          const jump = chipJumpHandler.current
-          if (typeof jump !== 'function') return false
-          // The chip knows which annotation it is; the dock knows where that
-          // annotation's passage sits in the flow.
-          return jump(reference?.ref) === true
-        },
-        codec: {
-          clipboardText: () => CHIP_PLACEHOLDER,
-          serialize(ref) {
-            const payload = chipRegistry.get(ref)
-            if (payload === undefined) {
-              return Promise.reject(new Error(`quote-chat: unknown chip "${ref}"`))
-            }
-            return Promise.resolve(serializeChipForModel(payload))
-          }
-        }
-      })
-    })
-    const release = typeof handle === 'function' ? handle : handle?.dispose?.bind(handle)
-    return () => { if (typeof release === 'function') release() }
-  }, 'quote-chat: reference source')
+  registerReferenceSource({
+    ctx,
+    registry: chipRegistry,
+    jumpHandler: chipJumpHandler,
+    CHIP_TRIGGER,
+    CHIP_SOURCE,
+    CHIP_PLACEHOLDER,
+    serializeChipForModel,
+  })
 
-  // The annotation strip and its floating surfaces.
-  ctx.effect(() => {
-    const release = ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
-      name: 'conversation.input.dock',
-      id: 'quote-chat-annotations',
-      order: 15,
-      locale: NS
-    }, annotationDock({
+  registerAnnotationDock({
+    ctx,
+    NS,
+    buildDock: () => annotationDock({
         ctx,
         // The annotation lifecycle: one store, plus the React binding over it.
         annotations: { store: annotationStore, useAnnotations },
@@ -349,12 +280,9 @@ function applyImpl(ctx) {
         // Declared limits and protocol ids.
         limits: { MAX_QUOTE_CHARS, MAX_ANNOTATIONS, TAB_KIND },
         t,
-      })))
-    return () => { if (typeof release === 'function') release() }
-  }, 'quote-chat: annotation dock')
+    }),
+  })
 }
-
-// #endregion
 
 // ── export surface ────────────────────────────────────────────────────────────
 

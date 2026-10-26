@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const source = await readFile(join(here, '..', 'src', 'index.js'), 'utf8')
+const registrationsSource = await readFile(join(here, '..', 'src', 'registrations.js'), 'utf8')
 // The dock moved to its own module.
 const dockSource = await readFile(new URL('../src/ui/dock.js', import.meta.url), 'utf8')
 // The annotation strip moved to its own module.
@@ -114,7 +115,9 @@ check('saving rewrites the comment in place',
 // path calls the registry's update, and serialization reads back through the same registry.
 check('saving keeps the codec payload in step',
   /chipRegistry\.updateComment\(annotation\.id, comment\)/.test(dockSource)
-    && /const payload = chipRegistry\.get\(ref\)/.test(source),
+    // The reference source now lives in registrations.js, where the registry arrives as a
+    // parameter — so the read is `registry.get(ref)`.
+    && /const payload = registry\.get\(ref\)/.test(registrationsSource),
   'the model would still receive the old comment')
 check('deleting from the editor removes the annotation',
   /className: 'qc-bp-delete'[\s\S]{0,200}onDelete\(\)/.test(markersSource),

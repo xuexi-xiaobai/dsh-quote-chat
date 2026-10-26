@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:d5a4752b9213e485
+ * Artifact: sha256:c00668ace8f3a28d
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -2985,6 +2985,99 @@ function __dshQuoteChatFactory(hostRequire) {
     };
   }
 
+  // src/registrations.js
+  function asEffect(handle) {
+    const release = typeof handle === "function" ? handle : handle?.dispose?.bind(handle);
+    return () => {
+      if (typeof release === "function") release();
+    };
+  }
+  function registerSideChatTab({ ctx, t, TAB_ID: TAB_ID2, TAB_KIND: TAB_KIND2, NS: NS2, SideChatTab: SideChatTab2 }) {
+    ctx.effect(() => {
+      const handle = ctx.inject(["sidebarRightTabs"], (scope) => {
+        const tabs = scope.sidebarRightTabs;
+        if (tabs === void 0 || typeof tabs.register !== "function") return;
+        const disposers = [];
+        try {
+          disposers.push(tabs.register({
+            id: TAB_ID2,
+            kind: TAB_KIND2,
+            title: () => t("side.title"),
+            guide: [{
+              id: "quote-chat",
+              order: 55,
+              title: () => t("side.title"),
+              description: () => t("side.guide")
+            }]
+          }));
+          disposers.push(scope.slots.inject("sidebar.right.pane.tab", () => scope.slots.register({
+            name: "sidebar.right.pane.tab",
+            key: TAB_ID2,
+            locale: NS2,
+            inject: () => ({ pluginCtx: ctx })
+          }, SideChatTab2)));
+        } catch (error) {
+          for (const dispose of disposers.splice(0)) dispose();
+          console.error("[dsh-quote-chat] right-sidebar registration failed:", error);
+          return void 0;
+        }
+        return () => {
+          for (const dispose of disposers.splice(0)) dispose();
+        };
+      });
+      return asEffect(handle);
+    }, "quote-chat: side-chat tab type");
+  }
+  function registerReferenceSource({
+    ctx,
+    registry,
+    jumpHandler,
+    CHIP_TRIGGER: CHIP_TRIGGER2,
+    CHIP_SOURCE: CHIP_SOURCE2,
+    CHIP_PLACEHOLDER: CHIP_PLACEHOLDER2,
+    serializeChipForModel: serializeChipForModel2
+  }) {
+    ctx.effect(() => {
+      const handle = ctx.inject(["inputTriggers"], (scope) => {
+        const triggers = scope.inputTriggers;
+        if (triggers === void 0 || typeof triggers.registerSource !== "function") return void 0;
+        return triggers.registerSource({
+          trigger: CHIP_TRIGGER2,
+          name: CHIP_SOURCE2,
+          openReference(_session, reference) {
+            const jump = jumpHandler.current;
+            if (typeof jump !== "function") return false;
+            return jump(reference?.ref) === true;
+          },
+          codec: {
+            clipboardText: () => CHIP_PLACEHOLDER2,
+            serialize(ref) {
+              const payload = registry.get(ref);
+              if (payload === void 0) {
+                return Promise.reject(new Error(`quote-chat: unknown chip "${ref}"`));
+              }
+              return Promise.resolve(serializeChipForModel2(payload));
+            }
+          }
+        });
+      });
+      return asEffect(handle);
+    }, "quote-chat: reference source");
+  }
+  function registerAnnotationDock({ ctx, NS: NS2, buildDock }) {
+    ctx.effect(() => {
+      const release = ctx.slots.inject("conversation.input.dock", () => ctx.slots.register({
+        name: "conversation.input.dock",
+        id: "quote-chat-annotations",
+        order: 15,
+        locale: NS2
+      }, buildDock()));
+      return () => {
+        if (typeof release === "function") release();
+      };
+    }, "quote-chat: annotation dock");
+  }
+
   // src/ui/table.js
   var import_react9 = __toESM(require("react"), 1);
   var import_react_dom5 = require("react-dom");
@@ -3213,79 +3306,20 @@ function __dshQuoteChatFactory(hostRequire) {
     installStyles(ctx);
     ctx.effect(() => ctx.locale.register(NS, { zh, en }), "quote-chat: dictionaries");
     const t = ctx.locale.bind(NS);
-    ctx.effect(() => {
-      const handle = ctx.inject(["sidebarRightTabs"], (scope) => {
-        const tabs = scope.sidebarRightTabs;
-        if (tabs === void 0 || typeof tabs.register !== "function") return;
-        const disposers = [];
-        try {
-          disposers.push(tabs.register({
-            id: TAB_ID,
-            kind: TAB_KIND,
-            title: () => t("side.title"),
-            guide: [{
-              id: "quote-chat",
-              order: 55,
-              title: () => t("side.title"),
-              description: () => t("side.guide")
-            }]
-          }));
-          disposers.push(scope.slots.inject("sidebar.right.pane.tab", () => scope.slots.register({
-            name: "sidebar.right.pane.tab",
-            key: TAB_ID,
-            locale: NS,
-            inject: () => ({ pluginCtx: ctx })
-          }, SideChatTab)));
-        } catch (error) {
-          for (const dispose of disposers.splice(0)) dispose();
-          console.error("[dsh-quote-chat] right-sidebar registration failed:", error);
-          return void 0;
-        }
-        return () => {
-          for (const dispose of disposers.splice(0)) dispose();
-        };
-      });
-      const release = typeof handle === "function" ? handle : handle?.dispose?.bind(handle);
-      return () => {
-        if (typeof release === "function") release();
-      };
-    }, "quote-chat: side-chat tab type");
-    ctx.effect(() => {
-      const handle = ctx.inject(["inputTriggers"], (scope) => {
-        const registry = scope.inputTriggers;
-        if (registry === void 0 || typeof registry.registerSource !== "function") return void 0;
-        return registry.registerSource({
-          trigger: CHIP_TRIGGER,
-          name: CHIP_SOURCE,
-          openReference(_session, reference) {
-            const jump = chipJumpHandler.current;
-            if (typeof jump !== "function") return false;
-            return jump(reference?.ref) === true;
-          },
-          codec: {
-            clipboardText: () => CHIP_PLACEHOLDER,
-            serialize(ref) {
-              const payload = chipRegistry.get(ref);
-              if (payload === void 0) {
-                return Promise.reject(new Error(`quote-chat: unknown chip "${ref}"`));
-              }
-              return Promise.resolve(serializeChipForModel(payload));
-            }
-          }
-        });
-      });
-      const release = typeof handle === "function" ? handle : handle?.dispose?.bind(handle);
-      return () => {
-        if (typeof release === "function") release();
-      };
-    }, "quote-chat: reference source");
-    ctx.effect(() => {
-      const release = ctx.slots.inject("conversation.input.dock", () => ctx.slots.register({
-        name: "conversation.input.dock",
-        id: "quote-chat-annotations",
-        order: 15,
-        locale: NS
-      }, annotationDock({
+    registerSideChatTab({ ctx, t, TAB_ID, TAB_KIND, NS, SideChatTab });
+    registerReferenceSource({
+      ctx,
+      registry: chipRegistry,
+      jumpHandler: chipJumpHandler,
+      CHIP_TRIGGER,
+      CHIP_SOURCE,
+      CHIP_PLACEHOLDER,
+      serializeChipForModel
+    });
+    registerAnnotationDock({
+      ctx,
+      NS,
+      buildDock: () => annotationDock({
         ctx,
         // The annotation lifecycle: one store, plus the React binding over it.
         annotations: { store: annotationStore, useAnnotations },
@@ -3311,11 +3345,8 @@ function __dshQuoteChatFactory(hostRequire) {
         // Declared limits and protocol ids.
         limits: { MAX_QUOTE_CHARS, MAX_ANNOTATIONS, TAB_KIND },
         t
-      })));
-      return () => {
-        if (typeof release === "function") release();
-      };
-    }, "quote-chat: annotation dock");
+      })
+    });
   }
   var inject = ["slots", "locale"];
   function apply(ctx) {
