@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:d12fcf1b3143d649
+ * Artifact: sha256:4cad6e53295f826a
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -49,7 +49,7 @@ function __dshQuoteChatFactory(hostRequire) {
     inject: () => inject
   });
   module.exports = __toCommonJS(index_exports);
-  var import_react9 = __toESM(require("react"), 1);
+  var import_react10 = __toESM(require("react"), 1);
   var import_react_dom6 = require("react-dom");
 
   // src/locales.js
@@ -278,6 +278,22 @@ function __dshQuoteChatFactory(hostRequire) {
         const state = stateFor(sessionId);
         if (state.list.length > 0) publish(state, EMPTY);
       }
+    };
+  }
+
+  // src/annotation-hooks.js
+  var import_react = __toESM(require("react"), 1);
+  function makeUseAnnotations(store) {
+    return function useAnnotations2(sessionId) {
+      const subscribe = import_react.default.useCallback(
+        (listener) => store.subscribe(sessionId, listener),
+        [sessionId]
+      );
+      const snapshot = import_react.default.useCallback(
+        () => store.snapshot(sessionId),
+        [sessionId]
+      );
+      return import_react.default.useSyncExternalStore(subscribe, snapshot, snapshot);
     };
   }
 
@@ -1526,8 +1542,8 @@ function __dshQuoteChatFactory(hostRequire) {
   `;
 
   // src/icons.js
-  var import_react = __toESM(require("react"), 1);
-  var h = import_react.default.createElement;
+  var import_react2 = __toESM(require("react"), 1);
+  var h = import_react2.default.createElement;
   function IconAnnotate() {
     return h(
       "svg",
@@ -1590,9 +1606,9 @@ function __dshQuoteChatFactory(hostRequire) {
   }
 
   // src/ui/popovers.js
-  var import_react2 = __toESM(require("react"), 1);
+  var import_react3 = __toESM(require("react"), 1);
   var import_react_dom = require("react-dom");
-  var h2 = import_react2.default.createElement;
+  var h2 = import_react3.default.createElement;
   var VIEWPORT_MARGIN = 8;
   var ANCHOR_GAP = 8;
   function placeNear(rect, size) {
@@ -1609,9 +1625,9 @@ function __dshQuoteChatFactory(hostRequire) {
   function createPopovers({ findFlow, anchorInTranscript }) {
     function ActionPopup2(props) {
       const { anchor, canAnnotate, canAsk, labels, onAnnotate, onAsk } = props;
-      const ref = import_react2.default.useRef(null);
-      const [size, setSize] = import_react2.default.useState({ width: 0, height: 0 });
-      import_react2.default.useLayoutEffect(() => {
+      const ref = import_react3.default.useRef(null);
+      const [size, setSize] = import_react3.default.useState({ width: 0, height: 0 });
+      import_react3.default.useLayoutEffect(() => {
         const element = ref.current;
         if (element === null) return;
         const rect = element.getBoundingClientRect();
@@ -1655,18 +1671,18 @@ function __dshQuoteChatFactory(hostRequire) {
     }
     function ComposerPopover2(props) {
       const { source, labels, onConfirm, onCancel } = props;
-      const ref = import_react2.default.useRef(null);
-      const inputRef = import_react2.default.useRef(null);
-      const [comment, setComment] = import_react2.default.useState("");
-      const [size, setSize] = import_react2.default.useState({ width: 0, height: 0 });
-      import_react2.default.useLayoutEffect(() => {
+      const ref = import_react3.default.useRef(null);
+      const inputRef = import_react3.default.useRef(null);
+      const [comment, setComment] = import_react3.default.useState("");
+      const [size, setSize] = import_react3.default.useState({ width: 0, height: 0 });
+      import_react3.default.useLayoutEffect(() => {
         const element = ref.current;
         if (element === null) return;
         const rect = element.getBoundingClientRect();
         setSize({ width: rect.width, height: rect.height });
         inputRef.current?.focus();
       }, []);
-      import_react2.default.useEffect(() => {
+      import_react3.default.useEffect(() => {
         const onDown = (event) => {
           if (ref.current !== null && event.target instanceof Node && ref.current.contains(event.target)) return;
           onCancel();
@@ -1749,21 +1765,21 @@ function __dshQuoteChatFactory(hostRequire) {
   }
 
   // src/ui/cards.js
-  var import_react3 = __toESM(require("react"), 1);
+  var import_react4 = __toESM(require("react"), 1);
   var import_react_dom2 = require("react-dom");
-  var h3 = import_react3.default.createElement;
+  var h3 = import_react4.default.createElement;
   var HOVER_LINGER_MS = 260;
   var CARD_EXIT_MS = 130;
   var VIEWPORT_MARGIN2 = 8;
   function createCards({ composerContainer: composerContainer2 }) {
     function ChipCards2(props) {
       const { annotations, occurrences, labels, onJump, onRemove } = props;
-      const actionsRef = import_react3.default.useRef({ onJump, onRemove });
+      const actionsRef = import_react4.default.useRef({ onJump, onRemove });
       actionsRef.current = { onJump, onRemove };
-      const [hover, setHover] = import_react3.default.useState(null);
-      const hoverRef = import_react3.default.useRef(null);
+      const [hover, setHover] = import_react4.default.useState(null);
+      const hoverRef = import_react4.default.useRef(null);
       hoverRef.current = hover;
-      import_react3.default.useEffect(() => {
+      import_react4.default.useEffect(() => {
         if (typeof document === "undefined") return void 0;
         let frame = 0;
         let timer = 0;
@@ -1932,7 +1948,7 @@ function __dshQuoteChatFactory(hostRequire) {
       const REMOVE_SIZE = 15;
       return (0, import_react_dom2.createPortal)(
         h3(
-          import_react3.default.Fragment,
+          import_react4.default.Fragment,
           null,
           h3(
             "button",
@@ -1974,9 +1990,9 @@ function __dshQuoteChatFactory(hostRequire) {
     }
     function AnnotationCard2(props) {
       const { annotation, anchor, closing = false } = props;
-      const ref = import_react3.default.useRef(null);
-      const [size, setSize] = import_react3.default.useState({ width: 0, height: 0 });
-      import_react3.default.useLayoutEffect(() => {
+      const ref = import_react4.default.useRef(null);
+      const [size, setSize] = import_react4.default.useState({ width: 0, height: 0 });
+      import_react4.default.useLayoutEffect(() => {
         const element = ref.current;
         if (element === null) return;
         const box = element.getBoundingClientRect();
@@ -2015,9 +2031,9 @@ function __dshQuoteChatFactory(hostRequire) {
   }
 
   // src/ui/markers.js
-  var import_react4 = __toESM(require("react"), 1);
+  var import_react5 = __toESM(require("react"), 1);
   var import_react_dom3 = require("react-dom");
-  var h4 = import_react4.default.createElement;
+  var h4 = import_react5.default.createElement;
   var VIEWPORT_MARGIN3 = 8;
   var BUBBLE_CLEARANCE = 30;
   var BUBBLE_PANEL_WIDTH = 320;
@@ -2055,19 +2071,19 @@ function __dshQuoteChatFactory(hostRequire) {
     const containerCache = /* @__PURE__ */ new WeakMap();
     function BubblePanel(props) {
       const { annotation, anchor, labels, onSave, onDelete, onClose, inFlow = false, rel = null } = props;
-      const [text, setText] = import_react4.default.useState(annotation.comment);
-      const [flash, setFlash] = import_react4.default.useState("");
-      const ref = import_react4.default.useRef(null);
-      const areaRef = import_react4.default.useRef(null);
-      const [size, setSize] = import_react4.default.useState({ width: 0, height: 0 });
-      import_react4.default.useLayoutEffect(() => {
+      const [text, setText] = import_react5.default.useState(annotation.comment);
+      const [flash, setFlash] = import_react5.default.useState("");
+      const ref = import_react5.default.useRef(null);
+      const areaRef = import_react5.default.useRef(null);
+      const [size, setSize] = import_react5.default.useState({ width: 0, height: 0 });
+      import_react5.default.useLayoutEffect(() => {
         const element = ref.current;
         if (element === null) return;
         const box = element.getBoundingClientRect();
         setSize({ width: box.width, height: box.height });
         areaRef.current?.focus();
       }, []);
-      import_react4.default.useEffect(() => {
+      import_react5.default.useEffect(() => {
         const onDown = (event) => {
           if (ref.current !== null && event.target instanceof Node && ref.current.contains(event.target)) return;
           onClose();
@@ -2186,9 +2202,9 @@ function __dshQuoteChatFactory(hostRequire) {
     }
     function MarkerLayer2(props) {
       const { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove } = props;
-      const [positions, setPositions] = import_react4.default.useState([]);
-      const [editing, setEditing] = import_react4.default.useState(null);
-      import_react4.default.useEffect(() => {
+      const [positions, setPositions] = import_react5.default.useState([]);
+      const [editing, setEditing] = import_react5.default.useState(null);
+      import_react5.default.useEffect(() => {
         if (typeof document === "undefined") return void 0;
         let frame = 0;
         let timer = 0;
@@ -2282,7 +2298,7 @@ function __dshQuoteChatFactory(hostRequire) {
           if (columnObserver !== null) columnObserver.disconnect();
         };
       }, [annotations, occurrences, labels]);
-      import_react4.default.useEffect(() => {
+      import_react5.default.useEffect(() => {
         if (typeof document === "undefined") return;
         for (const position of positions) {
           const row = position.row;
@@ -2369,16 +2385,16 @@ function __dshQuoteChatFactory(hostRequire) {
           }
         }), anchored === null ? document.body : anchored.scroller);
       })();
-      return h4(import_react4.default.Fragment, null, ...nodes, editor);
+      return h4(import_react5.default.Fragment, null, ...nodes, editor);
     }
     return { MarkerLayer: MarkerLayer2 };
   }
 
   // src/ui/side-chat.js
-  var import_react6 = __toESM(require("react"), 1);
+  var import_react7 = __toESM(require("react"), 1);
 
   // src/ui/draft-hooks.js
-  var import_react5 = __toESM(require("react"), 1);
+  var import_react6 = __toESM(require("react"), 1);
   function useDraft(useInput, fallback = "") {
     const inert = (selector) => selector({ draft: fallback });
     return (typeof useInput === "function" ? useInput : inert)(
@@ -2387,7 +2403,7 @@ function __dshQuoteChatFactory(hostRequire) {
     );
   }
   function useDraftOccurrences(useInput) {
-    const empty = import_react5.default.useMemo(() => [], []);
+    const empty = import_react6.default.useMemo(() => [], []);
     const inert = () => empty;
     const picked = (typeof useInput === "function" ? useInput : inert)(
       (state) => state.occurrences,
@@ -2397,20 +2413,20 @@ function __dshQuoteChatFactory(hostRequire) {
   }
 
   // src/ui/side-chat.js
-  var h5 = import_react6.default.createElement;
+  var h5 = import_react7.default.createElement;
   function createSideChat({ quoteForTab: quoteForTab2 }) {
     function SideChat2(props) {
       const { quote, t, locale, inputActions, useInput } = props;
       const draft = useDraft(useInput);
-      const [messages, setMessages] = import_react6.default.useState([]);
-      const [question, setQuestion] = import_react6.default.useState("");
-      const [busy, setBusy] = import_react6.default.useState(false);
-      const [error, setError] = import_react6.default.useState("");
-      const [expanded, setExpanded] = import_react6.default.useState(false);
-      const [added, setAdded] = import_react6.default.useState(false);
-      const abortRef = import_react6.default.useRef(null);
-      const threadRef = import_react6.default.useRef(null);
-      import_react6.default.useEffect(() => {
+      const [messages, setMessages] = import_react7.default.useState([]);
+      const [question, setQuestion] = import_react7.default.useState("");
+      const [busy, setBusy] = import_react7.default.useState(false);
+      const [error, setError] = import_react7.default.useState("");
+      const [expanded, setExpanded] = import_react7.default.useState(false);
+      const [added, setAdded] = import_react7.default.useState(false);
+      const abortRef = import_react7.default.useRef(null);
+      const threadRef = import_react7.default.useRef(null);
+      import_react7.default.useEffect(() => {
         abortRef.current?.abort();
         abortRef.current = null;
         setMessages([]);
@@ -2419,15 +2435,15 @@ function __dshQuoteChatFactory(hostRequire) {
         setBusy(false);
         setAdded(false);
       }, [quote]);
-      import_react6.default.useEffect(() => () => {
+      import_react7.default.useEffect(() => () => {
         abortRef.current?.abort();
       }, []);
-      const scrollToEnd = import_react6.default.useCallback(() => {
+      const scrollToEnd = import_react7.default.useCallback(() => {
         const element = threadRef.current;
         if (element !== null) element.scrollTop = element.scrollHeight;
       }, []);
-      import_react6.default.useEffect(scrollToEnd, [messages, scrollToEnd]);
-      const submit = import_react6.default.useCallback(async () => {
+      import_react7.default.useEffect(scrollToEnd, [messages, scrollToEnd]);
+      const submit = import_react7.default.useCallback(async () => {
         const text = question.trim();
         if (text === "" || busy) return;
         const history = messages.filter((message) => message.text.trim() !== "").map((message) => ({ role: message.role, text: message.text }));
@@ -2472,12 +2488,12 @@ function __dshQuoteChatFactory(hostRequire) {
           setBusy(false);
         }
       }, [question, busy, messages, quote, locale]);
-      const stop = import_react6.default.useCallback(() => {
+      const stop = import_react7.default.useCallback(() => {
         abortRef.current?.abort();
         abortRef.current = null;
         setBusy(false);
       }, []);
-      const addToChat = import_react6.default.useCallback((text) => {
+      const addToChat = import_react7.default.useCallback((text) => {
         const payload = text.split(/\r?\n/).map((line) => line === "" ? ">" : `> ${line}`).join("\n");
         const current = typeof draft === "string" ? draft : "";
         if (typeof inputActions?.captureInsertion === "function" && typeof inputActions?.insertText === "function") {
@@ -2496,7 +2512,7 @@ function __dshQuoteChatFactory(hostRequire) {
           setAdded(true);
         }
       }, [draft, inputActions]);
-      import_react6.default.useEffect(() => {
+      import_react7.default.useEffect(() => {
         if (!added) return void 0;
         const timer = setTimeout(() => setAdded(false), 2200);
         return () => clearTimeout(timer);
@@ -2606,17 +2622,17 @@ function __dshQuoteChatFactory(hostRequire) {
       const info = typeof useTabInfo === "function" ? useTabInfo() : void 0;
       const quote = quoteForTab2(info?.tab?.navigation?.params?.quote);
       const localeService = pluginCtx?.locale;
-      const locale = import_react6.default.useSyncExternalStore(
-        import_react6.default.useCallback(
+      const locale = import_react7.default.useSyncExternalStore(
+        import_react7.default.useCallback(
           (listener) => typeof localeService?.subscribe === "function" ? localeService.subscribe(listener) : () => {
           },
           [localeService]
         ),
-        import_react6.default.useCallback(
+        import_react7.default.useCallback(
           () => typeof localeService?.getLocale === "function" ? localeService.getLocale().active : "zh",
           [localeService]
         ),
-        import_react6.default.useCallback(() => "zh", [])
+        import_react7.default.useCallback(() => "zh", [])
       );
       if (quote === "") {
         return h5(
@@ -2635,9 +2651,9 @@ function __dshQuoteChatFactory(hostRequire) {
   }
 
   // src/ui/dock.js
-  var import_react7 = __toESM(require("react"), 1);
+  var import_react8 = __toESM(require("react"), 1);
   var import_react_dom4 = require("react-dom");
-  var h6 = import_react7.default.createElement;
+  var h6 = import_react8.default.createElement;
   function annotationDock(deps) {
     const {
       ctx,
@@ -2652,12 +2668,10 @@ function __dshQuoteChatFactory(hostRequire) {
       t: boundT
     } = deps;
     const {
-      addAnnotation: addAnnotation2,
-      removeAnnotation: removeAnnotation2,
-      updateAnnotation: updateAnnotation2,
       useAnnotations: useAnnotations2,
       store: annotationStore2
     } = annotations;
+    const { add: addAnnotation, remove: removeAnnotation, update: updateAnnotation } = annotationStore2;
     const { registry: chipRegistry2, bridge: chipBridge2, jumpHandler: chipJumpHandler2 } = chips;
     const { flashRange: flashRange2, clearFlashRange: clearFlashRange2, holdRange: holdRange2 } = highlights;
     const {
@@ -2681,14 +2695,14 @@ function __dshQuoteChatFactory(hostRequire) {
       const t = typeof props.t === "function" ? props.t : boundT;
       const draft = useDraft(useInput);
       const occurrences = useDraftOccurrences(useInput);
-      const inputStateRef = import_react7.default.useRef(null);
+      const inputStateRef = import_react8.default.useRef(null);
       inputStateRef.current = { draft, occurrences };
       const annotations2 = useAnnotations2(sessionId);
-      const [overlay, setOverlay] = import_react7.default.useState(null);
-      const [notice, setNotice] = import_react7.default.useState("");
-      const overlayRef = import_react7.default.useRef(null);
+      const [overlay, setOverlay] = import_react8.default.useState(null);
+      const [notice, setNotice] = import_react8.default.useState("");
+      const overlayRef = import_react8.default.useRef(null);
       overlayRef.current = overlay;
-      const labels = import_react7.default.useMemo(() => ({
+      const labels = import_react8.default.useMemo(() => ({
         annotate: t("popup.annotate"),
         askInSide: t("popup.askInSide"),
         tooLong: t("popup.tooLong"),
@@ -2719,7 +2733,7 @@ function __dshQuoteChatFactory(hostRequire) {
         save: t("bubble.save"),
         delete: t("bubble.delete")
       }), [t]);
-      import_react7.default.useEffect(() => {
+      import_react8.default.useEffect(() => {
         if (overlay === null) return void 0;
         const onPointerDown = (event) => {
           const surface = document.querySelector(".qc-popup, .qc-compose");
@@ -2736,7 +2750,7 @@ function __dshQuoteChatFactory(hostRequire) {
           document.removeEventListener("keydown", onKeyDown, true);
         };
       }, [overlay === null]);
-      import_react7.default.useEffect(() => {
+      import_react8.default.useEffect(() => {
         if (typeof document === "undefined") return void 0;
         let frame = 0;
         let pointerDown = false;
@@ -2790,26 +2804,26 @@ function __dshQuoteChatFactory(hostRequire) {
           document.removeEventListener("selectionchange", schedule);
         };
       }, [labels]);
-      import_react7.default.useEffect(() => {
+      import_react8.default.useEffect(() => {
         if (notice === "") return void 0;
         const timer = setTimeout(() => setNotice(""), 3200);
         return () => clearTimeout(timer);
       }, [notice]);
-      import_react7.default.useEffect(() => () => clearFlashRange2(), []);
-      const writeChip = import_react7.default.useCallback((annotation) => chipBridge2.place(
+      import_react8.default.useEffect(() => () => clearFlashRange2(), []);
+      const writeChip = import_react8.default.useCallback((annotation) => chipBridge2.place(
         inputActions,
         () => ({ draft, occurrences: inputStateRef.current?.occurrences }),
         annotation,
         labels
       ), [draft, inputActions, labels]);
-      const cancelCompose = import_react7.default.useCallback(() => {
+      const cancelCompose = import_react8.default.useCallback(() => {
         clearFlashRange2();
         setOverlay(null);
       }, []);
-      const commit = import_react7.default.useCallback((source, comment) => {
+      const commit = import_react8.default.useCallback((source, comment) => {
         if (sessionId === void 0) return;
         const text = typeof comment === "string" ? comment.trim() : "";
-        const stored = addAnnotation2(sessionId, {
+        const stored = addAnnotation(sessionId, {
           kind: source.kind,
           text: source.text,
           previewText: source.previewText,
@@ -2833,7 +2847,7 @@ function __dshQuoteChatFactory(hostRequire) {
         const range = flow === null ? null : resolveAnchor(flow, stored.anchor);
         if (range !== null) flashRange2(range);
       }, [sessionId, labels, writeChip]);
-      const annotateTable = import_react7.default.useCallback((table) => {
+      const annotateTable = import_react8.default.useCallback((table) => {
         const markdown = tableToMarkdown2(table);
         if (markdown === "") return;
         const flow = findFlow();
@@ -2851,7 +2865,7 @@ function __dshQuoteChatFactory(hostRequire) {
         });
         clearSelection2();
       }, []);
-      const onHighlight = import_react7.default.useCallback((annotation, on) => {
+      const onHighlight = import_react8.default.useCallback((annotation, on) => {
         const flow = findFlow();
         if (flow === null) return;
         if (!on) {
@@ -2865,7 +2879,7 @@ function __dshQuoteChatFactory(hostRequire) {
           return live === null ? null : resolveAnchor(live, annotation.anchor);
         });
       }, []);
-      const onJump = import_react7.default.useCallback((annotation) => {
+      const onJump = import_react8.default.useCallback((annotation) => {
         const flow = findFlow();
         if (flow === null) {
           setNotice(diagnoseMiss2(null, annotation));
@@ -2886,7 +2900,7 @@ function __dshQuoteChatFactory(hostRequire) {
           setNotice(diagnoseMiss2(findFlow(), annotation));
         });
       }, []);
-      import_react7.default.useEffect(() => {
+      import_react8.default.useEffect(() => {
         chipJumpHandler2.current = (ref) => {
           const match = annotations2.find((item) => item.id === ref);
           if (match === void 0) return false;
@@ -2897,21 +2911,21 @@ function __dshQuoteChatFactory(hostRequire) {
           if (chipJumpHandler2.current !== null) chipJumpHandler2.current = null;
         };
       }, [annotations2, onJump]);
-      const onRemove = import_react7.default.useCallback((annotation) => {
+      const onRemove = import_react8.default.useCallback((annotation) => {
         if (sessionId === void 0) return;
         chipBridge2.release(
           inputActions,
           () => ({ draft, occurrences: inputStateRef.current?.occurrences }),
           annotation.id
         );
-        removeAnnotation2(sessionId, annotation.id);
+        removeAnnotation(sessionId, annotation.id);
       }, [draft, inputActions, sessionId]);
-      const onUpdate = import_react7.default.useCallback((annotation, comment) => {
+      const onUpdate = import_react8.default.useCallback((annotation, comment) => {
         if (sessionId === void 0) return;
         chipRegistry2.updateComment(annotation.id, comment);
-        updateAnnotation2(sessionId, annotation.id, comment);
+        updateAnnotation(sessionId, annotation.id, comment);
       }, [sessionId]);
-      const onAsk = import_react7.default.useCallback((source) => {
+      const onAsk = import_react8.default.useCallback((source) => {
         const opener = ctx.get("sidebarRight");
         if (typeof opener?.openTab !== "function") return;
         quoteHandoff2.remember(source.text);
@@ -2931,7 +2945,7 @@ function __dshQuoteChatFactory(hostRequire) {
       const canAnnotate = typeof inputActions?.setDraft === "function" || typeof inputActions?.captureInsertion === "function" && typeof inputActions?.insertText === "function";
       const canAsk = typeof ctx.get("sidebarRight")?.openTab === "function";
       return h6(
-        import_react7.default.Fragment,
+        import_react8.default.Fragment,
         null,
         overlay === null ? null : overlay.kind === "actions" ? h6(ActionPopup2, {
           anchor: overlay.source.rect,
@@ -2968,16 +2982,16 @@ function __dshQuoteChatFactory(hostRequire) {
   }
 
   // src/ui/table.js
-  var import_react8 = __toESM(require("react"), 1);
+  var import_react9 = __toESM(require("react"), 1);
   var import_react_dom5 = require("react-dom");
-  var h7 = import_react8.default.createElement;
+  var h7 = import_react9.default.createElement;
   var VIEWPORT_MARGIN4 = 8;
   var TABLE_BUTTON_INSET = 116;
   var TABLE_BUTTON_OFFSET = 4;
   function TableAddButton(props) {
     const { label, onAdd } = props;
-    const [target, setTarget] = import_react8.default.useState(null);
-    import_react8.default.useEffect(() => {
+    const [target, setTarget] = import_react9.default.useState(null);
+    import_react9.default.useEffect(() => {
       if (typeof document === "undefined") return void 0;
       let frame = 0;
       let pending = null;
@@ -3153,7 +3167,7 @@ function __dshQuoteChatFactory(hostRequire) {
   // src/index.js
   var MAX_QUOTE_CHARS = 8e3;
   var MAX_ANNOTATIONS = 12;
-  var h8 = import_react9.default.createElement;
+  var h8 = import_react10.default.createElement;
   var NS = "quoteChat";
   var TAB_ID = "dsh-quote-chat:side";
   var TAB_KIND = "dsh-quote-chat";
@@ -3191,20 +3205,7 @@ function __dshQuoteChatFactory(hostRequire) {
   var clearFlashRange = () => highlighter.clear();
   var holdRange = (range, resolve = null) => highlighter.hold(range, resolve);
   var annotationStore = createAnnotationStore({ maxAnnotations: MAX_ANNOTATIONS });
-  var addAnnotation = (sessionId, draft) => annotationStore.add(sessionId, draft);
-  var removeAnnotation = (sessionId, id) => annotationStore.remove(sessionId, id);
-  var updateAnnotation = (sessionId, id, comment) => annotationStore.update(sessionId, id, comment);
-  function useAnnotations(sessionId) {
-    const subscribe = import_react9.default.useCallback(
-      (listener) => annotationStore.subscribe(sessionId, listener),
-      [sessionId]
-    );
-    const snapshot = import_react9.default.useCallback(
-      () => annotationStore.snapshot(sessionId),
-      [sessionId]
-    );
-    return import_react9.default.useSyncExternalStore(subscribe, snapshot, snapshot);
-  }
+  var useAnnotations = makeUseAnnotations(annotationStore);
   var chipRegistry = createChipRegistry();
   var chipBridge = createDraftBridge({ registry: chipRegistry, source: CHIP_SOURCE });
   var chipJumpHandler = { current: null };
@@ -3287,13 +3288,7 @@ function __dshQuoteChatFactory(hostRequire) {
       }, annotationDock({
         ctx,
         // The annotation lifecycle: one store, plus the React binding over it.
-        annotations: {
-          store: annotationStore,
-          addAnnotation,
-          removeAnnotation,
-          updateAnnotation,
-          useAnnotations
-        },
+        annotations: { store: annotationStore, useAnnotations },
         // Chip identity and the draft seam.
         chips: { registry: chipRegistry, bridge: chipBridge, jumpHandler: chipJumpHandler },
         // Painting: the transient glow and the held editor highlight.

@@ -104,8 +104,12 @@ check('the editor is seeded with the current comment',
 // Saving must reach the store's update path. The store now lives in its own module, so assert
 // the wiring rather than one exact signature: the adapter exists and calls the store.
 check('saving rewrites the comment in place',
-  /const updateAnnotation = \(sessionId, id, comment\) => annotationStore\.update\(sessionId, id, comment\)/.test(source),
-  'the update adapter does not reach the store')
+  // The entry used to hold a pass-through adapter for this; it was identical to `store.update`, so
+  // the dock now calls the store directly. The claim being tested is unchanged: the dock's save
+  // path calls `updateAnnotation`, which is the store's `update` under a local alias.
+  /const \{ add: addAnnotation, remove: removeAnnotation, update: updateAnnotation \} = annotationStore/.test(dockSource)
+    && /updateAnnotation\(sessionId, annotation\.id, comment\)/.test(dockSource),
+  'the update path does not reach the store')
 // The payload now lives behind the registry, so this asserts the wiring end to end: the edit
 // path calls the registry's update, and serialization reads back through the same registry.
 check('saving keeps the codec payload in step',

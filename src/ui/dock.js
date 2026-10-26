@@ -66,8 +66,10 @@ export function annotationDock(deps) {
   // Flattened back to the names the body reads. Keeping the original names means the component
   // body needed no edit at all, which is what makes this change verifiable by the suites alone.
   const {
-    addAnnotation, removeAnnotation, updateAnnotation, useAnnotations, store: annotationStore,
+    useAnnotations, store: annotationStore,
   } = annotations
+  // The store's own methods, used directly: the entry's wrappers were identical pass-throughs.
+  const { add: addAnnotation, remove: removeAnnotation, update: updateAnnotation } = annotationStore
   const { registry: chipRegistry, bridge: chipBridge, jumpHandler: chipJumpHandler } = chips
   const { flashRange, clearFlashRange, holdRange } = highlights
   const {

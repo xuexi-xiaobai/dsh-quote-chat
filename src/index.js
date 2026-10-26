@@ -46,6 +46,7 @@ const h = React.createElement
 
 import { zh, en } from './locales.js'
 import { createAnnotationStore } from './annotation-store.js'
+import { makeUseAnnotations } from './annotation-hooks.js'
 import {
   serializeChipForModel, CHIP_SOURCE, CHIP_TRIGGER, CHIP_PLACEHOLDER
 } from './chip-draft.js'
@@ -192,56 +193,20 @@ const holdRange = (range, resolve = null) => highlighter.hold(range, resolve)
 /**
  * This plugin instance's annotations.
  *
- * One store per Host factory call, so two plugin instances never share annotations while
- * a single instance fans them out across sessions by `sessionId`. The store itself lives
- * in `annotation-store.js`; what remains here is the React adapter.
+ * One store per Host factory call, so two plugin instances never share annotations while a single
+ * instance fans them out across sessions by `sessionId`. The store itself lives in
+ * `annotation-store.js`; its `add` / `remove` / `update` / `snapshot` / `subscribe` are used
+ * directly rather than wrapped, because the wrappers were identical in name, arity and order.
  */
 const annotationStore = createAnnotationStore({ maxAnnotations: MAX_ANNOTATIONS })
 
 /**
- * Add one annotation to a session.
- * @param sessionId - the session key.
- * @param draft - the annotation draft (without id or number).
- * @returns the stored annotation, or null when the list is full.
- */
-const addAnnotation = (sessionId, draft) => annotationStore.add(sessionId, draft)
-
-/**
- * Remove one annotation.
- * @param sessionId - the session key.
- * @param id - the annotation id.
- */
-const removeAnnotation = (sessionId, id) => annotationStore.remove(sessionId, id)
-
-/**
- * Change one annotation's comment.
- * @param sessionId - the session key.
- * @param id - the annotation id.
- * @param comment - the new comment text (may be empty).
- * @returns the updated annotation, or null when it is gone.
- */
-const updateAnnotation = (sessionId, id, comment) => annotationStore.update(sessionId, id, comment)
-
-/**
- * Subscribe to one session's annotations.
+ * The React binding over that store.
  *
- * Kept here rather than in the store because it is a React binding: the store exposes a
- * plain subscribe/snapshot pair, and this adapts them to `useSyncExternalStore`.
- *
- * @param sessionId - the session key (may be undefined).
- * @returns the current list.
+ * Built once here so the hook keeps a stable identity, and kept out of the store so the store stays
+ * renderer-free. See annotation-hooks.js for why the two callbacks must be memoised.
  */
-function useAnnotations(sessionId) {
-  const subscribe = React.useCallback(
-    (listener) => annotationStore.subscribe(sessionId, listener),
-    [sessionId],
-  )
-  const snapshot = React.useCallback(
-    () => annotationStore.snapshot(sessionId),
-    [sessionId],
-  )
-  return React.useSyncExternalStore(subscribe, snapshot, snapshot)
-}
+const useAnnotations = makeUseAnnotations(annotationStore)
 
 // #endregion
 
@@ -376,10 +341,7 @@ function applyImpl(ctx) {
     }, annotationDock({
         ctx,
         // The annotation lifecycle: one store, plus the React binding over it.
-        annotations: {
-          store: annotationStore,
-          addAnnotation, removeAnnotation, updateAnnotation, useAnnotations,
-        },
+        annotations: { store: annotationStore, useAnnotations },
         // Chip identity and the draft seam.
         chips: { registry: chipRegistry, bridge: chipBridge, jumpHandler: chipJumpHandler },
         // Painting: the transient glow and the held editor highlight.
