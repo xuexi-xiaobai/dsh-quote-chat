@@ -86,6 +86,7 @@ import {
 } from './chip-draft.js'
 import { createChipRegistry } from './chip-registry.js'
 import { createDraftBridge } from './chip-bridge.js'
+import { createQuoteHandoff } from './quote-handoff.js'
 import { elementOf, cssEscape } from './dom.js'
 import {
   rangeAt, captureAnchor, resolveAnchor, locateText, textOf, nodePath, nodeAtPath,
@@ -3145,15 +3146,13 @@ function escapeHtml(text) {
     }
 
     /**
-     * The passage the popup asked the side chat to open with. The tab body reads
-     * its own navigation params first, and falls back to this only briefly — a
-     * host that opens the tab without carrying them still shows the right
-     * quote, while a guide-entry open minutes later does not resurrect it.
+     * The passage a freshly opened side chat should show.
+     *
+     * One handoff per plugin instance: navigation params win, and a pending quote is a
+     * 15-second fallback for a Host that opens the tab without carrying them. The rules and
+     * the window live in quote-handoff.js.
      */
-    const pendingQuote = { text: '', at: 0 }
-
-    /** How long a pending quote stays eligible, in ms. */
-    const PENDING_QUOTE_TTL = 15000
+    const quoteHandoff = createQuoteHandoff()
 
     /**
      * The quote a freshly opened side chat should show.
@@ -3161,9 +3160,7 @@ function escapeHtml(text) {
      * @returns the carried quote, a fresh pending one, or an empty string.
      */
     function quoteForTab(carried) {
-      if (typeof carried === 'string' && carried !== '') return carried
-      const fresh = Date.now() - pendingQuote.at < PENDING_QUOTE_TTL
-      return fresh ? pendingQuote.text : ''
+      return quoteHandoff.forTab(carried)
     }
 
     /**
@@ -3600,8 +3597,7 @@ function escapeHtml(text) {
         const onAsk = React.useCallback((source) => {
           const opener = ctx.get('sidebarRight')
           if (typeof opener?.openTab !== 'function') return
-          pendingQuote.text = source.text
-          pendingQuote.at = Date.now()
+          quoteHandoff.remember(source.text)
           try {
             opener.openTab(TAB_KIND, {
               params: { quote: source.text, title: t('side.title') },

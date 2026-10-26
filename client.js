@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:eac28d32e7c8f9bb
+ * Artifact: sha256:c9268fbf5c6c7881
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -458,6 +458,40 @@ function __dshQuoteChatFactory(hostRequire) {
         if (typeof port?.setDraft !== "function") return false;
         port.setDraft(snapshot);
         return true;
+      }
+    };
+  }
+
+  // src/quote-handoff.js
+  var PENDING_QUOTE_TTL = 15e3;
+  function createQuoteHandoff({ now = () => Date.now() } = {}) {
+    let text = "";
+    let at = 0;
+    return {
+      /**
+       * Record the quote a popup action wants the side chat to open with.
+       *
+       * Called immediately before the tab is opened, so the clock starts at the same moment the
+       * tab appears. A later call replaces the earlier one and restarts the window.
+       *
+       * @param quote - the passage text; empty strings are allowed and mean "no quote".
+       */
+      remember(quote) {
+        text = typeof quote === "string" ? quote : "";
+        at = now();
+      },
+      /**
+       * The quote a tab should show.
+       *
+       * Reading never consumes: a tab body can re-render many times, and each render asks again.
+       *
+       * @param carried - the quote the tab's navigation params carried, if any.
+       * @returns the carried quote, a fresh pending one, or an empty string.
+       */
+      forTab(carried) {
+        if (typeof carried === "string" && carried !== "") return carried;
+        const fresh = now() - at < PENDING_QUOTE_TTL;
+        return fresh ? text : "";
       }
     };
   }
@@ -2657,12 +2691,9 @@ function __dshQuoteChatFactory(hostRequire) {
       )
     );
   }
-  var pendingQuote = { text: "", at: 0 };
-  var PENDING_QUOTE_TTL = 15e3;
+  var quoteHandoff = createQuoteHandoff();
   function quoteForTab(carried) {
-    if (typeof carried === "string" && carried !== "") return carried;
-    const fresh = Date.now() - pendingQuote.at < PENDING_QUOTE_TTL;
-    return fresh ? pendingQuote.text : "";
+    return quoteHandoff.forTab(carried);
   }
   function SideChatTab(props) {
     const { useTabInfo, inputActions, useInput, t, pluginCtx } = props;
@@ -2948,8 +2979,7 @@ function __dshQuoteChatFactory(hostRequire) {
       const onAsk = import_react.default.useCallback((source) => {
         const opener = ctx.get("sidebarRight");
         if (typeof opener?.openTab !== "function") return;
-        pendingQuote.text = source.text;
-        pendingQuote.at = Date.now();
+        quoteHandoff.remember(source.text);
         try {
           opener.openTab(TAB_KIND, {
             params: { quote: source.text, title: t("side.title") },

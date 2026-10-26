@@ -13,12 +13,16 @@
  * its payload; a failed draft insertion does not roll back the payload it registered. Entries
  * live for the page's lifetime.
  *
- * That looks like a leak and it partly is one, but removing them would change behaviour in
- * ways that are easy to get wrong: a draft is not the only consumer, the user can remove a
- * chip from the draft and put it back, and an undo or a re-render can reintroduce a reference
- * whose payload would then be gone. Wiring cleanup to "the annotation was deleted" would tie
- * two registries together that currently have independent lifetimes. So this module offers no
- * delete and no clear — not because they are hard, but because nothing should be calling them.
+ * That looks like a leak and it partly is one. Keeping entries is the compatibility baseline
+ * for this refactor, NOT a design rule that forbids cleanup forever: with enough evidence about
+ * how references are reintroduced, reclaiming unreachable payloads would be an improvement.
+ *
+ * Cleanup is out of scope here because the risks are concrete rather than hypothetical — a
+ * draft is not the only consumer; the user can remove a chip and put it back; an undo, a
+ * re-render, or a restored draft can reintroduce a reference whose payload would then be gone.
+ * Wiring reclamation to "the annotation was deleted" would couple two registries that currently
+ * have independent lifetimes. So this module offers no delete and no clear: nothing in the
+ * current code should call them, and adding them now would invite exactly that coupling.
  *
  * What this module does NOT do: build references, build draft snapshots, touch the Host's
  * input interface, or serialize. `chipReference` needs a label and a payload; the reference it
@@ -31,8 +35,15 @@ import { CHIP_SOURCE, CHIP_PLACEHOLDER } from './chip-draft.js'
  * Create one payload registry.
  *
  * One per Host factory call, so two plugin instances never see each other's chips. Within a
- * single instance the registry is shared across sessions, which is correct: a chip's ref is an
- * annotation id, and ids are unique per instance regardless of session.
+ * single instance the registry is shared across sessions. A chip's ref is an annotation id, so
+ * the registry keys by that id across all sessions.
+ *
+ * That makes one assumption worth stating plainly: annotation ids are assumed unique per
+ * instance. They are NOT guaranteed unique. The id is `qc-<Date.now()>-<per-session seq>`, so
+ * two sessions that both add their first annotation in the same millisecond mint the same id,
+ * and the second payload overwrites the first. This is pre-existing behaviour, recorded here
+ * rather than fixed; see the note in the annotation store. The registry cannot detect it, since
+ * by the time it is asked to store, both annotations look like the same chip.
  *
  * @returns the registry's operations.
  */
