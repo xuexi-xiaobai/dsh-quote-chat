@@ -355,20 +355,33 @@ export async function run({ browser, check: report, url }) {
     composeLit.compose === true && composeLit.painted === true,
     JSON.stringify(composeLit))
 
-  // Click a point that is provably outside the box AND outside the popover it replaced.
+  // Click a point that is provably outside the box AND outside the popover it replaced — and also
+  // outside the transcript. A point inside the prose moves the caret, which re-renders the message
+  // the caret landed in and destroys the `data-qc-probe` marker that later steps rely on; the
+  // failure then shows up much later as a click timeout on a selector that silently stopped matching.
   const outsidePoint = await read(() => {
     const box = document.querySelector('.qc-compose').getBoundingClientRect()
-    const candidate = { x: Math.max(6, Math.round(box.left / 2)), y: Math.round(box.top + 12) }
+    // The left sidebar: always outside the transcript, and outside both floating surfaces.
+    // The very top-left corner: the app's own chrome, above the sidebar list and outside the flow.
+    const candidate = { x: 12, y: 14 }
     const hit = document.elementFromPoint(candidate.x, candidate.y)
+    const surface = hit === null ? null : hit.closest('.qc-compose, .qc-popup')
     return {
       ...candidate,
       // Verified outside both surfaces, so a failure cannot be blamed on the coordinates.
-      outsideCompose: hit?.closest('.qc-compose') === null
-        && hit?.closest('.qc-popup') === null,
+      outsideCompose: surface === null,
+      // Verified outside the transcript, so the probe marker survives. `closest()` returns an element
+      // or null — never undefined — so this is a single test, not two.
+      outsideTranscript: hit === null || hit.closest('[data-slot="conversation.chat.flow"]') === null,
+      hitElement: hit === null ? null
+        : (typeof hit.className === 'string' && hit.className !== '' ? hit.className.slice(0, 40) : hit.tagName),
     }
   })
   check('the dismissal point is outside both floating surfaces',
     outsidePoint.outsideCompose === true,
+    JSON.stringify(outsidePoint))
+  check('the dismissal point is outside the transcript, so the probe marker survives',
+    outsidePoint.outsideTranscript === true,
     JSON.stringify(outsidePoint))
 
   await browser.clickAt({ x: outsidePoint.x, y: outsidePoint.y })

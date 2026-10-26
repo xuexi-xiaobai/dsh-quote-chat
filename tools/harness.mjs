@@ -74,6 +74,43 @@ export async function openBrowser(options = {}) {
   })()
   const page = context.pages()[0] ?? await context.newPage()
 
+  /**
+   * Maximise the window for real, and confirm it took.
+   *
+   * `--start-maximized` alone left the window in state "normal" and merely larger than the work
+   * area, so its edges hung off-screen. Asking through CDP is a request, not a guarantee, so the
+   * resulting state is read back; a window that refuses to maximise is reported rather than silently
+   * left half-sized.
+   *
+   * Runs only when this call launched the browser: an attached context belongs to someone else.
+   */
+  if (options.context === undefined && options.maximize !== false) {
+    try {
+      const session = await context.newCDPSession(page)
+      const { windowId } = await session.send('Browser.getWindowForTarget')
+      await session.send('Browser.setWindowBounds', {
+        windowId,
+        bounds: { windowState: 'maximized' },
+      })
+      // The OS applies this asynchronously; poll briefly for the state to settle.
+      let state = 'unknown'
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const result = await session.send('Browser.getWindowBounds', { windowId })
+        state = result.bounds.windowState
+        if (state === 'maximized') break
+        await new Promise((resolve) => { setTimeout(resolve, 50) })
+      }
+      if (state !== 'maximized') {
+        console.warn(`[harness] window did not maximise (state: ${state}); the run continues`)
+      }
+      await session.detach()
+    } catch (failure) {
+      // Never fail a run over a cosmetic window state.
+      console.warn('[harness] could not maximise the window:', failure?.message ?? failure)
+    }
+  }
+
+
   /** Console errors the page emitted, for the "no errors from this plugin" assertions. */
   const errors = []
   page.on('console', (message) => {
