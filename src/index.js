@@ -88,6 +88,7 @@ import { createChipRegistry } from './chip-registry.js'
 import { createDraftBridge } from './chip-bridge.js'
 import { createQuoteHandoff } from './quote-handoff.js'
 import { askSideChat } from './side-chat-transport.js'
+import { createLayout } from './layout.js'
 import { elementOf, cssEscape } from './dom.js'
 import {
   rangeAt, captureAnchor, resolveAnchor, locateText, textOf, nodePath, nodeAtPath,
@@ -728,6 +729,44 @@ import {
     }
 
     // #endregion
+
+    /**
+     * Layout: the transcript anchor, the readable band, the text column, surface placement.
+     *
+     * One instance per Host factory call: the lookups carry caches, and a shared cache would
+     * outlive the instance that filled it. The rules live in layout.js.
+     */
+    const layout = createLayout()
+
+    /** The chat flow anchor. */
+    const findFlow = () => layout.findFlow()
+
+    /** The flow's scroll container, cached while it still contains the flow. */
+    const containerFor = (flow) => layout.containerFor(flow)
+
+    /** The nearest scrollable ancestor. */
+    const scrollContainerOf = (flow) => layout.scrollContainerOf(flow)
+
+    /** The composer's dock, which bounds the transcript from below. */
+    const findComposerDock = () => layout.findComposerDock()
+
+    /** The part of the transcript the user can read. */
+    const visibleChatArea = (scroller) => layout.visibleChatArea(scroller)
+
+    /** Place a surface against a selection, inside the readable band. */
+    const anchorInTranscript = (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer)
+
+    /** Place the comment panel above a bubble, right edges flush. */
+    const anchorAboveBubble = (flow, bubble, size) => layout.anchorAboveBubble(flow, bubble, size)
+
+    /** The text column's box and the element it came from. */
+    const flowColumnBox = (flow) => layout.flowColumnBox(flow)
+
+    /** Just the column rectangle. */
+    const flowColumn = (flow) => layout.flowColumn(flow)
+
+    /** The element whose width defines the text column. */
+    const columnElement = (flow) => layout.columnElement(flow)
 
     // #region annotation store
 
@@ -1489,45 +1528,6 @@ function escapeHtml(text) {
     // #region gutter markers
 
     /**
-     * Find the conversation's chat flow, skipping a right-Sidebar occurrence.
-     *
-     * The slot anchor is rendered with `display: contents` — the framework's own
-     * comment says it "keeps the wrapper out of layout … the anchor is purely
-     * addressable surface". A box-less element has **no client rects**, so the
-     * old `getClientRects().length === 0` liveness test rejected every valid
-     * flow and reported "no chat flow". Visibility is therefore judged by its
-     * children, which are ordinary boxes.
-     * @returns the flow element, or null.
-     */
-    function findFlow() {
-      if (typeof document === 'undefined') return null
-      let fallback = null
-      for (const element of document.querySelectorAll(FLOW_SELECTOR)) {
-        if (element.closest('[data-sidebar-right-tab]') !== null) continue
-        // `display: contents` gives the anchor no box of its own, so measure the
-        // rows it contains instead.
-        if (element.getClientRects().length > 0 || hasBoxedChild(element)) return element
-        if (fallback === null) fallback = element
-      }
-      // An empty conversation legitimately has no rows yet; keep it rather than
-      // claiming the flow does not exist.
-      return fallback
-    }
-
-    /**
-     * Whether an element contains any child that occupies layout.
-     * @param element - the candidate container.
-     * @returns true when at least one descendant renders a box.
-     */
-    function hasBoxedChild(element) {
-      if (typeof element.getClientRects === 'function' && element.getClientRects().length > 0) return true
-      for (const child of element.children) {
-        if (child.getClientRects().length > 0) return true
-      }
-      return false
-    }
-
-    /**
      * The ordinal each annotation currently shows on its composer chip.
      *
      * The chip number is the chip's position in the live draft, not a stored
@@ -1602,219 +1602,7 @@ function escapeHtml(text) {
      */
     const columnCache = new WeakMap()
 
-    /** Never let an anchored surface touch the edges of the readable band. */
-    const ANCHOR_INSET = 8
-
-    /**
-     * Place a surface against the selection, inside the readable chat area.
-     *
-     * Mounted INSIDE the transcript scroll container, so the container's overflow and the
-     * chat chrome both bound it. Positioned relative to that container, so it travels with
-     * the content instead of tracking the viewport.
-     *
-     * Placement follows the pointer: the surface opens just below the selection, and is
-     * only flipped above when there is no room below. Both axes are clamped to the
-     * READABLE band - the area between the top bar and the composer, which
-     * visibleChatArea() already derives - so a surface can never be pushed under the
-     * composer or over the top bar, and can never be clipped out of sight at an edge.
-     *
-     * @param flow - the chat flow anchor.
-     * @param box - the selection's viewport box ({ left, top, right, bottom }).
-     * @param size - the surface's measured size.
-     * @param prefer - 'below' to sit under the selection first.
-     * @returns the mount target plus container-relative position, or null.
-     */
-    function anchorInTranscript(flow, box, size, prefer) {
-      const scroller = containerFor(flow)
-      if (scroller === null || scroller === undefined || box === null) return null
-      // Absolute children need a containing block; the container is static by default.
-      if (scroller.dataset.qcPositioned !== '1') {
-        if (getComputedStyle(scroller).position === 'static') {
-          scroller.style.position = 'relative'
-        }
-        scroller.dataset.qcPositioned = '1'
-      }
-      const rect = scroller.getBoundingClientRect()
-      const width = size.width || 0
-      const height = size.height || 0
-      // The readable band, expressed in container coordinates.
-      const area = visibleChatArea(scroller)
-      const bandTop = area.top - rect.top + scroller.scrollTop
-      const bandBottom = bandTop + area.height
-      // The selection, in the same coordinates.
-      const localTop = box.top - rect.top + scroller.scrollTop
-      const localBottom = (box.bottom ?? box.top) - rect.top + scroller.scrollTop
-      const localLeft = box.left - rect.left + scroller.scrollLeft
-      const localRight = (box.right ?? box.left) - rect.left + scroller.scrollLeft
-
-      const fitsBelow = localBottom + 8 + height + ANCHOR_INSET <= bandBottom
-      const wantAbove = prefer === 'above' || !fitsBelow
-      let top = wantAbove ? localTop - height - 8 : localBottom + 8
-      // Clamp INSIDE the band: this is what stops a surface from being clipped away at an
-      // edge, and equally what stops it from covering the composer.
-      const maxTop = Math.max(bandTop + ANCHOR_INSET, bandBottom - height - ANCHOR_INSET)
-      top = Math.min(Math.max(bandTop + ANCHOR_INSET, top), maxTop)
-
-      // Horizontally: start at the pointer's left edge, then pull back inside.
-      const maxLeft = Math.max(ANCHOR_INSET, scroller.clientWidth - width - ANCHOR_INSET)
-      const left = Math.min(Math.max(ANCHOR_INSET, localLeft), maxLeft)
-
-      return { scroller, position: { top, left } }
-    }
-
-    /** Gap between the bubble's top edge and the panel's bottom edge, in px. */
-    const PANEL_BUBBLE_GAP = 10
-
-    /**
-     * Place the comment panel above a gutter bubble, right edges flush.
-     *
-     * The bubble is the thing the user clicked, so the panel is positioned against IT
-     * rather than against the paragraph: the panel's right edge lines up with the
-     * bubble's right edge, and its bottom edge sits a fixed gap above the bubble's top.
-     *
-     * Offsets are expressed in the scroll container's coordinate space, so the panel
-     * rides with the marker on scroll instead of tracking the viewport - the same
-     * mechanism the bubble itself uses.
-     *
-     * @param flow - the chat flow anchor.
-     * @param bubble - the bubble's viewport box.
-     * @param size - the panel's measured (or assumed) size.
-     * @returns the mount target plus container-relative position, or null.
-     */
-    function anchorAboveBubble(flow, bubble, size) {
-      const scroller = containerFor(flow)
-      if (scroller === null || scroller === undefined || bubble === null) return null
-      if (scroller.dataset.qcPositioned !== '1') {
-        if (getComputedStyle(scroller).position === 'static') {
-          scroller.style.position = 'relative'
-        }
-        scroller.dataset.qcPositioned = '1'
-      }
-      const rect = scroller.getBoundingClientRect()
-      const width = size.width || 0
-      const height = size.height || 0
-      // The readable band, in container coordinates, so the panel cannot slide under the
-      // composer or over the top bar.
-      const area = visibleChatArea(scroller)
-      const bandTop = area.top - rect.top + scroller.scrollTop
-      const bandBottom = bandTop + area.height
-      // The bubble, in the same space.
-      const bubbleTop = bubble.top - rect.top + scroller.scrollTop
-      const bubbleRight = bubble.right - rect.left + scroller.scrollLeft
-      // EXACT right-edge alignment: the panel is anchored by its RIGHT edge, so its own
-      // width never enters the arithmetic. `left` is only a fallback for the first paint,
-      // before the panel has reported a width.
-      const right = Math.max(ANCHOR_INSET, (rect.width + scroller.scrollLeft) - bubbleRight)
-      // The panel finishes the vertical arithmetic itself, using its MEASURED height:
-      // only it knows how tall it actually is, and the bottom edge has to clear the
-      // bubble exactly.
-      const maxTop = Math.max(bandTop + ANCHOR_INSET, bandBottom - height - ANCHOR_INSET)
-      const maxLeft = Math.max(ANCHOR_INSET, scroller.clientWidth - width - ANCHOR_INSET)
-      const left = Math.min(Math.max(ANCHOR_INSET, bubbleRight - width), maxLeft)
-      return {
-        scroller,
-        position: {
-          // Fallback top, for the first paint before the panel has measured itself.
-          top: Math.min(Math.max(bandTop + ANCHOR_INSET, bubbleTop - PANEL_BUBBLE_GAP - height), maxTop),
-          right,
-          left,
-          // Everything the panel needs to place its own bottom edge.
-          bubbleTop,
-          gap: PANEL_BUBBLE_GAP,
-          bandTop: bandTop + ANCHOR_INSET,
-          bandBottom: bandBottom - ANCHOR_INSET,
-        },
-      }
-    }
-
     const containerCache = new WeakMap()
-    function containerFor(flow) {
-      const hit = containerCache.get(flow)
-      if (hit !== undefined && hit.contains(flow)) return hit
-      const found = scrollContainerOf(flow)
-      if (found !== null) containerCache.set(flow, found)
-      return found
-    }
-
-    /**
-     * The text column's box, derived from the rows inside the flow.
-     *
-     * The flow element itself is the slot anchor with `display:contents`, so it
-     * has no box and reports zeros. The rows it contains are ordinary boxes; the
-     * widest one approximates the column, since a short line's box is narrower
-     * than the column that contains it.
-     * @param flow - the chat flow anchor.
-     * @returns the column rectangle and the element it came from, or null.
-     */
-    function flowColumnBox(flow) {
-      if (flow === null) return null
-      // Measure the TEXT COLUMN, not the scroll container.
-      //
-      // Reading the scroller's clientWidth was wrong: the scroller spans the whole
-      // conversation pane, while the prose is a narrower centred column inside it.
-      // The bubble was therefore docked at the pane's right edge — visually up
-      // against the navigation column — and, because the pane's width does not
-      // track the prose column's width, it stopped following a pane drag.
-      //
-      // The column is the widest mounted row. That costs one rect per row, so it is
-      // cached per flow element for the duration of a measurement burst and only
-      // recomputed when the column is observed to have resized.
-      const cached = columnCache.get(flow)
-      if (cached !== undefined && cached.element.isConnected) return cached
-      let best = null
-      const consider = (element) => {
-        const box = element.getBoundingClientRect()
-        if (box.width === 0 || box.height === 0) return
-        if (best === null || box.right > best.box.right) best = { box, element }
-      }
-      for (const child of flow.querySelectorAll('[data-chat-node-key]')) consider(child)
-      if (best !== null) {
-        columnCache.set(flow, best)
-        return best
-      }
-      // No row wrappers (or none mounted): fall back to the widest boxed
-      // descendant, then to the nearest ancestor that actually occupies layout.
-      for (const child of flow.querySelectorAll('*')) {
-        if (child.closest('[data-sidebar-right-tab]') !== null) continue
-        consider(child)
-      }
-      if (best !== null) {
-        columnCache.set(flow, best)
-        return best
-      }
-      let ancestor = flow.parentElement
-      while (ancestor !== null) {
-        const box = ancestor.getBoundingClientRect()
-        if (box.width > 0 && box.height > 0) {
-          const found = { box, element: ancestor }
-          columnCache.set(flow, found)
-          return found
-        }
-        ancestor = ancestor.parentElement
-      }
-      return null
-    }
-
-    /**
-     * Just the column rectangle.
-     * @param flow - the chat flow anchor.
-     * @returns the rectangle, or null.
-     */
-    function flowColumn(flow) {
-      const found = flowColumnBox(flow)
-      return found === null ? null : found.box
-    }
-
-    /**
-     * The element whose width defines the text column, for observing.
-     * @param flow - the chat flow anchor.
-     * @returns the element, or null.
-     */
-    function columnElement(flow) {
-      const found = flowColumnBox(flow)
-      return found === null ? null : found.element
-    }
-
     /**
      * The editor a gutter bubble opens.
      *
@@ -2481,27 +2269,6 @@ function escapeHtml(text) {
     // #endregion
 
     /**
-     * The nearest scrollable ancestor of the chat flow.
-     *
-     * The transcript is virtualized: rows far outside the viewport are removed
-     * from the DOM and re-created when scrolled back into range. Finding the
-     * scroller is what makes "scroll until the row comes back" possible.
-     * @param flow - the chat flow element.
-     * @returns the scrolling element, or null.
-     */
-    function scrollContainerOf(flow) {
-      let node = flow.parentElement
-      while (node !== null) {
-        const style = getComputedStyle(node)
-        if (/(auto|scroll)/.test(`${style.overflowY}`) && node.scrollHeight > node.clientHeight + 4) {
-          return node
-        }
-        node = node.parentElement
-      }
-      return null
-    }
-
-    /**
      * The highlight registry name for the jump flash.
      *
      * `window.CSS.highlights` binds a painted decoration to a live `Range`. That is the
@@ -2807,59 +2574,6 @@ function escapeHtml(text) {
       const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
       scroller.scrollTop = Math.min(Math.max(0, target), max)
       return range
-    }
-
-    /**
-     * The part of the scroller that is actually readable.
-     *
-     * Bounded above by the app's top bar and below by the composer, which is
-     * height-fluid: it grows with multi-line input and with attachments. The
-     * union of both is derived from the scroller's own box intersected with the
-     * viewport, then narrowed by whatever chrome sits over it. The chrome is found
-     * by looking for the composer's own dock, falling back to a sane inset.
-     * @param scroller - the transcript's scroll container.
-     * @returns the visible rectangle in viewport coordinates.
-     */
-    function visibleChatArea(scroller) {
-      const box = scroller.getBoundingClientRect()
-      let top = Math.max(0, box.top)
-      let bottom = Math.min(window.innerHeight, box.bottom)
-      // Anything docked over the bottom of the transcript (the composer, an
-      // attachment strip) clips what the user can see. Take the highest such
-      // element that actually overlaps the scroller.
-      const composer = findComposerDock()
-      if (composer !== null) {
-        const dock = composer.getBoundingClientRect()
-        if (dock.height > 0 && dock.top > top && dock.top < bottom) bottom = dock.top
-      }
-      if (bottom - top < 120) {
-        // The dock was not found or the arithmetic collapsed; fall back to the
-        // scroller's own box so a jump still centres somewhere sensible.
-        top = Math.max(0, box.top)
-        bottom = Math.min(window.innerHeight, box.bottom)
-      }
-      return { top, height: Math.max(1, bottom - top) }
-    }
-
-    /**
-     * The composer's dock, which bounds the transcript from below.
-     * @returns the element, or null when it is not in the DOM.
-     */
-    function findComposerDock() {
-      if (typeof document === 'undefined') return null
-      const candidates = [
-        '[data-slot="conversation.composer.dock"]',
-        '[data-slot="conversation.input.dock"]',
-        '[data-composer-root]',
-      ]
-      for (const selector of candidates) {
-        for (const element of document.querySelectorAll(selector)) {
-          if (element.closest('[data-sidebar-right-tab]') !== null) continue
-          const box = element.getBoundingClientRect()
-          if (box.width > 0 && box.height > 0) return element
-        }
-      }
-      return null
     }
 
     // #endregion

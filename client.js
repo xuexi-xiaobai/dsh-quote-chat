@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:15a6bf6f00aec405
+ * Artifact: sha256:3bd73f4b9c2fce59
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -552,6 +552,200 @@ function __dshQuoteChatFactory(hostRequire) {
     return answer;
   }
 
+  // src/layout.js
+  var ANCHOR_INSET = 8;
+  var PANEL_BUBBLE_GAP = 10;
+  var FLOW_SELECTOR = '[data-slot="conversation.chat.flow"]';
+  var SIDEBAR_TAB_SELECTOR = "[data-sidebar-right-tab]";
+  var COMPOSER_SELECTORS = [
+    '[data-slot="conversation.composer.dock"]',
+    '[data-slot="conversation.input.dock"]',
+    "[data-composer-root]"
+  ];
+  function createLayout() {
+    const columnCache = /* @__PURE__ */ new WeakMap();
+    const containerCache = /* @__PURE__ */ new WeakMap();
+    function findFlow2() {
+      if (typeof document === "undefined") return null;
+      let fallback = null;
+      for (const element of document.querySelectorAll(FLOW_SELECTOR)) {
+        if (element.closest(SIDEBAR_TAB_SELECTOR) !== null) continue;
+        if (element.getClientRects().length > 0 || hasBoxedChild(element)) return element;
+        if (fallback === null) fallback = element;
+      }
+      return fallback;
+    }
+    function hasBoxedChild(element) {
+      if (typeof element.getClientRects === "function" && element.getClientRects().length > 0) return true;
+      for (const child of element.children) {
+        if (hasBoxedChild(child)) return true;
+      }
+      return false;
+    }
+    function scrollContainerOf2(flow) {
+      if (flow === null || flow === void 0) return null;
+      let node = flow.parentElement;
+      while (node !== null) {
+        const style = getComputedStyle(node);
+        if (/(auto|scroll)/.test(`${style.overflowY}`) && node.scrollHeight > node.clientHeight + 4) {
+          return node;
+        }
+        node = node.parentElement;
+      }
+      return null;
+    }
+    function containerFor(flow) {
+      if (flow === null || flow === void 0) return null;
+      const hit = containerCache.get(flow);
+      if (hit !== void 0 && hit.contains(flow)) return hit;
+      const found = scrollContainerOf2(flow);
+      if (found !== null) containerCache.set(flow, found);
+      return found;
+    }
+    function findComposerDock() {
+      if (typeof document === "undefined") return null;
+      for (const selector of COMPOSER_SELECTORS) {
+        for (const element of document.querySelectorAll(selector)) {
+          if (element.closest(SIDEBAR_TAB_SELECTOR) !== null) continue;
+          const box = element.getBoundingClientRect();
+          if (box.width > 0 && box.height > 0) return element;
+        }
+      }
+      return null;
+    }
+    function visibleChatArea2(scroller) {
+      const box = scroller.getBoundingClientRect();
+      let top = Math.max(0, box.top);
+      let bottom = Math.min(window.innerHeight, box.bottom);
+      const composer = findComposerDock();
+      if (composer !== null) {
+        const dock = composer.getBoundingClientRect();
+        if (dock.height > 0 && dock.top > top && dock.top < bottom) bottom = dock.top;
+      }
+      if (bottom - top < 120) {
+        top = Math.max(0, box.top);
+        bottom = Math.min(window.innerHeight, box.bottom);
+      }
+      return { top, height: Math.max(1, bottom - top) };
+    }
+    function prepareContainer(scroller) {
+      if (scroller.dataset.qcPositioned !== "1") {
+        if (getComputedStyle(scroller).position === "static") {
+          scroller.style.position = "relative";
+        }
+        scroller.dataset.qcPositioned = "1";
+      }
+    }
+    function anchorInTranscript2(flow, box, size, prefer) {
+      const scroller = containerFor(flow);
+      if (scroller === null || scroller === void 0 || box === null) return null;
+      prepareContainer(scroller);
+      const rect = scroller.getBoundingClientRect();
+      const width = size.width || 0;
+      const height = size.height || 0;
+      const area = visibleChatArea2(scroller);
+      const bandTop = area.top - rect.top + scroller.scrollTop;
+      const bandBottom = bandTop + area.height;
+      const localTop = box.top - rect.top + scroller.scrollTop;
+      const localBottom = (box.bottom ?? box.top) - rect.top + scroller.scrollTop;
+      const localLeft = box.left - rect.left + scroller.scrollLeft;
+      const fitsBelow = localBottom + 8 + height + ANCHOR_INSET <= bandBottom;
+      const wantAbove = prefer === "above" || !fitsBelow;
+      let top = wantAbove ? localTop - height - 8 : localBottom + 8;
+      const maxTop = Math.max(bandTop + ANCHOR_INSET, bandBottom - height - ANCHOR_INSET);
+      top = Math.min(Math.max(bandTop + ANCHOR_INSET, top), maxTop);
+      const maxLeft = Math.max(ANCHOR_INSET, scroller.clientWidth - width - ANCHOR_INSET);
+      const left = Math.min(Math.max(ANCHOR_INSET, localLeft), maxLeft);
+      return { scroller, position: { top, left } };
+    }
+    function anchorAboveBubble2(flow, bubble, size) {
+      const scroller = containerFor(flow);
+      if (scroller === null || scroller === void 0 || bubble === null) return null;
+      prepareContainer(scroller);
+      const rect = scroller.getBoundingClientRect();
+      const width = size.width || 0;
+      const height = size.height || 0;
+      const area = visibleChatArea2(scroller);
+      const bandTop = area.top - rect.top + scroller.scrollTop;
+      const bandBottom = bandTop + area.height;
+      const bubbleTop = bubble.top - rect.top + scroller.scrollTop;
+      const bubbleRight = bubble.right - rect.left + scroller.scrollLeft;
+      const right = Math.max(ANCHOR_INSET, rect.width + scroller.scrollLeft - bubbleRight);
+      const maxTop = Math.max(bandTop + ANCHOR_INSET, bandBottom - height - ANCHOR_INSET);
+      const maxLeft = Math.max(ANCHOR_INSET, scroller.clientWidth - width - ANCHOR_INSET);
+      const left = Math.min(Math.max(ANCHOR_INSET, bubbleRight - width), maxLeft);
+      return {
+        scroller,
+        position: {
+          // Fallback top, for the first paint before the panel has measured itself.
+          top: Math.min(Math.max(bandTop + ANCHOR_INSET, bubbleTop - PANEL_BUBBLE_GAP - height), maxTop),
+          right,
+          left,
+          // Everything the panel needs to place its own bottom edge.
+          bubbleTop,
+          gap: PANEL_BUBBLE_GAP,
+          bandTop: bandTop + ANCHOR_INSET,
+          bandBottom: bandBottom - ANCHOR_INSET
+        }
+      };
+    }
+    function flowColumnBox(flow) {
+      if (flow === null) return null;
+      const cached = columnCache.get(flow);
+      if (cached !== void 0 && cached.element.isConnected) return cached;
+      let best = null;
+      const consider = (element) => {
+        const box = element.getBoundingClientRect();
+        if (box.width === 0 || box.height === 0) return;
+        if (best === null || box.right > best.box.right) best = { box, element };
+      };
+      for (const child of flow.querySelectorAll("[data-chat-node-key]")) consider(child);
+      if (best !== null) {
+        columnCache.set(flow, best);
+        return best;
+      }
+      for (const child of flow.querySelectorAll("*")) {
+        if (child.closest(SIDEBAR_TAB_SELECTOR) !== null) continue;
+        consider(child);
+      }
+      if (best !== null) {
+        columnCache.set(flow, best);
+        return best;
+      }
+      let ancestor = flow.parentElement;
+      while (ancestor !== null) {
+        const box = ancestor.getBoundingClientRect();
+        if (box.width > 0 && box.height > 0) {
+          const found = { box, element: ancestor };
+          columnCache.set(flow, found);
+          return found;
+        }
+        ancestor = ancestor.parentElement;
+      }
+      return null;
+    }
+    function flowColumn(flow) {
+      const found = flowColumnBox(flow);
+      return found === null ? null : found.box;
+    }
+    function columnElement2(flow) {
+      const found = flowColumnBox(flow);
+      return found === null ? null : found.element;
+    }
+    return {
+      findFlow: findFlow2,
+      scrollContainerOf: scrollContainerOf2,
+      containerFor,
+      findComposerDock,
+      visibleChatArea: visibleChatArea2,
+      anchorInTranscript: anchorInTranscript2,
+      anchorAboveBubble: anchorAboveBubble2,
+      flowColumnBox,
+      flowColumn,
+      columnElement: columnElement2
+    };
+  }
+
   // src/dom.js
   function elementOf(node) {
     if (node === null || node === void 0) return null;
@@ -566,7 +760,7 @@ function __dshQuoteChatFactory(hostRequire) {
   }
 
   // src/text-ranges.js
-  var FLOW_SELECTOR = '[data-slot="conversation.chat.flow"]';
+  var FLOW_SELECTOR2 = '[data-slot="conversation.chat.flow"]';
   var BLOCK_SELECTOR = "p, li, h1, h2, h3, h4, h5, h6, pre, blockquote, table, figure";
   function rangeAt(root, offset, length) {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -1193,7 +1387,7 @@ function __dshQuoteChatFactory(hostRequire) {
     const startElement = elementOf(selection.anchorNode);
     const endElement = elementOf(selection.focusNode);
     if (startElement === null || endElement === null) return null;
-    const flow = startElement.closest(FLOW_SELECTOR);
+    const flow = startElement.closest(FLOW_SELECTOR2);
     if (flow === null || !flow.contains(endElement)) return null;
     if (startElement.closest('[data-chat-flow-kind="user"]') !== null) return null;
     if (startElement.closest("[data-sidebar-right-tab]") !== null) return null;
@@ -1262,6 +1456,13 @@ function __dshQuoteChatFactory(hostRequire) {
     const head = usable[0];
     return [line(head), `| ${pad(head).map(() => "---").join(" | ")} |`, ...usable.slice(1).map(line)].join("\n");
   }
+  var layout = createLayout();
+  var findFlow = () => layout.findFlow();
+  var scrollContainerOf = (flow) => layout.scrollContainerOf(flow);
+  var visibleChatArea = (scroller) => layout.visibleChatArea(scroller);
+  var anchorInTranscript = (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer);
+  var anchorAboveBubble = (flow, bubble, size) => layout.anchorAboveBubble(flow, bubble, size);
+  var columnElement = (flow) => layout.columnElement(flow);
   var annotationStore = createAnnotationStore({ maxAnnotations: MAX_ANNOTATIONS });
   var addAnnotation = (sessionId, draft) => annotationStore.add(sessionId, draft);
   var removeAnnotation = (sessionId, id) => annotationStore.remove(sessionId, id);
@@ -1742,23 +1943,6 @@ function __dshQuoteChatFactory(hostRequire) {
   function escapeHtml(text) {
     return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
-  function findFlow() {
-    if (typeof document === "undefined") return null;
-    let fallback = null;
-    for (const element of document.querySelectorAll(FLOW_SELECTOR)) {
-      if (element.closest("[data-sidebar-right-tab]") !== null) continue;
-      if (element.getClientRects().length > 0 || hasBoxedChild(element)) return element;
-      if (fallback === null) fallback = element;
-    }
-    return fallback;
-  }
-  function hasBoxedChild(element) {
-    if (typeof element.getClientRects === "function" && element.getClientRects().length > 0) return true;
-    for (const child of element.children) {
-      if (child.getClientRects().length > 0) return true;
-    }
-    return false;
-  }
   function chipOrdinals(occurrences) {
     const ordinals = /* @__PURE__ */ new Map();
     if (typeof document === "undefined") return ordinals;
@@ -1786,120 +1970,6 @@ function __dshQuoteChatFactory(hostRequire) {
       }
     }
     return null;
-  }
-  var columnCache = /* @__PURE__ */ new WeakMap();
-  var ANCHOR_INSET = 8;
-  function anchorInTranscript(flow, box, size, prefer) {
-    const scroller = containerFor(flow);
-    if (scroller === null || scroller === void 0 || box === null) return null;
-    if (scroller.dataset.qcPositioned !== "1") {
-      if (getComputedStyle(scroller).position === "static") {
-        scroller.style.position = "relative";
-      }
-      scroller.dataset.qcPositioned = "1";
-    }
-    const rect = scroller.getBoundingClientRect();
-    const width = size.width || 0;
-    const height = size.height || 0;
-    const area = visibleChatArea(scroller);
-    const bandTop = area.top - rect.top + scroller.scrollTop;
-    const bandBottom = bandTop + area.height;
-    const localTop = box.top - rect.top + scroller.scrollTop;
-    const localBottom = (box.bottom ?? box.top) - rect.top + scroller.scrollTop;
-    const localLeft = box.left - rect.left + scroller.scrollLeft;
-    const localRight = (box.right ?? box.left) - rect.left + scroller.scrollLeft;
-    const fitsBelow = localBottom + 8 + height + ANCHOR_INSET <= bandBottom;
-    const wantAbove = prefer === "above" || !fitsBelow;
-    let top = wantAbove ? localTop - height - 8 : localBottom + 8;
-    const maxTop = Math.max(bandTop + ANCHOR_INSET, bandBottom - height - ANCHOR_INSET);
-    top = Math.min(Math.max(bandTop + ANCHOR_INSET, top), maxTop);
-    const maxLeft = Math.max(ANCHOR_INSET, scroller.clientWidth - width - ANCHOR_INSET);
-    const left = Math.min(Math.max(ANCHOR_INSET, localLeft), maxLeft);
-    return { scroller, position: { top, left } };
-  }
-  var PANEL_BUBBLE_GAP = 10;
-  function anchorAboveBubble(flow, bubble, size) {
-    const scroller = containerFor(flow);
-    if (scroller === null || scroller === void 0 || bubble === null) return null;
-    if (scroller.dataset.qcPositioned !== "1") {
-      if (getComputedStyle(scroller).position === "static") {
-        scroller.style.position = "relative";
-      }
-      scroller.dataset.qcPositioned = "1";
-    }
-    const rect = scroller.getBoundingClientRect();
-    const width = size.width || 0;
-    const height = size.height || 0;
-    const area = visibleChatArea(scroller);
-    const bandTop = area.top - rect.top + scroller.scrollTop;
-    const bandBottom = bandTop + area.height;
-    const bubbleTop = bubble.top - rect.top + scroller.scrollTop;
-    const bubbleRight = bubble.right - rect.left + scroller.scrollLeft;
-    const right = Math.max(ANCHOR_INSET, rect.width + scroller.scrollLeft - bubbleRight);
-    const maxTop = Math.max(bandTop + ANCHOR_INSET, bandBottom - height - ANCHOR_INSET);
-    const maxLeft = Math.max(ANCHOR_INSET, scroller.clientWidth - width - ANCHOR_INSET);
-    const left = Math.min(Math.max(ANCHOR_INSET, bubbleRight - width), maxLeft);
-    return {
-      scroller,
-      position: {
-        // Fallback top, for the first paint before the panel has measured itself.
-        top: Math.min(Math.max(bandTop + ANCHOR_INSET, bubbleTop - PANEL_BUBBLE_GAP - height), maxTop),
-        right,
-        left,
-        // Everything the panel needs to place its own bottom edge.
-        bubbleTop,
-        gap: PANEL_BUBBLE_GAP,
-        bandTop: bandTop + ANCHOR_INSET,
-        bandBottom: bandBottom - ANCHOR_INSET
-      }
-    };
-  }
-  var containerCache = /* @__PURE__ */ new WeakMap();
-  function containerFor(flow) {
-    const hit = containerCache.get(flow);
-    if (hit !== void 0 && hit.contains(flow)) return hit;
-    const found = scrollContainerOf(flow);
-    if (found !== null) containerCache.set(flow, found);
-    return found;
-  }
-  function flowColumnBox(flow) {
-    if (flow === null) return null;
-    const cached = columnCache.get(flow);
-    if (cached !== void 0 && cached.element.isConnected) return cached;
-    let best = null;
-    const consider = (element) => {
-      const box = element.getBoundingClientRect();
-      if (box.width === 0 || box.height === 0) return;
-      if (best === null || box.right > best.box.right) best = { box, element };
-    };
-    for (const child of flow.querySelectorAll("[data-chat-node-key]")) consider(child);
-    if (best !== null) {
-      columnCache.set(flow, best);
-      return best;
-    }
-    for (const child of flow.querySelectorAll("*")) {
-      if (child.closest("[data-sidebar-right-tab]") !== null) continue;
-      consider(child);
-    }
-    if (best !== null) {
-      columnCache.set(flow, best);
-      return best;
-    }
-    let ancestor = flow.parentElement;
-    while (ancestor !== null) {
-      const box = ancestor.getBoundingClientRect();
-      if (box.width > 0 && box.height > 0) {
-        const found = { box, element: ancestor };
-        columnCache.set(flow, found);
-        return found;
-      }
-      ancestor = ancestor.parentElement;
-    }
-    return null;
-  }
-  function columnElement(flow) {
-    const found = flowColumnBox(flow);
-    return found === null ? null : found.element;
   }
   function BubblePanel(props) {
     const { annotation, anchor, labels, onSave, onDelete, onClose, inFlow = false, rel = null } = props;
@@ -2244,7 +2314,7 @@ function __dshQuoteChatFactory(hostRequire) {
       };
       const onMove = (event) => {
         const element = elementOf(event.target);
-        const flow = element?.closest(FLOW_SELECTOR) ?? null;
+        const flow = element?.closest(FLOW_SELECTOR2) ?? null;
         const table = flow === null || element === null ? null : element.closest("table");
         pending = table !== null && flow !== null && flow.contains(table) ? table : null;
         schedule();
@@ -2290,17 +2360,6 @@ function __dshQuoteChatFactory(hostRequire) {
       return `翻遍对话仍未加载到原文所在消息 / row never loaded (${rows.length} rows mounted, quote ${quote.length} chars: ${head})`;
     }
     return `消息还在，但其中找不到这段引文 / row present, quote missing (${quote.length} chars: ${head})`;
-  }
-  function scrollContainerOf(flow) {
-    let node = flow.parentElement;
-    while (node !== null) {
-      const style = getComputedStyle(node);
-      if (/(auto|scroll)/.test(`${style.overflowY}`) && node.scrollHeight > node.clientHeight + 4) {
-        return node;
-      }
-      node = node.parentElement;
-    }
-    return null;
   }
   var FLASH_HIGHLIGHT = "quote-chat-flash";
   function canPaintHighlight() {
@@ -2460,37 +2519,6 @@ function __dshQuoteChatFactory(hostRequire) {
     const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
     scroller.scrollTop = Math.min(Math.max(0, target), max);
     return range;
-  }
-  function visibleChatArea(scroller) {
-    const box = scroller.getBoundingClientRect();
-    let top = Math.max(0, box.top);
-    let bottom = Math.min(window.innerHeight, box.bottom);
-    const composer = findComposerDock();
-    if (composer !== null) {
-      const dock = composer.getBoundingClientRect();
-      if (dock.height > 0 && dock.top > top && dock.top < bottom) bottom = dock.top;
-    }
-    if (bottom - top < 120) {
-      top = Math.max(0, box.top);
-      bottom = Math.min(window.innerHeight, box.bottom);
-    }
-    return { top, height: Math.max(1, bottom - top) };
-  }
-  function findComposerDock() {
-    if (typeof document === "undefined") return null;
-    const candidates = [
-      '[data-slot="conversation.composer.dock"]',
-      '[data-slot="conversation.input.dock"]',
-      "[data-composer-root]"
-    ];
-    for (const selector of candidates) {
-      for (const element of document.querySelectorAll(selector)) {
-        if (element.closest("[data-sidebar-right-tab]") !== null) continue;
-        const box = element.getBoundingClientRect();
-        if (box.width > 0 && box.height > 0) return element;
-      }
-    }
-    return null;
   }
   function SideChat(props) {
     const { quote, t, locale, inputActions, useInput } = props;

@@ -18,6 +18,8 @@ import { dirname, join } from 'node:path'
 const here = dirname(fileURLToPath(import.meta.url))
 const source = await readFile(join(here, '..', 'src', 'index.js'), 'utf8')
 const css = /const (?:CSS|STYLESHEET) = `([\s\S]*?)`\n/.exec(source)?.[1] ?? ''
+// Layout rules moved to their own module: assert against it where the claim is about layout.
+const layoutSource = await readFile(join(here, '..', 'src', 'layout.js'), 'utf8')
 
 const cases = []
 const check = (name, ok, detail) => cases.push({ name, ok, detail })
@@ -53,14 +55,18 @@ check('the observer watches the column element',
 check('the observer is disconnected on teardown',
   /if \(columnObserver !== null\) columnObserver\.disconnect\(\)/.test(source),
   'the ResizeObserver leaks')
+// The measurement helpers now live in layout.js; this asserts the delegate reaches them rather
+// than that the implementation is declared in this file.
 check('the column element is derived, not hard-coded',
-  /function columnElement\(flow\)/.test(source),
-  'no columnElement helper')
+  /const columnElement = \(flow\) => layout\.columnElement\(flow\)/.test(source),
+  'no columnElement delegate')
 
 // ── 3. The jump centres in the readable area ──────────────────────────────
+// The band arithmetic is in layout.js. Here: the delegate exists, and layout.js still subtracts
+// the composer rather than merely intersecting the scroller with the viewport.
 check('the readable area accounts for the composer',
-  /function visibleChatArea\(scroller\)/.test(source)
-    && /bottom = dock\.top/.test(source),
+  /const visibleChatArea = \(scroller\) => layout\.visibleChatArea\(scroller\)/.test(source)
+    && /bottom = dock\.top/.test(layoutSource),
   'the composer is not subtracted from the visible area')
 check('the composer dock is discovered by slot',
   /conversation\.composer\.dock/.test(source)
@@ -70,7 +76,7 @@ check('the area is re-measured per jump',
   /const area = visibleChatArea\(scroller\)/.test(source),
   'the visible area is cached')
 check('a collapsed area falls back to the scroller box',
-  /bottom - top < 120/.test(source),
+  /bottom - top < 120/.test(layoutSource),
   'no guard against an empty visible area')
 
 // ── 4. The bubble editor ──────────────────────────────────────────────────
@@ -252,10 +258,10 @@ check('no bare light surface literal remains on a themed surface',
 // --- The panel must not sit on the passage, nor be highlighted -------------
 // It opens ABOVE the paragraph (negative offset), clear of the gutter bubble.
 check('the panel opens above the passage',
-  /'above'/.test(source),
+  /'above'/.test(layoutSource),
   'the panel covers the annotated passage')
 check('the panel is clamped inside the readable band',
-  /bandBottom - height - ANCHOR_INSET/.test(source),
+  /bandBottom - height - ANCHOR_INSET/.test(layoutSource),
   'the panel can be pushed under the composer or clipped at an edge')
 check('the clearance is a named constant',
   /const BUBBLE_CLEARANCE = \d+/.test(source),
@@ -282,7 +288,7 @@ check('the bubble is excluded from the passage highlight',
 //     edge cannot push them into the clipped region and make them vanish.
 // Every earlier attempt satisfied one constraint and broke the other.
 check('a shared anchoring helper exists',
-  /function anchorInTranscript\(flow, box, size, prefer\)/.test(source),
+  /function anchorInTranscript\(flow, box, size, prefer\)/.test(layoutSource),
   'the surfaces anchor independently and can drift apart')
 check('the selection toolbar is anchored inside the transcript',
   /anchorInTranscript\(flow, anchor, measured, 'below'\)/.test(source),
@@ -294,12 +300,12 @@ check('both surfaces mount into the transcript when anchored',
   /anchored === null \? document\.body : anchored\.scroller/.test(source),
   'a surface is mounted at body, where nothing clips it against the composer')
 check('the anchor is clamped into the scroll band',
-  /bandBottom - height - ANCHOR_INSET/.test(source)
-    && /Math\.max\(bandTop \+ ANCHOR_INSET, top\)/.test(source),
+  /bandBottom - height - ANCHOR_INSET/.test(layoutSource)
+    && /Math\.max\(bandTop \+ ANCHOR_INSET, top\)/.test(layoutSource),
   'the anchor is not clamped, so an edge selection can push it out of view')
 check('the anchor makes the container a containing block',
-  /scroller\.style\.position = 'relative'/.test(source)
-    && /dataset\.qcPositioned = '1'/.test(source),
+  /scroller\.style\.position = 'relative'/.test(layoutSource)
+    && /dataset\.qcPositioned = '1'/.test(layoutSource),
   'absolute children have no containing block and land off-screen')
 check('no surface claims an absurd z-index',
   [...source.matchAll(/z-index:\s*(\d+)/g)].every((m) => Number(m[1]) < 100),
@@ -340,16 +346,18 @@ check('a bubble carries a stable annotation id',
 check('the panel is anchored by its RIGHT edge',
   /right: \`\${rightEdge}px\`/.test(source),
   'a left offset cannot align to the bubble at an unknown panel width')
+// The helper and its call site live in different files now: layout.js declares it, the panel
+// calls it. Both halves must exist, or the panel is anchored some other way.
 check('the panel position comes from a bubble-relative helper',
-  /function anchorAboveBubble\(flow, bubble, size\)/.test(source)
+  /function anchorAboveBubble\(flow, bubble, size\)/.test(layoutSource)
     && /anchorAboveBubble\(flow, box, \{/.test(source),
   'the panel is not anchored relative to the bubble')
 check('the bubble-relative anchor travels with the scroll container',
-  /bubble\.top - rect\.top \+ scroller\.scrollTop/.test(source)
-    && /bubble\.right - rect\.left \+ scroller\.scrollLeft/.test(source),
+  /bubble\.top - rect\.top \+ scroller\.scrollTop/.test(layoutSource)
+    && /bubble\.right - rect\.left \+ scroller\.scrollLeft/.test(layoutSource),
   'the panel tracks the viewport instead of the content')
 check('the panel keeps a gap above the bubble',
-  /const PANEL_BUBBLE_GAP = \d+/.test(source)
+  /const PANEL_BUBBLE_GAP = \d+/.test(layoutSource)
     && /rel\.bubbleTop - rel\.gap - /.test(source),
   'the panel touches or overlaps the bubble')
 check('the panel bottom edge uses its own measured height',

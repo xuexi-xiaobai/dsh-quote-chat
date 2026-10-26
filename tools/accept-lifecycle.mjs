@@ -201,9 +201,27 @@ try {
     }
     return { chipsBefore, markersBefore, focused: composer !== undefined }
   }`)
-  if (cleared.chipsBefore > 0) {
+  // Empty the composer through Lexical, not the DOM: select its whole contents and delete.
+  // One Backspace is enough when the draft held only chips, but the side-chat acceptance leaves
+  // a markdown quote block behind too, so this clears everything and then re-checks.
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const remaining = await evaluate(`() => {
+      const chips = document.querySelectorAll('[data-composer-chip="quote-chat"]').length
+      const editors = [...document.querySelectorAll('[contenteditable="true"]')]
+      const composer = editors[editors.length - 1]
+      const text = composer === undefined ? '' : (composer.innerText ?? '').trim()
+      if (composer === undefined) return { chips, empty: true }
+      composer.focus()
+      const selection = window.getSelection()
+      const range = document.createRange()
+      range.selectNodeContents(composer)
+      selection.removeAllRanges()
+      selection.addRange(range)
+      return { chips, empty: chips === 0 && text === '' }
+    }`)
+    if (remaining.empty === true) break
     await call('browser_press_key', { key: 'Backspace' })
-    await sleep(900)
+    await sleep(700)
   }
   // A leftover marker means a stored annotation survived; open each and delete it.
   const markersCleared = await evaluate(`() => {
