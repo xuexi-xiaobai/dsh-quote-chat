@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:3bd73f4b9c2fce59
+ * Artifact: sha256:e80191e7c2fe1f2e
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -552,10 +552,167 @@ function __dshQuoteChatFactory(hostRequire) {
     return answer;
   }
 
+  // src/dom.js
+  function elementOf(node) {
+    if (node === null || node === void 0) return null;
+    return node.nodeType === 1 ? node : node.parentElement;
+  }
+  function cssEscape(value) {
+    const registry = typeof window === "undefined" ? void 0 : window.CSS;
+    if (typeof registry === "object" && registry !== null && typeof registry.escape === "function") {
+      return registry.escape(value);
+    }
+    return value.replace(/["\\]/g, "\\$&");
+  }
+
+  // src/text-ranges.js
+  var FLOW_SELECTOR = '[data-slot="conversation.chat.flow"]';
+  var BLOCK_SELECTOR = "p, li, h1, h2, h3, h4, h5, h6, pre, blockquote, table, figure";
+  function rangeAt(root, offset, length) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let consumed = 0;
+    let startNode = null;
+    let startOffset = 0;
+    let endNode = null;
+    let endOffset = 0;
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      if (node.parentElement?.closest("[data-qc-ignore]") != null) continue;
+      const next = consumed + node.data.length;
+      if (startNode === null && offset < next) {
+        startNode = node;
+        startOffset = offset - consumed;
+      }
+      if (startNode !== null && offset + length <= next) {
+        endNode = node;
+        endOffset = offset + length - consumed;
+        break;
+      }
+      consumed = next;
+    }
+    if (startNode === null || endNode === null) return null;
+    const range = document.createRange();
+    range.setStart(startNode, Math.max(0, Math.min(startOffset, startNode.data.length)));
+    range.setEnd(endNode, Math.max(0, Math.min(endOffset, endNode.data.length)));
+    return range;
+  }
+  function nodePath(host, node) {
+    const path = [];
+    let current = node;
+    while (current !== null && current !== host) {
+      const parent = current.parentNode;
+      if (parent === null) return null;
+      path.unshift([...parent.childNodes].indexOf(current));
+      current = parent;
+    }
+    return current === host ? path : null;
+  }
+  function nodeAtPath(host, path) {
+    let current = host;
+    for (const index of path) {
+      const next = current?.childNodes?.[index];
+      if (next === void 0) return null;
+      current = next;
+    }
+    return current ?? null;
+  }
+  function captureAnchor(range, flow) {
+    const row = elementOf(range.startContainer)?.closest("[data-chat-node-key]") ?? null;
+    return {
+      nodeKey: row?.getAttribute("data-chat-node-key") ?? "",
+      startPath: nodePath(flow, range.startContainer),
+      startOffset: range.startOffset,
+      endPath: nodePath(flow, range.endContainer),
+      endOffset: range.endOffset,
+      quote: range.toString()
+    };
+  }
+  function resolveAnchor(flow, anchor) {
+    if (flow === null || anchor.quote === "") return null;
+    if (Array.isArray(anchor.startPath) && Array.isArray(anchor.endPath)) {
+      const startNode = nodeAtPath(flow, anchor.startPath);
+      const endNode = nodeAtPath(flow, anchor.endPath);
+      if (startNode !== null && endNode !== null) {
+        try {
+          const range = document.createRange();
+          range.setStart(startNode, Math.min(anchor.startOffset, (startNode.textContent ?? "").length));
+          range.setEnd(endNode, Math.min(anchor.endOffset, (endNode.textContent ?? "").length));
+          if (sameText(textOfWithin(range, anchor.quote), anchor.quote)) return range;
+        } catch {
+        }
+      }
+    }
+    const row = anchor.nodeKey === "" ? null : flow.querySelector(`[data-chat-node-key="${cssEscape(anchor.nodeKey)}"]`);
+    if (row !== null) {
+      const local = locateText(row, anchor.quote);
+      if (local !== null) {
+        const range = rangeAt(row, local.offset, local.length);
+        if (range !== null) return range;
+      }
+    }
+    const anywhere = locateText(flow, anchor.quote);
+    return anywhere === null ? null : rangeAt(flow, anywhere.offset, anywhere.length);
+  }
+  var EXTRA_SPACE = "   - \u2028\u2029  　";
+  var ZERO_WIDTH = "​-‍\uFEFF";
+  function squishText(value) {
+    return value.replace(new RegExp(`[${ZERO_WIDTH}]`, "g"), "").replace(new RegExp(`[\\s${EXTRA_SPACE}]+`, "g"), " ").trim();
+  }
+  function sameText(left, right) {
+    return squishText(left) === squishText(right);
+  }
+  function textOfWithin(range, quote) {
+    const raw = range.toString();
+    if (raw === "" || raw.length < quote.length) return raw;
+    const start = elementOf(range.startContainer);
+    const box = start?.closest(BLOCK_SELECTOR) ?? start;
+    if (box === null || box === void 0) return raw;
+    if (box.querySelector("[data-qc-ignore]") === null) return raw;
+    return textOf(box);
+  }
+  function textOf(host) {
+    if (host === null || host === void 0) return "";
+    const ignored = host.querySelectorAll("[data-qc-ignore]");
+    if (ignored.length === 0) return host.textContent ?? "";
+    const copy = host.cloneNode(true);
+    for (const node of copy.querySelectorAll("[data-qc-ignore]")) node.remove();
+    return copy.textContent ?? "";
+  }
+  function locateText(host, quote) {
+    const raw = textOf(host);
+    const exact = raw.indexOf(quote);
+    if (exact >= 0) return { offset: exact, length: quote.length };
+    const spaceRe = new RegExp(`[\\s${EXTRA_SPACE}]`);
+    const zeroRe = new RegExp(`[${ZERO_WIDTH}]`);
+    const needle = squishText(quote);
+    if (needle === "") return null;
+    const starts = [];
+    let flat = "";
+    let pendingSpace = false;
+    for (let index = 0; index < raw.length; index += 1) {
+      const char = raw[index];
+      if (zeroRe.test(char)) continue;
+      if (spaceRe.test(char)) {
+        pendingSpace = flat !== "";
+        continue;
+      }
+      if (pendingSpace) {
+        starts.push(index - 1);
+        flat += " ";
+        pendingSpace = false;
+      }
+      starts.push(index);
+      flat += char;
+    }
+    const at = flat.indexOf(needle);
+    if (at < 0) return null;
+    const from = starts[at];
+    const to = starts[at + needle.length - 1];
+    return { offset: from, length: to - from + 1 };
+  }
+
   // src/layout.js
   var ANCHOR_INSET = 8;
   var PANEL_BUBBLE_GAP = 10;
-  var FLOW_SELECTOR = '[data-slot="conversation.chat.flow"]';
   var SIDEBAR_TAB_SELECTOR = "[data-sidebar-right-tab]";
   var COMPOSER_SELECTORS = [
     '[data-slot="conversation.composer.dock"]',
@@ -744,164 +901,6 @@ function __dshQuoteChatFactory(hostRequire) {
       flowColumn,
       columnElement: columnElement2
     };
-  }
-
-  // src/dom.js
-  function elementOf(node) {
-    if (node === null || node === void 0) return null;
-    return node.nodeType === 1 ? node : node.parentElement;
-  }
-  function cssEscape(value) {
-    const registry = typeof window === "undefined" ? void 0 : window.CSS;
-    if (typeof registry === "object" && registry !== null && typeof registry.escape === "function") {
-      return registry.escape(value);
-    }
-    return value.replace(/["\\]/g, "\\$&");
-  }
-
-  // src/text-ranges.js
-  var FLOW_SELECTOR2 = '[data-slot="conversation.chat.flow"]';
-  var BLOCK_SELECTOR = "p, li, h1, h2, h3, h4, h5, h6, pre, blockquote, table, figure";
-  function rangeAt(root, offset, length) {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    let consumed = 0;
-    let startNode = null;
-    let startOffset = 0;
-    let endNode = null;
-    let endOffset = 0;
-    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-      if (node.parentElement?.closest("[data-qc-ignore]") != null) continue;
-      const next = consumed + node.data.length;
-      if (startNode === null && offset < next) {
-        startNode = node;
-        startOffset = offset - consumed;
-      }
-      if (startNode !== null && offset + length <= next) {
-        endNode = node;
-        endOffset = offset + length - consumed;
-        break;
-      }
-      consumed = next;
-    }
-    if (startNode === null || endNode === null) return null;
-    const range = document.createRange();
-    range.setStart(startNode, Math.max(0, Math.min(startOffset, startNode.data.length)));
-    range.setEnd(endNode, Math.max(0, Math.min(endOffset, endNode.data.length)));
-    return range;
-  }
-  function nodePath(host, node) {
-    const path = [];
-    let current = node;
-    while (current !== null && current !== host) {
-      const parent = current.parentNode;
-      if (parent === null) return null;
-      path.unshift([...parent.childNodes].indexOf(current));
-      current = parent;
-    }
-    return current === host ? path : null;
-  }
-  function nodeAtPath(host, path) {
-    let current = host;
-    for (const index of path) {
-      const next = current?.childNodes?.[index];
-      if (next === void 0) return null;
-      current = next;
-    }
-    return current ?? null;
-  }
-  function captureAnchor(range, flow) {
-    const row = elementOf(range.startContainer)?.closest("[data-chat-node-key]") ?? null;
-    return {
-      nodeKey: row?.getAttribute("data-chat-node-key") ?? "",
-      startPath: nodePath(flow, range.startContainer),
-      startOffset: range.startOffset,
-      endPath: nodePath(flow, range.endContainer),
-      endOffset: range.endOffset,
-      quote: range.toString()
-    };
-  }
-  function resolveAnchor(flow, anchor) {
-    if (flow === null || anchor.quote === "") return null;
-    if (Array.isArray(anchor.startPath) && Array.isArray(anchor.endPath)) {
-      const startNode = nodeAtPath(flow, anchor.startPath);
-      const endNode = nodeAtPath(flow, anchor.endPath);
-      if (startNode !== null && endNode !== null) {
-        try {
-          const range = document.createRange();
-          range.setStart(startNode, Math.min(anchor.startOffset, (startNode.textContent ?? "").length));
-          range.setEnd(endNode, Math.min(anchor.endOffset, (endNode.textContent ?? "").length));
-          if (sameText(textOfWithin(range, anchor.quote), anchor.quote)) return range;
-        } catch {
-        }
-      }
-    }
-    const row = anchor.nodeKey === "" ? null : flow.querySelector(`[data-chat-node-key="${cssEscape(anchor.nodeKey)}"]`);
-    if (row !== null) {
-      const local = locateText(row, anchor.quote);
-      if (local !== null) {
-        const range = rangeAt(row, local.offset, local.length);
-        if (range !== null) return range;
-      }
-    }
-    const anywhere = locateText(flow, anchor.quote);
-    return anywhere === null ? null : rangeAt(flow, anywhere.offset, anywhere.length);
-  }
-  var EXTRA_SPACE = "   - \u2028\u2029  　";
-  var ZERO_WIDTH = "​-‍\uFEFF";
-  function squishText(value) {
-    return value.replace(new RegExp(`[${ZERO_WIDTH}]`, "g"), "").replace(new RegExp(`[\\s${EXTRA_SPACE}]+`, "g"), " ").trim();
-  }
-  function sameText(left, right) {
-    return squishText(left) === squishText(right);
-  }
-  function textOfWithin(range, quote) {
-    const raw = range.toString();
-    if (raw === "" || raw.length < quote.length) return raw;
-    const start = elementOf(range.startContainer);
-    const box = start?.closest(BLOCK_SELECTOR) ?? start;
-    if (box === null || box === void 0) return raw;
-    if (box.querySelector("[data-qc-ignore]") === null) return raw;
-    return textOf(box);
-  }
-  function textOf(host) {
-    if (host === null || host === void 0) return "";
-    const ignored = host.querySelectorAll("[data-qc-ignore]");
-    if (ignored.length === 0) return host.textContent ?? "";
-    const copy = host.cloneNode(true);
-    for (const node of copy.querySelectorAll("[data-qc-ignore]")) node.remove();
-    return copy.textContent ?? "";
-  }
-  function locateText(host, quote) {
-    const raw = textOf(host);
-    const exact = raw.indexOf(quote);
-    if (exact >= 0) return { offset: exact, length: quote.length };
-    const spaceRe = new RegExp(`[\\s${EXTRA_SPACE}]`);
-    const zeroRe = new RegExp(`[${ZERO_WIDTH}]`);
-    const needle = squishText(quote);
-    if (needle === "") return null;
-    const starts = [];
-    let flat = "";
-    let pendingSpace = false;
-    for (let index = 0; index < raw.length; index += 1) {
-      const char = raw[index];
-      if (zeroRe.test(char)) continue;
-      if (spaceRe.test(char)) {
-        pendingSpace = flat !== "";
-        continue;
-      }
-      if (pendingSpace) {
-        starts.push(index - 1);
-        flat += " ";
-        pendingSpace = false;
-      }
-      starts.push(index);
-      flat += char;
-    }
-    const at = flat.indexOf(needle);
-    if (at < 0) return null;
-    const from = starts[at];
-    const to = starts[at + needle.length - 1];
-    return { offset: from, length: to - from + 1 };
   }
 
   // src/index.js
@@ -1387,7 +1386,7 @@ function __dshQuoteChatFactory(hostRequire) {
     const startElement = elementOf(selection.anchorNode);
     const endElement = elementOf(selection.focusNode);
     if (startElement === null || endElement === null) return null;
-    const flow = startElement.closest(FLOW_SELECTOR2);
+    const flow = startElement.closest(FLOW_SELECTOR);
     if (flow === null || !flow.contains(endElement)) return null;
     if (startElement.closest('[data-chat-flow-kind="user"]') !== null) return null;
     if (startElement.closest("[data-sidebar-right-tab]") !== null) return null;
@@ -2314,7 +2313,7 @@ function __dshQuoteChatFactory(hostRequire) {
       };
       const onMove = (event) => {
         const element = elementOf(event.target);
-        const flow = element?.closest(FLOW_SELECTOR2) ?? null;
+        const flow = element?.closest(FLOW_SELECTOR) ?? null;
         const table = flow === null || element === null ? null : element.closest("table");
         pending = table !== null && flow !== null && flow.contains(table) ? table : null;
         schedule();

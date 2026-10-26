@@ -204,25 +204,48 @@ try {
   // Empty the composer through Lexical, not the DOM: select its whole contents and delete.
   // One Backspace is enough when the draft held only chips, but the side-chat acceptance leaves
   // a markdown quote block behind too, so this clears everything and then re-checks.
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  //
+  // The loop's exit does not prove success: it may have run out of attempts, and an absent
+  // editor must not read as "already empty". Both are reported as a preparation failure, because
+  // every later "exactly one" assertion depends on this one having actually happened.
+  for (let attempt = 0; attempt < 6; attempt += 1) {
     const remaining = await evaluate(`() => {
       const chips = document.querySelectorAll('[data-composer-chip="quote-chat"]').length
       const editors = [...document.querySelectorAll('[contenteditable="true"]')]
       const composer = editors[editors.length - 1]
-      const text = composer === undefined ? '' : (composer.innerText ?? '').trim()
-      if (composer === undefined) return { chips, empty: true }
+      if (composer === undefined) return { chips, text: null, hasEditor: false }
+      const text = (composer.innerText ?? '').trim()
       composer.focus()
       const selection = window.getSelection()
       const range = document.createRange()
       range.selectNodeContents(composer)
       selection.removeAllRanges()
       selection.addRange(range)
-      return { chips, empty: chips === 0 && text === '' }
+      return { chips, text, hasEditor: true }
     }`)
-    if (remaining.empty === true) break
+    if (remaining.hasEditor === true && remaining.text === '' && remaining.chips === 0) break
+    if (remaining.hasEditor === false) break
     await call('browser_press_key', { key: 'Backspace' })
     await sleep(700)
   }
+
+  // Final confirmation, independent of the loop: an editor must exist, its text must be empty,
+  // and no chip may remain. Reading it once more is deliberate — it verifies the end state rather
+  // than trusting the loop's last iteration.
+  const composerState = await evaluate(`() => {
+    const editors = [...document.querySelectorAll('[contenteditable="true"]')]
+    const composer = editors[editors.length - 1]
+    return {
+      hasEditor: composer !== undefined,
+      text: composer === undefined ? null : (composer.innerText ?? '').trim(),
+      chips: document.querySelectorAll('[data-composer-chip="quote-chat"]').length
+    }
+  }`)
+  check('the composer is empty before the run starts',
+    composerState.hasEditor === true
+      && composerState.text === ''
+      && composerState.chips === 0,
+    JSON.stringify(composerState))
   // A leftover marker means a stored annotation survived; open each and delete it.
   const markersCleared = await evaluate(`() => {
     let guard = 0

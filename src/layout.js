@@ -44,17 +44,23 @@
  * What this module does NOT do: paint highlights, scroll to anything, schedule timers, or read
  * the selection. It reports geometry and the mount target; the caller decides what to do next.
  *
- * ## A recorded nondeterminism, not a fix
+ * ## A recorded nondeterminism, cause unconfirmed
  *
- * A surface placed against a selection can land 2px off. Measured in the browser: the same build,
- * run repeatedly, yields an 8px gap below the selection on some runs and 10px on others. The
- * anchor gap itself is 8, so the extra 2px comes from the surface's own measured height at the
- * moment placement runs — the first paint reports a height that later grows, and the fallback
- * arithmetic uses that first number.
+ * OBSERVATION: a surface placed against a selection can land 2px off. Measured in the browser,
+ * the same build run repeatedly puts the surface 8px below the selection on some runs and 10px
+ * on others, while every input that feeds the arithmetic — selection box, scrollTop, column
+ * width, readable band — is identical between those runs. It reproduces on the pre-extraction
+ * build at the same rate.
  *
- * This is pre-existing and unrelated to the extraction (it reproduces on the pre-extraction
- * build at the same rate). It is recorded here rather than fixed: the fix is a re-measure-and-
- * reposition pass, which is a lifecycle change, not a move.
+ * CAUSE: not established. An earlier note here claimed the first paint reports a height that
+ * later grows; that was an inference from one measurement, not evidence. There is at least one
+ * other candidate that has not been excluded: the popover has a `translateY(2px)` entrance
+ * animation, so a rect read during the animation and a rect read after it differ by exactly 2px.
+ * Excluding it requires sampling the same placement both during and after the animation, which
+ * has not been done.
+ *
+ * Not fixed in this stage, and the explanation should stay "unconfirmed" until the animation is
+ * ruled in or out.
  */
 
 /** Never let an anchored surface touch the edges of the readable band. */
@@ -63,8 +69,7 @@ const ANCHOR_INSET = 8
 /** Gap between the bubble's top edge and the panel's bottom edge, in px. */
 const PANEL_BUBBLE_GAP = 10
 
-/** The chat flow container. */
-const FLOW_SELECTOR = '[data-slot="conversation.chat.flow"]'
+import { FLOW_SELECTOR } from './text-ranges.js'
 
 /** Surfaces that must never be mistaken for the transcript. */
 const SIDEBAR_TAB_SELECTOR = '[data-sidebar-right-tab]'
