@@ -20,6 +20,7 @@ const source = await readFile(join(here, '..', 'src', 'index.js'), 'utf8')
 const css = /const (?:CSS|STYLESHEET) = `([\s\S]*?)`\n/.exec(source)?.[1] ?? ''
 // Layout rules moved to their own module: assert against it where the claim is about layout.
 const layoutSource = await readFile(join(here, '..', 'src', 'layout.js'), 'utf8')
+const navigationSource = await readFile(join(here, '..', 'src', 'navigation.js'), 'utf8')
 
 const cases = []
 const check = (name, ok, detail) => cases.push({ name, ok, detail })
@@ -73,8 +74,8 @@ check('the composer dock is discovered by slot',
     || /conversation\.input\.dock/.test(source),
   'no composer dock selector')
 check('the area is re-measured per jump',
-  /const area = visibleChatArea\(scroller\)/.test(source),
-  'the visible area is cached')
+  /const area = layout\.visibleChatArea\(scroller\)/.test(navigationSource),
+  'the visible area is cached or no longer read from the layout')
 check('a collapsed area falls back to the scroller box',
   /bottom - top < 120/.test(layoutSource),
   'no guard against an empty visible area')

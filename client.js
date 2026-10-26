@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:130031308829a891
+ * Artifact: sha256:fe23c9dfea29e751
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -739,7 +739,7 @@ function __dshQuoteChatFactory(hostRequire) {
       }
       return false;
     }
-    function scrollContainerOf2(flow) {
+    function scrollContainerOf(flow) {
       if (flow === null || flow === void 0) return null;
       let node = flow.parentElement;
       while (node !== null) {
@@ -755,7 +755,7 @@ function __dshQuoteChatFactory(hostRequire) {
       if (flow === null || flow === void 0) return null;
       const hit = containerCache.get(flow);
       if (hit !== void 0 && hit.contains(flow)) return hit;
-      const found = scrollContainerOf2(flow);
+      const found = scrollContainerOf(flow);
       if (found !== null) containerCache.set(flow, found);
       return found;
     }
@@ -770,7 +770,7 @@ function __dshQuoteChatFactory(hostRequire) {
       }
       return null;
     }
-    function visibleChatArea2(scroller) {
+    function visibleChatArea(scroller) {
       const box = scroller.getBoundingClientRect();
       let top = Math.max(0, box.top);
       let bottom = Math.min(window.innerHeight, box.bottom);
@@ -800,7 +800,7 @@ function __dshQuoteChatFactory(hostRequire) {
       const rect = scroller.getBoundingClientRect();
       const width = size.width || 0;
       const height = size.height || 0;
-      const area = visibleChatArea2(scroller);
+      const area = visibleChatArea(scroller);
       const bandTop = area.top - rect.top + scroller.scrollTop;
       const bandBottom = bandTop + area.height;
       const localTop = box.top - rect.top + scroller.scrollTop;
@@ -822,7 +822,7 @@ function __dshQuoteChatFactory(hostRequire) {
       const rect = scroller.getBoundingClientRect();
       const width = size.width || 0;
       const height = size.height || 0;
-      const area = visibleChatArea2(scroller);
+      const area = visibleChatArea(scroller);
       const bandTop = area.top - rect.top + scroller.scrollTop;
       const bandBottom = bandTop + area.height;
       const bubbleTop = bubble.top - rect.top + scroller.scrollTop;
@@ -891,10 +891,10 @@ function __dshQuoteChatFactory(hostRequire) {
     }
     return {
       findFlow: findFlow2,
-      scrollContainerOf: scrollContainerOf2,
+      scrollContainerOf,
       containerFor,
       findComposerDock,
-      visibleChatArea: visibleChatArea2,
+      visibleChatArea,
       anchorInTranscript: anchorInTranscript2,
       anchorAboveBubble: anchorAboveBubble2,
       flowColumnBox,
@@ -1014,12 +1014,78 @@ function __dshQuoteChatFactory(hostRequire) {
     return { flash, hold, clear };
   }
 
+  // src/navigation.js
+  var MAX_STEPS = 40;
+  var FRAMES_PER_STEP = 2;
+  var ANCHOR_TOP_GAP = 28;
+  var MIN_STEP = 160;
+  function nextFrame() {
+    return new Promise((resolve) => {
+      if (typeof requestAnimationFrame !== "function") {
+        resolve();
+        return;
+      }
+      requestAnimationFrame(() => resolve());
+    });
+  }
+  function createNavigation({
+    layout: layout2,
+    findFlow: findFlow2 = () => layout2.findFlow(),
+    resolve = resolveAnchor
+  } = {}) {
+    function scrollToRange(range, flow) {
+      const scroller = layout2.scrollContainerOf(flow);
+      const rect = range.getBoundingClientRect();
+      if (scroller === null) {
+        const host = elementOf(range.startContainer)?.closest("[data-chat-node-key]") ?? flow;
+        host.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+        return range;
+      }
+      const area = layout2.visibleChatArea(scroller);
+      const target = scroller.scrollTop + (rect.top - area.top) - ANCHOR_TOP_GAP;
+      const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      scroller.scrollTop = Math.min(Math.max(0, target), max);
+      return range;
+    }
+    async function reveal(flow, annotation) {
+      const immediate = resolve(flow, annotation.anchor);
+      if (immediate !== null) return scrollToRange(immediate, flow);
+      const scroller = layout2.scrollContainerOf(flow);
+      if (scroller === null) return null;
+      const start = scroller.scrollTop;
+      const step = Math.max(MIN_STEP, Math.round(scroller.clientHeight * 0.8));
+      const sweep = async (direction) => {
+        let barren = 0;
+        for (let attempt = 0; attempt < MAX_STEPS; attempt += 1) {
+          const before = scroller.scrollTop;
+          scroller.scrollTop = before + step * direction;
+          for (let frame = 0; frame < FRAMES_PER_STEP; frame += 1) await nextFrame();
+          const live = findFlow2() ?? flow;
+          const hit = resolve(live, annotation.anchor);
+          if (hit !== null) return scrollToRange(hit, live);
+          if (scroller.scrollTop === before) {
+            barren += 1;
+            if (barren > 1) return null;
+          } else {
+            barren = 0;
+          }
+        }
+        return null;
+      };
+      const up = await sweep(-1);
+      if (up !== null) return up;
+      scroller.scrollTop = start;
+      await nextFrame();
+      return sweep(1);
+    }
+    return { reveal, scrollToRange, nextFrame };
+  }
+
   // src/index.js
   var MAX_QUOTE_CHARS = 8e3;
   var MAX_ANNOTATIONS = 12;
   var VIEWPORT_MARGIN = 8;
   var ANCHOR_GAP = 8;
-  var ANCHOR_TOP_GAP = 28;
   var BUBBLE_PANEL_WIDTH = 320;
   var BUBBLE_PANEL_HEIGHT = 200;
   var BUBBLE_CLEARANCE = 30;
@@ -1566,9 +1632,9 @@ function __dshQuoteChatFactory(hostRequire) {
     return [line(head), `| ${pad(head).map(() => "---").join(" | ")} |`, ...usable.slice(1).map(line)].join("\n");
   }
   var layout = createLayout();
+  var navigation = createNavigation({ layout });
+  var revealWithSearch = (flow, annotation) => navigation.reveal(flow, annotation);
   var findFlow = () => layout.findFlow();
-  var scrollContainerOf = (flow) => layout.scrollContainerOf(flow);
-  var visibleChatArea = (scroller) => layout.visibleChatArea(scroller);
   var anchorInTranscript = (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer);
   var anchorAboveBubble = (flow, bubble, size) => layout.anchorAboveBubble(flow, bubble, size);
   var columnElement = (flow) => layout.columnElement(flow);
@@ -2473,61 +2539,6 @@ function __dshQuoteChatFactory(hostRequire) {
       return `翻遍对话仍未加载到原文所在消息 / row never loaded (${rows.length} rows mounted, quote ${quote.length} chars: ${head})`;
     }
     return `消息还在，但其中找不到这段引文 / row present, quote missing (${quote.length} chars: ${head})`;
-  }
-  async function revealWithSearch(flow, annotation) {
-    const immediate = resolveAnchor(flow, annotation.anchor);
-    if (immediate !== null) return scrollToRange(immediate, flow);
-    const scroller = scrollContainerOf(flow);
-    if (scroller === null) return null;
-    const start = scroller.scrollTop;
-    const step = Math.max(160, Math.round(scroller.clientHeight * 0.8));
-    const sweep = async (direction) => {
-      let barren = 0;
-      for (let attempt = 0; attempt < 40; attempt += 1) {
-        const before = scroller.scrollTop;
-        scroller.scrollTop = before + step * direction;
-        await nextFrame();
-        await nextFrame();
-        const live = findFlow() ?? flow;
-        const hit = resolveAnchor(live, annotation.anchor);
-        if (hit !== null) return scrollToRange(hit, live);
-        if (scroller.scrollTop === before) {
-          barren += 1;
-          if (barren > 1) return null;
-        } else {
-          barren = 0;
-        }
-      }
-      return null;
-    };
-    const up = await sweep(-1);
-    if (up !== null) return up;
-    scroller.scrollTop = start;
-    await nextFrame();
-    return sweep(1);
-  }
-  function nextFrame() {
-    return new Promise((resolve) => {
-      if (typeof requestAnimationFrame !== "function") {
-        resolve();
-        return;
-      }
-      requestAnimationFrame(() => resolve());
-    });
-  }
-  function scrollToRange(range, flow) {
-    const scroller = scrollContainerOf(flow);
-    const rect = range.getBoundingClientRect();
-    if (scroller === null) {
-      const host = elementOf(range.startContainer)?.closest("[data-chat-node-key]") ?? flow;
-      host.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
-      return range;
-    }
-    const area = visibleChatArea(scroller);
-    const target = scroller.scrollTop + (rect.top - area.top) - ANCHOR_TOP_GAP;
-    const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-    scroller.scrollTop = Math.min(Math.max(0, target), max);
-    return range;
   }
   function SideChat(props) {
     const { quote, t, locale, inputActions, useInput } = props;

@@ -88,6 +88,7 @@ import { createQuoteHandoff } from './quote-handoff.js'
 import { askSideChat } from './side-chat-transport.js'
 import { createLayout } from './layout.js'
 import { createHighlighter, canPaintHighlight, FLASH_HIGHLIGHT, FLASH_MS } from './highlight.js'
+import { createNavigation } from './navigation.js'
 import { elementOf, cssEscape } from './dom.js'
 import {
   rangeAt, captureAnchor, resolveAnchor, locateText, textOf, nodePath, nodeAtPath,
@@ -736,6 +737,20 @@ import {
      * outlive the instance that filled it. The rules live in layout.js.
      */
     const layout = createLayout()
+
+    /**
+     * Navigation: restoring a stored passage into view.
+     *
+     * It uses the layout instance above rather than creating its own, so there is still exactly
+     * one set of layout caches. It returns a Range; painting is the caller's decision.
+     */
+    const navigation = createNavigation({ layout })
+
+    /** Resolve a passage into view through the virtualized transcript. */
+    const revealWithSearch = (flow, annotation) => navigation.reveal(flow, annotation)
+
+    /** Bring one resolved range into view and hand it back. */
+    const scrollToRange = (range, flow) => navigation.scrollToRange(range, flow)
 
     /** The chat flow anchor. */
     const findFlow = () => layout.findFlow()
@@ -2284,124 +2299,6 @@ function escapeHtml(text) {
 
     // #endregion
 
-
-    /**
-     * Paint the flash on a resolved range and clear it after a moment.
-     *
-     * The range itself is handed to the registry, so scrolling keeps the glow on
-     * the text; nothing has to be re-measured.
-     *
-     * `resolve` is re-run AFTER the scroll settles. `scrollIntoView` only starts a
-     * scroll, and the transcript's virtualiser then rebuilds the rows around it —
-     * the nodes the caller's range pointed at are unmounted by that rebuild, so a
-     * Highlight bound to them paints nothing. Re-resolving on the next frame
-     * yields a range over the nodes that actually exist now.
-     * @param range - the passage to highlight.
-     * @param ms - how long the flash lasts.
-     * Resolve one annotation, scrolling the transcript until its row loads.
-     *
-     * This is the part that was missing. The transcript unmounts rows that
-     * scroll far away, so an annotation captured on an older answer has no DOM
-     * to point at until that answer is paged back in — `resolveAnchor` correctly
-     * reported "gone" and the jump looked broken. Here the scroller is walked in
-     * both directions, giving the virtualizer a frame to mount each new page,
-     * until the passage resolves or the transcript stops moving.
-     * @param flow - the chat flow element.
-     * @param annotation - the annotation to reveal.
-     * @returns the resolved range, or null when it is truly gone.
-     */
-    async function revealWithSearch(flow, annotation) {
-      const immediate = resolveAnchor(flow, annotation.anchor)
-      if (immediate !== null) return scrollToRange(immediate, flow)
-
-      const scroller = scrollContainerOf(flow)
-      if (scroller === null) return null
-      const start = scroller.scrollTop
-      const step = Math.max(160, Math.round(scroller.clientHeight * 0.8))
-
-      // Sweep outward from where the user is now: older passages are usually
-      // above, but a passage from a later answer is below, so both run.
-      const sweep = async (direction) => {
-        let barren = 0
-        for (let attempt = 0; attempt < 40; attempt += 1) {
-          const before = scroller.scrollTop
-          scroller.scrollTop = before + step * direction
-          // Two frames: one for the scroll to apply, one for the virtualizer to
-          // mount the page it just admitted.
-          await nextFrame()
-          await nextFrame()
-          const live = findFlow() ?? flow
-          const hit = resolveAnchor(live, annotation.anchor)
-          if (hit !== null) return scrollToRange(hit, live)
-          if (scroller.scrollTop === before) {
-            // Hit an end; two attempts in a row with no movement means done.
-            barren += 1
-            if (barren > 1) return null
-          } else {
-            barren = 0
-          }
-        }
-        return null
-      }
-
-      const up = await sweep(-1)
-      if (up !== null) return up
-      scroller.scrollTop = start
-      await nextFrame()
-      return sweep(1)
-    }
-
-    /**
-     * Wait for the next animation frame.
-     * @returns a promise resolved on the next frame.
-     */
-    function nextFrame() {
-      return new Promise((resolve) => {
-        if (typeof requestAnimationFrame !== 'function') {
-          resolve()
-          return
-        }
-        requestAnimationFrame(() => resolve())
-      })
-    }
-
-    /**
-     * Bring one resolved range into view and hand it back.
-     *
-     * Only the scroll is done here; the glow is painted by the browser's
-     * highlight registry, which keeps it glued to the text afterwards.
-     * @param range - the resolved passage range.
-     * @param flow - the chat flow.
-     * @returns the same range.
-     */
-    function scrollToRange(range, flow) {
-      const scroller = scrollContainerOf(flow)
-      const rect = range.getBoundingClientRect()
-      if (scroller === null) {
-        // No explicit scroller: let the browser pick, but ask for minimum movement
-        // rather than `center` — a row can be taller than the viewport, and
-        // centring such a row scrolls to its middle, which is not where the
-        // passage is.
-        const host = elementOf(range.startContainer)?.closest('[data-chat-node-key]') ?? flow
-        host.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
-        return range
-      }
-      // Align the passage's TOP edge with the top of the readable area, less a
-      // small gap.
-      //
-      // Centring was the earlier behaviour, and it wastes the upper half of the
-      // view for a long passage: the annotated text should BEGIN just under the top
-      // bar and then flow downward, so as much of it as possible is on screen at
-      // once. The readable area is measured each time because the composer is
-      // height-fluid — it grows with multi-line input and with attachments.
-      const area = visibleChatArea(scroller)
-      const target = scroller.scrollTop
-        + (rect.top - area.top)
-        - ANCHOR_TOP_GAP
-      const max = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
-      scroller.scrollTop = Math.min(Math.max(0, target), max)
-      return range
-    }
 
     // #endregion
 
