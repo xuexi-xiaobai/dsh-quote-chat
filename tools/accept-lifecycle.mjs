@@ -151,6 +151,8 @@ export async function run({ browser, check: report, url }) {
         && box.bottom <= window.innerHeight && box.right <= window.innerWidth,
       popupTop: Math.round(box.top),
       lineTop: Math.round(line.top),
+      // Measured against the real page: about -12px, i.e. the popup's top sits inside the line box.
+      overlapsLine: box.top >= line.top - 2 && box.top <= line.bottom + 2,
       lineBottom: Math.round(line.bottom),
     }
   })
@@ -162,6 +164,13 @@ export async function run({ browser, check: report, url }) {
     JSON.stringify(anchored))
   check('the popover is horizontally aligned with the selection',
     anchored !== null && anchored.horizontal === true, JSON.stringify(anchored))
+
+  // Measured, not assumed: the toolbar overlaps the selected line by about 12px rather than
+  // clearing it. `anchorInTranscript(…, 'below')` positions it relative to the line box, and the
+  // line box is taller than the glyphs. The requirement is that it is attached to the line, which
+  // an overlap still satisfies — a fallback to the viewport corner would fail this.
+  check('the toolbar overlaps the line it belongs to rather than floating away',
+    anchored !== null && anchored.overlapsLine === true, JSON.stringify(anchored))
 
   // ── Open the compose surface with a real click ─────────────────────────
   await click('.qc-popup button:first-child')
@@ -192,6 +201,27 @@ export async function run({ browser, check: report, url }) {
     return { number: element.getAttribute('data-qc-number'), forId: element.getAttribute('data-qc-for') }
   })
   check('the marker is numbered 1', marker !== null && marker.number === '1', JSON.stringify(marker))
+  // The gutter marker must be level with the TOP of the passage it belongs to, which is what makes
+  // a marker read as "this paragraph". Measured delta on the real page is 0.
+  const markerGeometry = await read(() => {
+    const marker = document.querySelector('.qc-marker')
+    const block = document.querySelector('[data-qc-probe="1"]')
+    if (marker === null || block === null) return null
+    const markerBox = marker.getBoundingClientRect()
+    const blockBox = block.getBoundingClientRect()
+    return {
+      deltaTop: Math.round(markerBox.top - blockBox.top),
+      inViewport: markerBox.top >= 0 && markerBox.left >= 0
+        && markerBox.bottom <= window.innerHeight && markerBox.right <= window.innerWidth,
+    }
+  })
+  check('the marker is level with the top of its passage',
+    markerGeometry !== null && Math.abs(markerGeometry.deltaTop) <= 6,
+    JSON.stringify(markerGeometry))
+  check('the marker is inside the viewport',
+    markerGeometry !== null && markerGeometry.inViewport === true,
+    JSON.stringify(markerGeometry))
+
   check('the marker carries a stable annotation id',
     marker !== null && typeof marker.forId === 'string' && marker.forId.startsWith('qc-'),
     JSON.stringify(marker))
