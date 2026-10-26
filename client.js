@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:5c5fdd4f62a446d7
+ * Artifact: sha256:eac28d32e7c8f9bb
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -402,6 +402,62 @@ function __dshQuoteChatFactory(hostRequire) {
        */
       has(ref) {
         return payloads.has(ref);
+      }
+    };
+  }
+
+  // src/chip-bridge.js
+  function createDraftBridge({ registry, source }) {
+    function liveDraft(read) {
+      const state = read();
+      return {
+        draft: typeof state?.draft === "string" ? state.draft : "",
+        occurrences: Array.isArray(state?.occurrences) ? state.occurrences : []
+      };
+    }
+    return {
+      /**
+       * Place one annotation in the draft as a chip.
+       *
+       * Registers the payload first, then asks the Host to accept the new draft. A failure to
+       * write leaves the payload in place — see the module note.
+       *
+       * @param port - `{ setDraft }` from the Host's input actions; may be absent.
+       * @param read - getter for `{ draft, occurrences }`.
+       * @param annotation - the annotation to place.
+       * @param labels - the active locale's card labels.
+       * @returns true when the draft accepted the chip.
+       */
+      place(port, read, annotation, labels) {
+        if (typeof port?.setDraft !== "function") return false;
+        const { draft, occurrences } = liveDraft(read);
+        try {
+          const reference = registry.register(annotation, chipLabel(annotation, labels));
+          port.setDraft(withAppendedChip(draft, occurrences, CHIP_PLACEHOLDER, reference));
+          return true;
+        } catch (failure) {
+          console.error("[dsh-quote-chat] chip insertion failed:", failure);
+          return false;
+        }
+      },
+      /**
+       * Remove one annotation's chip from the draft.
+       *
+       * The payload is not touched and not deleted: the draft is not the only thing that can
+       * reintroduce the reference, so removing its payload here would be premature.
+       *
+       * @param port - `{ setDraft }` from the Host's input actions; may be absent.
+       * @param read - getter for `{ draft, occurrences }`.
+       * @param ref - the annotation id the chip carries.
+       * @returns true when a chip was found and the draft accepted the rewrite.
+       */
+      release(port, read, ref) {
+        const { draft, occurrences } = liveDraft(read);
+        const snapshot = withoutChip(draft, occurrences, source, ref);
+        if (snapshot === null) return false;
+        if (typeof port?.setDraft !== "function") return false;
+        port.setDraft(snapshot);
+        return true;
       }
     };
   }
@@ -1132,10 +1188,8 @@ function __dshQuoteChatFactory(hostRequire) {
     return import_react.default.useSyncExternalStore(subscribe, snapshot, snapshot);
   }
   var chipRegistry = createChipRegistry();
+  var chipBridge = createDraftBridge({ registry: chipRegistry, source: CHIP_SOURCE });
   var chipJumpHandler = { current: null };
-  function chipReference(annotation, labels) {
-    return chipRegistry.register(annotation, chipLabel(annotation, labels));
-  }
   function IconAnnotate() {
     return h(
       "svg",
@@ -2776,19 +2830,12 @@ function __dshQuoteChatFactory(hostRequire) {
         return () => clearTimeout(timer);
       }, [notice]);
       import_react.default.useEffect(() => () => clearFlashRange(), []);
-      const writeChip = import_react.default.useCallback((annotation) => {
-        if (typeof inputActions?.setDraft !== "function") return false;
-        const current = typeof draft === "string" ? draft : "";
-        const existing = Array.isArray(inputStateRef.current?.occurrences) ? inputStateRef.current.occurrences : [];
-        try {
-          const reference = chipReference(annotation, labels);
-          inputActions.setDraft(withAppendedChip(current, existing, CHIP_PLACEHOLDER, reference));
-          return true;
-        } catch (failure) {
-          console.error("[dsh-quote-chat] chip insertion failed:", failure);
-          return false;
-        }
-      }, [draft, inputActions, labels]);
+      const writeChip = import_react.default.useCallback((annotation) => chipBridge.place(
+        inputActions,
+        () => ({ draft, occurrences: inputStateRef.current?.occurrences }),
+        annotation,
+        labels
+      ), [draft, inputActions, labels]);
       const cancelCompose = import_react.default.useCallback(() => {
         clearFlashRange();
         setOverlay(null);
@@ -2886,15 +2933,11 @@ function __dshQuoteChatFactory(hostRequire) {
       }, [annotations, onJump]);
       const onRemove = import_react.default.useCallback((annotation) => {
         if (sessionId === void 0) return;
-        const snapshot = withoutChip(
-          typeof draft === "string" ? draft : "",
-          Array.isArray(inputStateRef.current?.occurrences) ? inputStateRef.current.occurrences : [],
-          CHIP_SOURCE,
+        chipBridge.release(
+          inputActions,
+          () => ({ draft, occurrences: inputStateRef.current?.occurrences }),
           annotation.id
         );
-        if (snapshot !== null && typeof inputActions?.setDraft === "function") {
-          inputActions.setDraft(snapshot);
-        }
         removeAnnotation(sessionId, annotation.id);
       }, [draft, inputActions, sessionId]);
       const onUpdate = import_react.default.useCallback((annotation, comment) => {

@@ -82,10 +82,10 @@ const h = React.createElement
 import { zh, en } from './locales.js'
 import { createAnnotationStore } from './annotation-store.js'
 import {
-  serializeChipForModel, chipLabel, withAppendedChip, withoutChip,
-  CHIP_SOURCE, CHIP_TRIGGER, CHIP_PLACEHOLDER,
+  serializeChipForModel, CHIP_SOURCE, CHIP_TRIGGER, CHIP_PLACEHOLDER,
 } from './chip-draft.js'
 import { createChipRegistry } from './chip-registry.js'
+import { createDraftBridge } from './chip-bridge.js'
 import { elementOf, cssEscape } from './dom.js'
 import {
   rangeAt, captureAnchor, resolveAnchor, locateText, textOf, nodePath, nodeAtPath,
@@ -810,6 +810,9 @@ import {
      */
     const chipRegistry = createChipRegistry()
 
+    /** The chip/draft seam for this instance: ordering and failure live in the bridge. */
+    const chipBridge = createDraftBridge({ registry: chipRegistry, source: CHIP_SOURCE })
+
     /**
      * The dock's jump function, published for the reference source.
      *
@@ -829,23 +832,6 @@ import {
       const flat = (annotation.previewText || annotation.text || '').replace(/\s+/g, ' ').trim()
       if (flat !== '') return flat
       return annotation.kind === 'table' ? '表格' : '引文'
-    }
-
-    /**
-     * The draft text and reference list that put one annotation into the draft.
-     *
-     * The reference's `clipboardText` is the placeholder the editor maps back to
-     * a chip, and `offset`/`length` locate it, so the pair has to be built
-     * together. The passage and the comment do NOT go into the draft text: they
-     * are registered under the chip id and expanded by the codec on submit, so
-     * the card stays one clean token the user can move around and the model still
-     * receives the full passage.
-     * @param annotation - the annotation to insert.
-     * @param labels - the active locale's card labels.
-     * @returns the placeholder text plus its reference record.
-     */
-    function chipReference(annotation, labels) {
-      return chipRegistry.register(annotation, chipLabel(annotation, labels))
     }
 
     // #endregion
@@ -3424,21 +3410,12 @@ function escapeHtml(text) {
          * @param annotation - the annotation to place.
          * @returns whether the draft accepted the chip.
          */
-        const writeChip = React.useCallback((annotation) => {
-          if (typeof inputActions?.setDraft !== 'function') return false
-          const current = typeof draft === 'string' ? draft : ''
-          const existing = Array.isArray(inputStateRef.current?.occurrences)
-            ? inputStateRef.current.occurrences
-            : []
-          try {
-            const reference = chipReference(annotation, labels)
-            inputActions.setDraft(withAppendedChip(current, existing, CHIP_PLACEHOLDER, reference))
-            return true
-          } catch (failure) {
-            console.error('[dsh-quote-chat] chip insertion failed:', failure)
-            return false
-          }
-        }, [draft, inputActions, labels])
+        const writeChip = React.useCallback((annotation) => chipBridge.place(
+          inputActions,
+          () => ({ draft, occurrences: inputStateRef.current?.occurrences }),
+          annotation,
+          labels,
+        ), [draft, inputActions, labels])
 
         /**
          * Dismiss the comment box without saving.
@@ -3597,15 +3574,11 @@ function escapeHtml(text) {
           if (sessionId === undefined) return
           // Removing the annotation removes its chip, and any prose the user
           // typed after that chip stays: only the chip and its comment line go.
-          const snapshot = withoutChip(
-            typeof draft === 'string' ? draft : '',
-            Array.isArray(inputStateRef.current?.occurrences) ? inputStateRef.current.occurrences : [],
-            CHIP_SOURCE,
+          chipBridge.release(
+            inputActions,
+            () => ({ draft, occurrences: inputStateRef.current?.occurrences }),
             annotation.id,
           )
-          if (snapshot !== null && typeof inputActions?.setDraft === 'function') {
-            inputActions.setDraft(snapshot)
-          }
           removeAnnotation(sessionId, annotation.id)
         }, [draft, inputActions, sessionId])
 
