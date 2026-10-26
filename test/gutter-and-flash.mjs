@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const source = await readSourceBundle()
+const highlightSource = await readFile(join(here, '..', 'src', 'highlight.js'), 'utf8')
 const css = /const (?:CSS|STYLESHEET) = `([\s\S]*?)`\n/.exec(source)?.[1] ?? ''
 
 const cases = []
@@ -109,9 +110,10 @@ check('the highlight is yellow',
 check('the highlight re-resolves after the scroll settles',
   /flashRange\(range, FLASH_MS, \(\) =>/.test(source),
   'the flash is painted once over a range the virtualiser may have replaced')
+// The hook now lives in highlight.js as the highlighter's flash().
 check('flashRange accepts a re-resolve callback',
-  /function flashRange\(range, ms = FLASH_MS, resolve = null\)/.test(source),
-  'flashRange has no re-resolve hook')
+  /function flash\(range, ms = FLASH_MS, resolve = null\)/.test(highlightSource),
+  'flash has no re-resolve hook')
 check('the re-resolve re-reads the live anchor',
   /const live = findFlow\(\)[\s\S]{0,120}resolveAnchor\(live, annotation\.anchor\)/.test(source),
   'the re-resolve does not re-read the anchor')

@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:e80191e7c2fe1f2e
+ * Artifact: sha256:130031308829a891
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -903,6 +903,117 @@ function __dshQuoteChatFactory(hostRequire) {
     };
   }
 
+  // src/highlight.js
+  var FLASH_HIGHLIGHT = "quote-chat-flash";
+  var FLASH_MS = 2600;
+  var RESOLVE_DELAY = 90;
+  function canPaintHighlight() {
+    const registry = typeof window === "undefined" ? void 0 : window.CSS;
+    return typeof registry === "object" && registry !== null && typeof registry.highlights === "object" && registry.highlights !== null && typeof window.Highlight === "function";
+  }
+  function paintSafeRange(range) {
+    try {
+      const endElement = elementOf(range.endContainer);
+      if (endElement === null || endElement.closest("[data-qc-ignore]") === null) {
+        const startElement = elementOf(range.startContainer);
+        if (startElement === null || startElement.closest("[data-qc-ignore]") === null) {
+          return range;
+        }
+      }
+      const box = endElement?.closest(BLOCK_SELECTOR) ?? elementOf(range.startContainer)?.closest(BLOCK_SELECTOR);
+      if (box === null || box === void 0) return range;
+      const clean = document.createRange();
+      const texts = [];
+      const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+        if (node.parentElement?.closest("[data-qc-ignore]") != null) continue;
+        texts.push(node);
+      }
+      if (texts.length === 0) return range;
+      const startIn = texts.findIndex((node) => node === range.startContainer);
+      const endIn = texts.findIndex((node) => node === range.endContainer);
+      const startNode = startIn >= 0 ? texts[startIn] : texts[0];
+      const startOffset = startIn >= 0 ? range.startOffset : 0;
+      let endNode;
+      let endOffset;
+      if (endIn >= 0) {
+        endNode = texts[endIn];
+        endOffset = range.endOffset;
+      } else {
+        const chromeNode = range.endContainer;
+        const proseNodesBefore = [];
+        const docWalker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+        for (let node = docWalker.nextNode(); node !== null; node = docWalker.nextNode()) {
+          if (node === chromeNode) break;
+          if (node.parentElement?.closest("[data-qc-ignore]") != null) continue;
+          proseNodesBefore.push(node);
+        }
+        if (proseNodesBefore.length === 0) return range;
+        endNode = proseNodesBefore[proseNodesBefore.length - 1];
+        endOffset = (endNode.textContent ?? "").length;
+      }
+      if (endNode === startNode && endOffset < startOffset) {
+        endOffset = startOffset;
+      }
+      clean.setStart(startNode, startOffset);
+      clean.setEnd(endNode, endOffset);
+      return clean;
+    } catch {
+      return range;
+    }
+  }
+  function createHighlighter() {
+    function flash(range, ms = FLASH_MS, resolve = null) {
+      if (!canPaintHighlight()) return;
+      try {
+        let highlight = new Highlight(paintSafeRange(range));
+        window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight);
+        const deadline = Date.now() + ms;
+        const settle = () => {
+          if (window.CSS.highlights.get(FLASH_HIGHLIGHT) !== highlight) return;
+          if (resolve !== null) {
+            const live = resolve();
+            if (live !== null) {
+              highlight = new Highlight(paintSafeRange(live));
+              window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight);
+            }
+          }
+          setTimeout(() => {
+            if (window.CSS.highlights.get(FLASH_HIGHLIGHT) === highlight) {
+              window.CSS.highlights.delete(FLASH_HIGHLIGHT);
+            }
+          }, Math.max(0, deadline - Date.now()));
+        };
+        if (resolve === null) settle();
+        else setTimeout(settle, RESOLVE_DELAY);
+      } catch (failure) {
+        console.error("[dsh-quote-chat] highlight failed:", failure);
+      }
+    }
+    function hold(range, resolve = null) {
+      if (!canPaintHighlight()) return;
+      try {
+        let highlight = new Highlight(paintSafeRange(range));
+        window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight);
+        if (resolve === null) return;
+        setTimeout(() => {
+          if (window.CSS.highlights.get(FLASH_HIGHLIGHT) !== highlight) return;
+          const live = resolve();
+          if (live === null) return;
+          highlight = new Highlight(paintSafeRange(live));
+          window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight);
+        }, RESOLVE_DELAY);
+      } catch (failure) {
+        console.error("[dsh-quote-chat] hold highlight failed:", failure);
+      }
+    }
+    function clear() {
+      if (!canPaintHighlight()) return;
+      window.CSS.highlights.delete(FLASH_HIGHLIGHT);
+    }
+    return { flash, hold, clear };
+  }
+
   // src/index.js
   var MAX_QUOTE_CHARS = 8e3;
   var MAX_ANNOTATIONS = 12;
@@ -912,7 +1023,6 @@ function __dshQuoteChatFactory(hostRequire) {
   var BUBBLE_PANEL_WIDTH = 320;
   var BUBBLE_PANEL_HEIGHT = 200;
   var BUBBLE_CLEARANCE = 30;
-  var FLASH_MS = 2600;
   var HOVER_LINGER_MS = 260;
   var CARD_EXIT_MS = 130;
   var h = import_react.default.createElement;
@@ -1462,6 +1572,10 @@ function __dshQuoteChatFactory(hostRequire) {
   var anchorInTranscript = (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer);
   var anchorAboveBubble = (flow, bubble, size) => layout.anchorAboveBubble(flow, bubble, size);
   var columnElement = (flow) => layout.columnElement(flow);
+  var highlighter = createHighlighter();
+  var flashRange = (range, ms = FLASH_MS, resolve = null) => highlighter.flash(range, ms, resolve);
+  var clearFlashRange = () => highlighter.clear();
+  var holdRange = (range, resolve = null) => highlighter.hold(range, resolve);
   var annotationStore = createAnnotationStore({ maxAnnotations: MAX_ANNOTATIONS });
   var addAnnotation = (sessionId, draft) => annotationStore.add(sessionId, draft);
   var removeAnnotation = (sessionId, id) => annotationStore.remove(sessionId, id);
@@ -2359,110 +2473,6 @@ function __dshQuoteChatFactory(hostRequire) {
       return `翻遍对话仍未加载到原文所在消息 / row never loaded (${rows.length} rows mounted, quote ${quote.length} chars: ${head})`;
     }
     return `消息还在，但其中找不到这段引文 / row present, quote missing (${quote.length} chars: ${head})`;
-  }
-  var FLASH_HIGHLIGHT = "quote-chat-flash";
-  function canPaintHighlight() {
-    const registry = typeof window === "undefined" ? void 0 : window.CSS;
-    return typeof registry === "object" && registry !== null && typeof registry.highlights === "object" && registry.highlights !== null && typeof window.Highlight === "function";
-  }
-  function paintSafeRange(range) {
-    try {
-      const endElement = elementOf(range.endContainer);
-      if (endElement === null || endElement.closest("[data-qc-ignore]") === null) {
-        const startElement = elementOf(range.startContainer);
-        if (startElement === null || startElement.closest("[data-qc-ignore]") === null) {
-          return range;
-        }
-      }
-      const box = endElement?.closest(BLOCK_SELECTOR) ?? elementOf(range.startContainer)?.closest(BLOCK_SELECTOR);
-      if (box === null || box === void 0) return range;
-      const clean = document.createRange();
-      const texts = [];
-      const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
-      for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-        if (node.parentElement?.closest("[data-qc-ignore]") != null) continue;
-        texts.push(node);
-      }
-      if (texts.length === 0) return range;
-      const startIn = texts.findIndex((node) => node === range.startContainer);
-      const endIn = texts.findIndex((node) => node === range.endContainer);
-      const startNode = startIn >= 0 ? texts[startIn] : texts[0];
-      const startOffset = startIn >= 0 ? range.startOffset : 0;
-      let endNode;
-      let endOffset;
-      if (endIn >= 0) {
-        endNode = texts[endIn];
-        endOffset = range.endOffset;
-      } else {
-        const chromeNode = range.endContainer;
-        const proseNodesBefore = [];
-        const docWalker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
-        for (let node = docWalker.nextNode(); node !== null; node = docWalker.nextNode()) {
-          if (node === chromeNode) break;
-          if (node.parentElement?.closest("[data-qc-ignore]") != null) continue;
-          proseNodesBefore.push(node);
-        }
-        if (proseNodesBefore.length === 0) return range;
-        endNode = proseNodesBefore[proseNodesBefore.length - 1];
-        endOffset = (endNode.textContent ?? "").length;
-      }
-      if (endNode === startNode && endOffset < startOffset) {
-        endOffset = startOffset;
-      }
-      clean.setStart(startNode, startOffset);
-      clean.setEnd(endNode, endOffset);
-      return clean;
-    } catch {
-      return range;
-    }
-  }
-  function flashRange(range, ms = FLASH_MS, resolve = null) {
-    if (!canPaintHighlight()) return;
-    try {
-      let highlight = new Highlight(paintSafeRange(range));
-      window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight);
-      const deadline = Date.now() + ms;
-      const settle = () => {
-        if (window.CSS.highlights.get(FLASH_HIGHLIGHT) !== highlight) return;
-        if (resolve !== null) {
-          const live = resolve();
-          if (live !== null) {
-            highlight = new Highlight(paintSafeRange(live));
-            window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight);
-          }
-        }
-        setTimeout(() => {
-          if (window.CSS.highlights.get(FLASH_HIGHLIGHT) === highlight) {
-            window.CSS.highlights.delete(FLASH_HIGHLIGHT);
-          }
-        }, Math.max(0, deadline - Date.now()));
-      };
-      if (resolve === null) settle();
-      else setTimeout(settle, 90);
-    } catch (failure) {
-      console.error("[dsh-quote-chat] highlight failed:", failure);
-    }
-  }
-  function clearFlashRange() {
-    if (!canPaintHighlight()) return;
-    window.CSS.highlights.delete(FLASH_HIGHLIGHT);
-  }
-  function holdRange(range, resolve = null) {
-    if (!canPaintHighlight()) return;
-    try {
-      let highlight = new Highlight(paintSafeRange(range));
-      window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight);
-      if (resolve === null) return;
-      setTimeout(() => {
-        if (window.CSS.highlights.get(FLASH_HIGHLIGHT) !== highlight) return;
-        const live = resolve();
-        if (live === null) return;
-        highlight = new Highlight(paintSafeRange(live));
-        window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight);
-      }, 90);
-    } catch (failure) {
-      console.error("[dsh-quote-chat] hold highlight failed:", failure);
-    }
   }
   async function revealWithSearch(flow, annotation) {
     const immediate = resolveAnchor(flow, annotation.anchor);

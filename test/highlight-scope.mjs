@@ -1,29 +1,29 @@
-﻿import { readSourceBundle } from './source.mjs'
 /**
- * Prove the fluorescent highlight never covers plugin chrome.
+ * Range highlights: scope, identity, and timing.
  *
- * The comment panel is a child of the annotated paragraph, so it sits inside the very
- * subtree the highlight range spans. CSS.highlights paints every character a range
- * covers, including the panel's own label and buttons - the marker appearing over the
- * editor was reported twice, and both times the cause was an offset calculation that
- * counted the panel's text as prose.
+ * Two things are asserted here, and the second is the reason this suite exists.
  *
- * This builds a minimal DOM with the same shape: a paragraph containing prose, a
- * gutter bubble and the comment panel, all under a data-chat-node-key row. It then
- * runs the REAL rangeAt / paintSafeRange / locateText logic by loading those functions
- * out of client.js, and asserts that the resulting range contains only prose.
+ * **Scope.** The comment panel is a child of the annotated paragraph, so it sits inside the very
+ * subtree a highlight range spans, and the registry paints every character a range covers. A
+ * range that reaches a plugin-owned node must be rebuilt over prose alone.
+ *
+ * **Identity.** Every deferred callback checks that the registry still holds its own highlight
+ * object before acting. Without that guard a replaced highlight's stale range comes back, and an
+ * old flash's expiry deletes the highlight a hold just installed. Asserting only that "a
+ * highlight eventually appears" would pass with every one of those bugs present, so each case
+ * below drives the timers by hand and inspects which object the registry ended up holding.
+ *
+ * The real functions are imported, not extracted from source: this suite used to slice function
+ * bodies out of the bundle and rebuild their dependencies by hand, which meant it could pass
+ * while the shipped wiring differed.
  *
  * Run: node test/highlight-scope.mjs
  */
-import { readFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
-
-const here = dirname(fileURLToPath(import.meta.url))
-const source = await readSourceBundle()
+import { createHighlighter, canPaintHighlight, paintSafeRange, FLASH_HIGHLIGHT, FLASH_MS }
+  from '../src/highlight.js'
 
 const cases = []
-const check = (name, ok, detail) => cases.push({ name, ok, detail })
+const check = (name, ok, detail = '') => cases.push({ name, ok, detail })
 
 // ── A tiny DOM, just enough for the walkers involved ──────────────────────
 class TextNode {
@@ -35,7 +35,6 @@ class TextNode {
     this.childNodes = []
   }
   get parentNode() { return this.parentElement }
-  cloneNode() { return new TextNode(this.data) }
 }
 
 class Element {
@@ -44,217 +43,107 @@ class Element {
     this.tagName = tag.toUpperCase()
     this.childNodes = []
     this.attributes = { ...attrs }
-    this.dataset = {}
     this.parentElement = null
   }
   get parentNode() { return this.parentElement }
-  get textContent() {
-    return this.childNodes.map((node) => (node.nodeType === 3 ? node.data : node.textContent)).join('')
-  }
-  append(...children) {
-    for (const child of children) {
-      child.parentElement = this
-      this.childNodes.push(child)
+  get children() { return this.childNodes.filter((node) => node.nodeType === 1) }
+  append(...nodes) {
+    for (const node of nodes) {
+      node.parentElement = this
+      this.childNodes.push(node)
     }
     return this
   }
+  get textContent() { return this.childNodes.map((node) => node.textContent).join('') }
   getAttribute(name) { return this.attributes[name] ?? null }
-  hasAttribute(name) { return name in this.attributes }
   setAttribute(name, value) { this.attributes[name] = value }
-  get isConnected() { return true }
-  getClientRects() { return [{ width: 100, height: 20, left: 0, top: 0, right: 100, bottom: 20 }] }
-  getBoundingClientRect() {
-    return { left: 0, top: 0, right: 500, bottom: 20, width: 500, height: 20 }
+  matches(selector) {
+    const attr = /^\[([\w-]+)\]$/.exec(selector)
+    if (attr !== null) return this.attributes[attr[1]] !== undefined
+    const attrValue = /^\[([\w-]+)="([^"]*)"\]$/.exec(selector)
+    if (attrValue !== null) return this.attributes[attrValue[1]] === attrValue[2]
+    return this.tagName === selector.toUpperCase()
   }
   closest(selector) {
-    const want = selector.replace(/^\[|\]$/g, '')
+    // `p, li, h1, …` arrives as one selector list.
+    const parts = selector.split(',').map((part) => part.trim())
     let node = this
-    while (node !== null && node !== undefined) {
-      if (node.nodeType === 1 && (node.hasAttribute(want) || node.tagName === want.toUpperCase())) {
-        return node
-      }
+    while (node !== null) {
+      if (parts.some((part) => node.matches(part))) return node
       node = node.parentElement
     }
     return null
   }
-  querySelector(selector) { return this.querySelectorAll(selector)[0] ?? null }
   querySelectorAll(selector) {
-    const want = selector.replace(/^\[|\]$/g, '')
-    const found = []
+    const parts = selector.split(',').map((part) => part.trim())
+    const out = []
     const walk = (node) => {
       for (const child of node.childNodes) {
         if (child.nodeType !== 1) continue
-        if (child.hasAttribute(want) || child.tagName === want.toUpperCase()) found.push(child)
+        if (parts.some((part) => child.matches(part))) out.push(child)
         walk(child)
       }
     }
     walk(this)
-    return found
+    return out
   }
-  /** All descendant text nodes, in document order. */
-  textNodes() {
-    const found = []
+  *[Symbol.iterator]() { yield* this.childNodes }
+}
+
+/** A `Range` over this DOM: enough of the API for paintSafeRange. */
+class Range {
+  constructor(rangeDocument) {
+    this.rangeDocument = rangeDocument
+    this.startContainer = null
+    this.startOffset = 0
+    this.endContainer = null
+    this.endOffset = 0
+  }
+  setStart(node, offset) { this.startContainer = node; this.startOffset = offset }
+  setEnd(node, offset) { this.endContainer = node; this.endOffset = offset }
+  /** The text the range covers, for assertions. */
+  get covered() {
+    const nodes = []
     const walk = (node) => {
-      for (const child of node.childNodes) {
-        if (child.nodeType === 3) found.push(child)
-        else walk(child)
-      }
+      if (node.nodeType === 3) { nodes.push(node); return }
+      for (const child of node.childNodes) walk(child)
     }
-    walk(this)
-    return found
-  }
-  cloneNode(deep) {
-    const copy = new Element(this.tagName.toLowerCase(), { ...this.attributes })
-    copy.dataset = { ...this.dataset }
-    if (deep) for (const child of this.childNodes) copy.append(child.cloneNode(true))
-    return copy
-  }
-  remove() {
-    const parent = this.parentElement
-    if (parent === null) return
-    const at = parent.childNodes.indexOf(this)
-    if (at >= 0) parent.childNodes.splice(at, 1)
-    this.parentElement = null
+    walk(this.rangeDocument.root)
+    const first = nodes.indexOf(this.startContainer)
+    const last = nodes.indexOf(this.endContainer)
+    if (first < 0 || last < 0) return ''
+    let text = ''
+    for (let index = first; index <= last; index += 1) {
+      const node = nodes[index]
+      const from = index === first ? this.startOffset : 0
+      const to = index === last ? this.endOffset : node.data.length
+      text += node.data.slice(from, to)
+    }
+    return text
   }
 }
 
-function makeDocument() {
-  const doc = {
-    createTreeWalker(root, _what) {
-      const nodes = root.textNodes()
+/** A document stand-in exposing createRange, createTreeWalker and the root. */
+function makeDocument(root) {
+  return {
+    root,
+    createRange: () => new Range({ root }),
+    createTreeWalker(node) {
+      const texts = []
+      const walk = (current) => {
+        for (const child of current.childNodes) {
+          if (child.nodeType === 3) { texts.push(child); continue }
+          walk(child)
+        }
+      }
+      walk(node)
       let index = -1
-      return {
-        nextNode() {
-          index += 1
-          return index < nodes.length ? nodes[index] : null
-        },
-      }
-    },
-    createRange() {
-      const range = {
-        startContainer: null, startOffset: 0, endContainer: null, endOffset: 0,
-        setStart(node, offset) { this.startContainer = node; this.startOffset = offset },
-        setEnd(node, offset) { this.endContainer = node; this.endOffset = offset },
-        /**
-         * Mirror Range.comparePoint: -1 when the point precedes the range,
-         * 0 when inside it, 1 when after it.
-         */
-        comparePoint(node, offset) {
-          const root = (() => {
-            let walk = this.startContainer
-            while (walk.parentElement !== null) walk = walk.parentElement
-            return walk
-          })()
-          const all = root.textNodes()
-          const at = all.indexOf(node)
-          const startAt = all.indexOf(this.startContainer)
-          const endAt = all.indexOf(this.endContainer)
-          if (at < 0 || startAt < 0 || endAt < 0) return 0
-          if (at < startAt) return -1
-          if (at > endAt) return 1
-          if (at === startAt && offset < this.startOffset) return -1
-          if (at === endAt && offset > this.endOffset) return 1
-          return 0
-        },
-        /** The text the range covers, walking text nodes in document order. */
-        toString() {
-          const root = (() => {
-            let node = this.startContainer
-            while (node.parentElement !== null) node = node.parentElement
-            return node
-          })()
-          const all = root.textNodes()
-          const startAt = all.indexOf(this.startContainer)
-          const endAt = all.indexOf(this.endContainer)
-          if (startAt < 0 || endAt < 0) return ''
-          let out = ''
-          for (let index = startAt; index <= endAt; index += 1) {
-            const text = all[index].data
-            const from = index === startAt ? this.startOffset : 0
-            const to = index === endAt ? this.endOffset : text.length
-            out += text.slice(from, to)
-          }
-          return out
-        },
-      }
-      return range
+      return { nextNode() { index += 1; return index < texts.length ? texts[index] : null } }
     },
   }
-  return doc
 }
 
-/**
- * Extract one top-level `function name(...) { ... }` body from client.js so the test
- * exercises the shipped implementation rather than a copy of it.
- */
-function bodyOf(name) {
-  // Modules now carry real \`export\` keywords, and indentation depends on which module a
-  // function lives in. Match either form and start at the \`function\` keyword.
-  const patterns = [
-    `    export function ${name}(`,
-    `    function ${name}(`,
-    `export function ${name}(`,
-    `function ${name}(`,
-  ]
-  let at = -1
-  for (const pattern of patterns) {
-    const found = source.indexOf(pattern)
-    if (found >= 0) { at = source.indexOf(`function ${name}(`, found); break }
-  }
-  if (at < 0) throw new Error(`function ${name} not found`)
-  let depth = 0
-  let opened = false
-  for (let index = at; index < source.length; index += 1) {
-    const char = source[index]
-    if (char === '{') { depth += 1; opened = true }
-    else if (char === '}') {
-      depth -= 1
-      if (opened && depth === 0) return source.slice(at, index + 1)
-    }
-  }
-  throw new Error(`function ${name} is unterminated`)
-}
-
-// Helpers the extracted functions need, also taken from the real file where they are
-// small enough to be worth reusing verbatim.
-const BLOCK_SELECTOR = /const BLOCK_SELECTOR = '([^']*)'/.exec(source)?.[1] ?? 'p'
-const EXTRA_SPACE = /const EXTRA_SPACE = '([^']*)'/.exec(source)?.[1] ?? ''
-const ZERO_WIDTH = /const ZERO_WIDTH = '([^']*)'/.exec(source)?.[1] ?? ''
-
-function buildScope(document) {
-  const scope = {
-    document,
-    NodeFilter: { SHOW_TEXT: 4 },
-    BLOCK_SELECTOR,
-    EXTRA_SPACE,
-    ZERO_WIDTH,
-    elementOf: (node) => (node === null || node === undefined
-      ? null
-      : (node.nodeType === 1 ? node : node.parentElement)),
-    squishText: (text) => String(text).replace(/\s+/g, ' ').trim(),
-    sameText: (left, right) => String(left).replace(/\s+/g, ' ').trim()
-      === String(right).replace(/\s+/g, ' ').trim(),
-    textOf: (host) => {
-      if (host === null || host === undefined) return ''
-      const ignored = host.querySelectorAll('[data-qc-ignore]')
-      if (ignored.length === 0) return host.textContent ?? ''
-      const copy = host.cloneNode(true)
-      for (const node of copy.querySelectorAll('[data-qc-ignore]')) node.remove()
-      return copy.textContent ?? ''
-    },
-  }
-  const names = ['rangeAt', 'paintSafeRange', 'locateText']
-  const factory = new Function(
-    'scope',
-    `with (scope) {
-       ${names.map((name) => bodyOf(name).replace('} catch {\n        return range\n      }', '} catch (error) {\n        scope.__lastError = error\n        return range\n      }')).join('\n')}
-       return { ${names.join(', ')} }
-     }`,
-  )
-  return { ...scope, ...factory(scope) }
-}
-
-// ── Build the scenario: prose + bubble + comment panel, all in one paragraph ──
+/** The scenario: prose + bubble + comment panel, all inside one paragraph. */
 function buildParagraph() {
   const prose1 = new TextNode('气泡现在对齐到段落顶部。')
   const bubble = new Element('button', { 'data-qc-ignore': '1', 'data-qc-number': '1' })
@@ -273,121 +162,391 @@ function buildParagraph() {
   return { row, paragraph, prose1, prose2, bubble, panel }
 }
 
-const document = makeDocument()
-const scope = buildScope(document)
+// ── Install a controllable clock and a highlight registry ─────────────────
+/**
+ * Replace the globals the highlighter reads, for one test.
+ *
+ * The clock is a queue of pending timers rather than a real one: a case then decides exactly
+ * when each deferred callback fires, which is the only way to test an ordering between them.
+ *
+ * @param root - the document root for range construction.
+ * @param run - the body.
+ * @returns whatever `run` returns.
+ */
+function withEnvironment(root, run) {
+  const previous = {
+    document: globalThis.document,
+    window: globalThis.window,
+    Highlight: globalThis.Highlight,
+    setTimeout: globalThis.setTimeout,
+    Date: globalThis.Date,
+    NodeFilter: globalThis.NodeFilter,
+  }
 
-// ── 1. rangeAt must not count plugin text ────────────────────────────────
-{
-  const { row, paragraph, prose1, prose2 } = buildParagraph()
-  // Quote exactly the prose, which is what a real annotation stores.
-  const quote = prose1.data + prose2.data
-  const range = scope.rangeAt(row, 0, quote.length)
-  check('rangeAt builds a range at all', range !== null, 'returned null')
-  const covered = range === null ? '' : range.toString()
-  check('the range covers exactly the annotated prose',
-    covered === quote,
-    `covered ${JSON.stringify(covered.slice(0, 60))}, expected the prose only`)
-  check('the range does not start or end inside the panel',
-    range !== null
-      && range.startContainer.parentElement?.closest('[data-qc-ignore]') == null
-      && range.endContainer.parentElement?.closest('[data-qc-ignore]') == null,
-    'an endpoint sits inside plugin chrome')
-  check('the paragraph really does contain plugin chrome',
-    paragraph.querySelectorAll('[data-qc-ignore]').length === 2,
-    'the fixture is not exercising the interesting case')
+  const fakeDocument = makeDocument(root)
+  /** name -> Highlight stand-in. */
+  const registry = new Map()
+  /** Pending timers: `{ at, fn }`, ordered by insertion. */
+  const timers = []
+  let clock = 0
+  let nextTimerId = 1
+
+  class FakeHighlight {
+    constructor(range) {
+      this.range = range
+      this.id = `h${nextTimerId++}`
+    }
+    get covered() { return this.range.covered }
+  }
+
+  globalThis.document = fakeDocument
+  globalThis.NodeFilter = { SHOW_TEXT: 4 }
+  globalThis.Highlight = FakeHighlight
+  globalThis.window = {
+    CSS: { highlights: registry },
+    Highlight: FakeHighlight,
+  }
+  let timerId = 1
+  globalThis.setTimeout = (fn, delay = 0) => {
+    const id = timerId++
+    timers.push({ id, at: clock + delay, fn })
+    return id
+  }
+  // A controllable Date.now: `advance` moves both the clock and fires due timers.
+  const RealDate = previous.Date
+  globalThis.Date = class extends RealDate {
+    static now() { return clock }
+  }
+
+  const environment = {
+    registry,
+    fakeDocument,
+    get clock() { return clock },
+    /** Move the clock forward, firing every timer that is now due, in order. */
+    advance(by) {
+      const target = clock + by
+      for (;;) {
+        const due = timers.filter((timer) => timer.at <= target).sort((a, b) => a.at - b.at)[0]
+        if (due === undefined) break
+        timers.splice(timers.indexOf(due), 1)
+        clock = Math.max(clock, due.at)
+        due.fn()
+      }
+      clock = target
+    },
+    /** Fire every pending timer, regardless of its deadline. */
+    flush() {
+      while (timers.length > 0) environment.advance(Math.max(0, ...timers.map((t) => t.at - clock)))
+    },
+    /** How many timers are still pending. */
+    get pending() { return timers.length },
+    /** What the registry currently holds. */
+    get current() { return registry.get(FLASH_HIGHLIGHT) ?? null },
+  }
+
+  try {
+    return run(environment)
+  } finally {
+    globalThis.document = previous.document
+    globalThis.window = previous.window
+    globalThis.Highlight = previous.Highlight
+    globalThis.setTimeout = previous.setTimeout
+    globalThis.Date = previous.Date
+    globalThis.NodeFilter = previous.NodeFilter
+  }
 }
 
-// ── 2. paintSafeRange must not extend a clean range ─────────────────────
-{
-  const { row, prose1 } = buildParagraph()
-  const range = scope.rangeAt(row, 0, prose1.data.length)
-  const safe = scope.paintSafeRange(range)
-  check('a clean range is returned unchanged',
-    safe === range,
-    'a range ending on prose was rebuilt, which can only widen it')
+/** A range over the plain prose of a paragraph. */
+function proseRange(document, parts) {
+  const range = document.createRange()
+  range.setStart(parts.prose1, 0)
+  range.setEnd(parts.prose2, parts.prose2.data.length)
+  return range
 }
 
-// ── 3. The panel must sit OUTSIDE the annotated paragraph ───────────────
-// This is the structural guarantee. Filtering the range could never be enough:
-// CSS.highlights paints every text node a range covers, and a range that ends at the
-// paragraph's end covers everything mounted inside it. Only being a sibling of the
-// paragraph puts the panel outside the range.
+// ── 1. Scope: plugin chrome is excluded ───────────────────────────────────
 {
-  const mountLine = /\}\),\s*(anchored === null \? document\.body : anchored\.scroller)\)/.exec(source)
-  check('the comment panel is mounted outside the paragraph',
-    mountLine !== null && mountLine[1] === 'anchored === null ? document.body : anchored.scroller',
-    'the panel is mounted inside the paragraph, inside the highlight range')
+  const parts = buildParagraph()
+  withEnvironment(parts.row, (environment) => {
+    const range = proseRange(environment.fakeDocument, parts)
+    const safe = paintSafeRange(range)
+    const expected = parts.prose1.data + parts.prose2.data
+    check('a clean prose range keeps its exact coverage',
+      safe.covered === expected, JSON.stringify(safe.covered))
+    check('a clean prose range is returned untouched', safe === range,
+      'the range was rebuilt when it did not need to be')
+  })
 }
 
-// ── 3b. Every highlight paint site sanitises its range ───────────────────
-// The first fix only covered the two immediate paints; the delayed re-resolve paths
-// kept using the raw range, so the marker still landed on the panel a second time.
 {
-  const sites = [...source.matchAll(/new Highlight\(([^)]*)\)/g)].map((m) => m[1])
-  check('every highlight is built from a sanitised range',
-    sites.length > 0 && sites.every((arg) => arg.includes('paintSafeRange')),
-    'a highlight is built from a raw range: ' + JSON.stringify(sites))
-  check('the delayed re-resolve paths are covered too',
-    !/new Highlight\(live\)/.test(source),
-    'a re-resolved range bypasses sanitisation')
+  // The reported bug: a selection that ends inside the bubble's own text, which is exactly how a
+  // user drags across the marker. The end container is a TEXT node inside data-qc-ignore.
+  const parts = buildParagraph()
+  withEnvironment(parts.row, (environment) => {
+    const range = environment.fakeDocument.createRange()
+    range.setStart(parts.prose1, 0)
+    // The bubble holds an ordinal text node, like the real marker does.
+    parts.bubble.append(new TextNode('1'))
+    const bubbleText = parts.bubble.childNodes[0]
+    range.setEnd(bubbleText, 1)
+    const safe = paintSafeRange(range)
+    check('a range ending past the prose drops the panel text',
+      !safe.covered.includes('评价') && !safe.covered.includes('删除'),
+      JSON.stringify(safe.covered))
+    // The range stops at the last prose node BEFORE the chrome it ended in. prose2 sits after
+    // the bubble, so it is excluded — that is the shipped rule, and it is what keeps a selection
+    // dragged onto the marker from sweeping up everything that follows it.
+    check('the sanitised range keeps the prose before the marker',
+      safe.covered.includes(parts.prose1.data), JSON.stringify(safe.covered.slice(0, 40)))
+    check('the sanitised range stops before the following prose',
+      !safe.covered.includes(parts.prose2.data), JSON.stringify(safe.covered.slice(0, 40)))
+    check('the sanitised range drops the bubble ordinal',
+      !safe.covered.includes('1'), JSON.stringify(safe.covered))
+  })
 }
 
-// ── 4. locateText ignores chrome ────────────────────────────────────────
 {
-  const { paragraph, prose1 } = buildParagraph()
-  const found = scope.locateText(paragraph, prose1.data)
-  check('locateText finds prose that precedes the panel',
-    found !== null && found.offset === 0,
-    `offset was ${found === null ? 'null' : found.offset}`)
-  const notFound = scope.locateText(paragraph, '保存')
-  check('locateText cannot match the panel button label',
-    notFound === null,
-    'the panel label is reachable through the text search')
+  // A range starting inside the panel begins at the first prose node instead.
+  const parts = buildParagraph()
+  withEnvironment(parts.row, (environment) => {
+    const panelText = parts.panel.childNodes[1].childNodes[0]
+    const range = environment.fakeDocument.createRange()
+    range.setStart(panelText, 2)
+    range.setEnd(parts.prose2, 4)
+    const safe = paintSafeRange(range)
+    check('a range starting in chrome begins at the prose',
+      !safe.covered.includes('评价'), JSON.stringify(safe.covered))
+  })
 }
 
-// ── 5. Opening the comment box lights the passage immediately ────────────
-// The popover partially covers the transcript, so without a highlight the user cannot
-// tell which passage the comment belongs to. The light must come ON when the box opens,
-// not only after saving.
+// ── 2. Identity: a replaced highlight is not touched by the old timer ─────
 {
-  const onAnnotateBody = /onAnnotate: \(\) => \{([\s\S]*?)\n              \},/.exec(source)?.[1] ?? ''
-  check('opening the comment box lights the selection at once',
-    /holdRange\(range/.test(onAnnotateBody),
-    'the passage stays unlit while the user writes the comment')
-  check('the lit range is the selection being annotated',
-    /resolveAnchor\(flow, source\.anchor\)/.test(onAnnotateBody),
-    'the highlight is not resolved from the annotated anchor')
-  check('the highlight survives re-render while typing',
-    /resolveAnchor\(live, source\.anchor\)/.test(onAnnotateBody),
-    'the highlight is dropped when the transcript re-renders')
-  // Which dismissals count as a cancel: everything except Enter and the confirm button.
-  // Enter and the button commit; Escape, the cancel button and any outside click must
-  // all go through the same path, and that path must clear the highlight.
-  check('a single cancel path clears the highlight',
-    /const cancelCompose = React\.useCallback\(\(\) => \{\s*\n\s*clearFlashRange\(\)/.test(source),
-    'cancelling does not clear the highlight')
-  check('the cancel button uses that path',
-    /onCancel: cancelCompose,/.test(source),
-    'the cancel button has its own path that can drift from the others')
-  // Scoped to the popover itself: BubblePanel has an equivalent listener, so an
-  // unscoped search would pass on the panel's code rather than the popover's.
-  const popoverSource = (() => {
-    const start = source.indexOf('function ComposerPopover')
-    if (start < 0) return ''
-    const after = source.indexOf('function ChipCards', start)
-    return source.slice(start, after < 0 ? undefined : after)
-  })()
-  check('a click outside the comment box cancels',
-    /addEventListener\('mousedown', onDown, true\)/.test(popoverSource)
-      && /ref\.current\.contains\(event\.target\)\) return/.test(popoverSource)
-      && /onCancel\(\)/.test(popoverSource),
-    'clicking elsewhere leaves the box open and the passage lit')
-  check('Escape cancels',
-    /event\.key === 'Escape'\) onCancel\(\)/.test(source),
-    'Escape does not dismiss the comment box')
+  const first = buildParagraph()
+  const second = buildParagraph()
+  withEnvironment(first.row, (environment) => {
+    const highlighter = createHighlighter()
+    highlighter.flash(proseRange(environment.fakeDocument, first), 1000)
+    const firstHighlight = environment.current
+    check('a flash installs a highlight', firstHighlight !== null,
+      'nothing was painted')
+    check('the registry name matches the stylesheet',
+      FLASH_HIGHLIGHT === 'quote-chat-flash', FLASH_HIGHLIGHT)
+
+    // A second flash replaces the first under the same name.
+    environment.advance(10)
+    highlighter.flash(proseRange(environment.fakeDocument, second), 1000)
+    const secondHighlight = environment.current
+    check('a second flash replaces the first', secondHighlight !== firstHighlight,
+      'the registry still holds the first highlight')
+
+    // Advance past the FIRST deadline (t=1000) but not the second (t=1010). Landing exactly on
+    // 1010 would expire the second flash on its own schedule and prove nothing.
+    environment.advance(995)
+    check('the first flash\'s expiry does not clear the second',
+      environment.current === secondHighlight, String(environment.current?.id))
+  })
 }
 
-// ── Report ──────────────────────────────────────────────────────────────
+{
+  // The same guard on the re-resolve path: a replaced highlight's stale range must not come back.
+  const first = buildParagraph()
+  const second = buildParagraph()
+  withEnvironment(first.row, (environment) => {
+    const highlighter = createHighlighter()
+    let firstResolveCalls = 0
+    highlighter.flash(
+      proseRange(environment.fakeDocument, first),
+      5000,
+      () => { firstResolveCalls += 1; return proseRange(environment.fakeDocument, first) },
+    )
+    const firstHighlight = environment.current
+    environment.advance(10)
+    highlighter.flash(proseRange(environment.fakeDocument, second), 5000)
+    const secondHighlight = environment.current
+
+    // The first flash's re-resolve is due at 90ms. It must not run at all once replaced.
+    environment.advance(90)
+    check('a replaced flash never re-resolves', firstResolveCalls === 0,
+      `resolve ran ${firstResolveCalls} times`)
+    check('the replacement is still painted', environment.current === secondHighlight,
+      String(environment.current?.id))
+    check('the replaced highlight is gone from the registry',
+      environment.current !== firstHighlight, 'the stale highlight came back')
+  })
+}
+
+// ── 3. Clearing cancels the pending re-resolve ───────────────────────────
+{
+  const parts = buildParagraph()
+  withEnvironment(parts.row, (environment) => {
+    const highlighter = createHighlighter()
+    let resolveCalls = 0
+    highlighter.flash(proseRange(environment.fakeDocument, parts), 5000,
+      () => { resolveCalls += 1; return proseRange(environment.fakeDocument, parts) })
+    check('the flash is painted before clearing', environment.current !== null)
+
+    highlighter.clear()
+    check('clearing removes the highlight', environment.current === null,
+      String(environment.current?.id))
+
+    environment.advance(200)
+    check('a cleared flash does not repaint', environment.current === null,
+      'the pending re-resolve painted again')
+    check('a cleared flash does not re-resolve', resolveCalls === 0,
+      `resolve ran ${resolveCalls} times`)
+  })
+}
+
+// ── 4. A hold survives an older flash's timer ────────────────────────────
+{
+  const parts = buildParagraph()
+  withEnvironment(parts.row, (environment) => {
+    const highlighter = createHighlighter()
+    highlighter.flash(proseRange(environment.fakeDocument, parts), 1000)
+    environment.advance(100)
+    // The editor opens: a hold takes over the registry entry.
+    highlighter.hold(proseRange(environment.fakeDocument, parts))
+    const heldHighlight = environment.current
+
+    environment.advance(1000)
+    check('a hold is not cleared by an older flash\'s expiry',
+      environment.current === heldHighlight, String(environment.current?.id))
+    check('the hold is still painted after the flash would have expired',
+      environment.current !== null, 'the passage went dark')
+  })
+}
+
+{
+  // And the hold's own re-resolve respects a later replacement.
+  const parts = buildParagraph()
+  withEnvironment(parts.row, (environment) => {
+    const highlighter = createHighlighter()
+    let holdResolveCalls = 0
+    highlighter.hold(proseRange(environment.fakeDocument, parts),
+      () => { holdResolveCalls += 1; return proseRange(environment.fakeDocument, parts) })
+    environment.advance(10)
+    highlighter.flash(proseRange(environment.fakeDocument, parts), 1000)
+    const flashHighlight = environment.current
+    environment.advance(90)
+    check('a hold replaced by a flash does not re-resolve', holdResolveCalls === 0,
+      `resolve ran ${holdResolveCalls} times`)
+    check('the flash is what remains', environment.current === flashHighlight,
+      String(environment.current?.id))
+  })
+}
+
+// ── 5. Timing: the deadline does not restart on re-resolve ───────────────
+{
+  const parts = buildParagraph()
+  withEnvironment(parts.row, (environment) => {
+    const highlighter = createHighlighter()
+    let resolveCalls = 0
+    highlighter.flash(proseRange(environment.fakeDocument, parts), 1000,
+      () => { resolveCalls += 1; return proseRange(environment.fakeDocument, parts) })
+
+    // Re-resolve fires at 90ms.
+    environment.advance(90)
+    check('the re-resolve runs at 90ms', resolveCalls === 1, String(resolveCalls))
+    check('the re-resolve keeps a highlight painted', environment.current !== null,
+      'the re-resolve cleared the highlight')
+
+    // Expiry must still be measured from paint time, so 1000ms total clears it. If the deadline
+    // restarted at the re-resolve, the highlight would still be up at 910ms past the resolve.
+    environment.advance(910)
+    check('the highlight expires 1000ms after it was painted', environment.current === null,
+      'the deadline restarted after the re-resolve')
+  })
+}
+
+{
+  // A re-resolve that returns null keeps the original range rather than clearing.
+  const parts = buildParagraph()
+  withEnvironment(parts.row, (environment) => {
+    const highlighter = createHighlighter()
+    highlighter.flash(proseRange(environment.fakeDocument, parts), 5000, () => null)
+    const before = environment.current
+    environment.advance(90)
+    check('a failed re-resolve keeps the original highlight',
+      environment.current === before, 'the highlight was replaced or dropped')
+    environment.advance(5000)
+    check('a failed re-resolve still expires on time', environment.current === null,
+      'the highlight outlived its deadline')
+  })
+}
+
+// ── 6. Capability detection ──────────────────────────────────────────────
+{
+  const parts = buildParagraph()
+  withEnvironment(parts.row, (environment) => {
+    check('capability is detected with a registry present', canPaintHighlight() === true,
+      'a supported environment reported no support')
+    const highlighter = createHighlighter()
+    highlighter.flash(proseRange(environment.fakeDocument, parts), 1000)
+    check('a supported environment paints', environment.current !== null)
+  })
+}
+
+{
+  // No registry: every operation must be a silent no-op, not a throw.
+  const parts = buildParagraph()
+  const previousWindow = globalThis.window
+  const previousDocument = globalThis.document
+  globalThis.document = makeDocument(parts.row)
+  globalThis.window = {}
+  globalThis.NodeFilter = { SHOW_TEXT: 4 }
+  try {
+    check('capability is false without a registry', canPaintHighlight() === false,
+      'an unsupported environment reported support')
+    const highlighter = createHighlighter()
+    let threw = null
+    try {
+      highlighter.flash(proseRange(globalThis.document, parts), 1000)
+      highlighter.hold(proseRange(globalThis.document, parts))
+      highlighter.clear()
+    } catch (error) {
+      threw = error
+    }
+    check('unsupported operation is a silent no-op', threw === null, String(threw))
+  } finally {
+    globalThis.window = previousWindow
+    globalThis.document = previousDocument
+    globalThis.NodeFilter = undefined
+  }
+}
+
+{
+  // paintSafeRange itself never throws, even on a range it cannot reason about.
+  const parts = buildParagraph()
+  withEnvironment(parts.row, (environment) => {
+    const broken = { startContainer: null, endContainer: null, startOffset: 0, endOffset: 0 }
+    let threw = null
+    let result = null
+    try {
+      result = paintSafeRange(broken)
+    } catch (error) {
+      threw = error
+    }
+    check('paintSafeRange tolerates a malformed range', threw === null && result === broken,
+      String(threw))
+  })
+}
+
+// ── 7. Default duration ──────────────────────────────────────────────────
+{
+  const parts = buildParagraph()
+  withEnvironment(parts.row, (environment) => {
+    const highlighter = createHighlighter()
+    highlighter.flash(proseRange(environment.fakeDocument, parts))
+    environment.advance(FLASH_MS - 1)
+    check('the default duration keeps the highlight at FLASH_MS - 1',
+      environment.current !== null, 'it expired early')
+    environment.advance(2)
+    check('the default duration expires at FLASH_MS', environment.current === null,
+      'it outlived FLASH_MS')
+    check('the default duration is 2600ms', FLASH_MS === 2600, String(FLASH_MS))
+  })
+}
+
 let failed = 0
 for (const item of cases) {
   if (!item.ok) failed += 1

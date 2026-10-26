@@ -14,6 +14,8 @@ import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const source = await readFile(join(here, '..', 'src', 'index.js'), 'utf8')
+// The painter moved to its own module.
+const highlightSource = await readFile(join(here, '..', 'src', 'highlight.js'), 'utf8')
 
 const cases = []
 const check = (name, ok, detail) => cases.push({ name, ok, detail })
@@ -53,7 +55,7 @@ check('card is pinned to the chip rectangle',
 
 // The jump flash must ride the highlight registry, not positioned boxes.
 check('flash uses CSS.highlights',
-  /CSS\.highlights\.set\(/.test(source), 'no CSS.highlights.set call')
+  /CSS\.highlights\.set\(/.test(highlightSource), 'no CSS.highlights.set call')
 check('no positioned flash overlay remains',
   /className: 'qc-flash'/.test(source) === false, 'a positioned .qc-flash overlay is back')
 

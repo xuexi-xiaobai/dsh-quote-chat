@@ -49,8 +49,6 @@ const BUBBLE_PANEL_HEIGHT = 200
 /** Clearance so the comment panel never overlaps the gutter bubble, in px. */
 const BUBBLE_CLEARANCE = 30
 
-/** How long the jump-back highlight stays, in ms. */
-const FLASH_MS = 2600
 
 /**
  * Grace period before a hover card closes, in ms.
@@ -89,6 +87,7 @@ import { createDraftBridge } from './chip-bridge.js'
 import { createQuoteHandoff } from './quote-handoff.js'
 import { askSideChat } from './side-chat-transport.js'
 import { createLayout } from './layout.js'
+import { createHighlighter, canPaintHighlight, FLASH_HIGHLIGHT, FLASH_MS } from './highlight.js'
 import { elementOf, cssEscape } from './dom.js'
 import {
   rangeAt, captureAnchor, resolveAnchor, locateText, textOf, nodePath, nodeAtPath,
@@ -767,6 +766,23 @@ import {
 
     /** The element whose width defines the text column. */
     const columnElement = (flow) => layout.columnElement(flow)
+
+    /**
+     * Range highlights: the transient jump glow and the held editor glow.
+     *
+     * One highlighter per Host factory call, so two instances never clear each other's paint.
+     * The registry name, the timings and the identity guards live in highlight.js.
+     */
+    const highlighter = createHighlighter()
+
+    /** Paint the transient glow on a range, then clear it. */
+    const flashRange = (range, ms = FLASH_MS, resolve = null) => highlighter.flash(range, ms, resolve)
+
+    /** Clear any highlight currently painted. */
+    const clearFlashRange = () => highlighter.clear()
+
+    /** Paint a highlight that stays until cleared. */
+    const holdRange = (range, resolve = null) => highlighter.hold(range, resolve)
 
     // #region annotation store
 
@@ -2268,34 +2284,6 @@ function escapeHtml(text) {
 
     // #endregion
 
-    /**
-     * The highlight registry name for the jump flash.
-     *
-     * `window.CSS.highlights` binds a painted decoration to a live `Range`. That is the
-     * whole reason it is used here instead of portal divs: the browser re-projects
-     * the range onto the page on every scroll and reflow, so the glow cannot
-     * drift away from the words it belongs to. An absolutely-positioned overlay
-     * measured once is a photograph of a position, and the screenshot showing a
-     * glow stuck over the composer while the passage was off-screen is exactly
-     * what a stale photograph looks like.
-     */
-    const FLASH_HIGHLIGHT = 'quote-chat-flash'
-
-    /**
-     * Whether this engine can paint range highlights.
-     * @returns true when `window.CSS.highlights` is available.
-     */
-    function canPaintHighlight() {
-      // Read the global off `window` rather than through the bare identifier: a
-      // module-scope binding of the same name would shadow it, and a shadowed
-      // global is exactly how the flash came to never paint.
-      const registry = typeof window === 'undefined' ? undefined : window.CSS
-      return typeof registry === 'object'
-        && registry !== null
-        && typeof registry.highlights === 'object'
-        && registry.highlights !== null
-        && typeof window.Highlight === 'function'
-    }
 
     /**
      * Paint the flash on a resolved range and clear it after a moment.
@@ -2310,167 +2298,6 @@ function escapeHtml(text) {
      * yields a range over the nodes that actually exist now.
      * @param range - the passage to highlight.
      * @param ms - how long the flash lasts.
-     * @param resolve - optional re-resolution, called once after paint settles.
-     */
-    /**
-     * A copy of a range that stops before any plugin-owned node.
-     *
-     * The bubble is mounted INSIDE the paragraph it marks, so a range that ends at the
-     * paragraph's end also covers the bubble's ordinal - and CSS.highlights paints
-     * every character a range covers, including that digit. Shrinking the end back to
-     * the paragraph's own text keeps the marker out of the fluorescent paint.
-     *
-     * @param range - the range to sanitise.
-     * @returns a range covering the same prose, minus plugin nodes.
-     */
-    function paintSafeRange(range) {
-      try {
-        const endElement = elementOf(range.endContainer)
-        // If the range already ends on prose, leave it exactly alone: extending the end
-        // to the block's last text node (the previous version) made the range LONGER and
-        // painted over whatever sat beside the passage.
-        if (endElement === null || endElement.closest('[data-qc-ignore]') === null) {
-          const startElement = elementOf(range.startContainer)
-          if (startElement === null || startElement.closest('[data-qc-ignore]') === null) {
-            return range
-          }
-        }
-        // The range touches plugin chrome. Rebuild it over prose only, preserving the
-        // original end offset when that offset is in prose.
-        const box = (endElement?.closest(BLOCK_SELECTOR)
-          ?? elementOf(range.startContainer)?.closest(BLOCK_SELECTOR))
-        if (box === null || box === undefined) return range
-        const clean = document.createRange()
-        // Prose text nodes of the block, in document order, skipping plugin subtrees.
-        const texts = []
-        const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT)
-        for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
-          if (node.parentElement?.closest('[data-qc-ignore]') != null) continue
-          texts.push(node)
-        }
-        if (texts.length === 0) return range
-        const startIn = texts.findIndex((node) => node === range.startContainer)
-        const endIn = texts.findIndex((node) => node === range.endContainer)
-        // A start that sat in chrome: begin at the first prose node instead.
-        const startNode = startIn >= 0 ? texts[startIn] : texts[0]
-        const startOffset = startIn >= 0 ? range.startOffset : 0
-        let endNode
-        let endOffset
-        if (endIn >= 0) {
-          endNode = texts[endIn]
-          endOffset = range.endOffset
-        } else {
-          // The end sat inside a plugin node. Stop at the LAST prose node that comes
-          // BEFORE the range's end point - using the block's final text node would
-          // sweep up any chrome that follows the passage, which is exactly the bug this
-          // guard exists to prevent.
-          // Because the end sits inside chrome, the range's end point is inside a
-          // subtree that is excluded from `texts`. The correct stop is the last PROSE
-          // node that appears before the excluded node in document order - comparing
-          // against comparePoint() cannot work here, since every prose node is inside
-          // the range's span and would report "inside".
-          const chromeNode = range.endContainer
-          const proseNodesBefore = []
-          const docWalker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT)
-          for (let node = docWalker.nextNode(); node !== null; node = docWalker.nextNode()) {
-            if (node === chromeNode) break
-            if (node.parentElement?.closest('[data-qc-ignore]') != null) continue
-            proseNodesBefore.push(node)
-          }
-          if (proseNodesBefore.length === 0) return range
-          endNode = proseNodesBefore[proseNodesBefore.length - 1]
-          endOffset = (endNode.textContent ?? '').length
-        }
-        // Guarantee a non-inverted range.
-        if (endNode === startNode && endOffset < startOffset) {
-          endOffset = startOffset
-        }
-        clean.setStart(startNode, startOffset)
-        clean.setEnd(endNode, endOffset)
-        return clean
-      } catch {
-        return range
-      }
-    }
-
-    function flashRange(range, ms = FLASH_MS, resolve = null) {
-      if (!canPaintHighlight()) return
-      try {
-        // Strip plugin-owned nodes: the bubble's ordinal must never be painted.
-        let highlight = new Highlight(paintSafeRange(range))
-        window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight)
-        const deadline = Date.now() + ms
-
-        /**
-         * Re-resolve once, shortly after the scroll settles, then expire.
-         *
-         * `scrollIntoView` only starts a scroll; the virtualiser then rebuilds the
-         * rows around it, unmounting the nodes the original range pointed at — a
-         * Highlight over dead nodes paints nothing, which is why the jump looked
-         * like it had no highlight at all. One re-resolve on the next frames picks
-         * up the live nodes. If re-resolution fails the original range is kept,
-         * since a stale range is still better than no highlight.
-         */
-        const settle = () => {
-          if (window.CSS.highlights.get(FLASH_HIGHLIGHT) !== highlight) return
-          if (resolve !== null) {
-            const live = resolve()
-            if (live !== null) {
-              highlight = new Highlight(paintSafeRange(live))
-              window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight)
-            }
-          }
-          setTimeout(() => {
-            if (window.CSS.highlights.get(FLASH_HIGHLIGHT) === highlight) {
-              window.CSS.highlights.delete(FLASH_HIGHLIGHT)
-            }
-          }, Math.max(0, deadline - Date.now()))
-        }
-        if (resolve === null) settle()
-        else setTimeout(settle, 90)
-      } catch (failure) {
-        console.error('[dsh-quote-chat] highlight failed:', failure)
-      }
-    }
-
-    /**
-     * Clear any flash currently painted.
-     */
-    function clearFlashRange() {
-      if (!canPaintHighlight()) return
-      window.CSS.highlights.delete(FLASH_HIGHLIGHT)
-    }
-
-    /**
-     * Paint a highlight that stays until it is cleared.
-     *
-     * Same registry as the jump flash, but with no timer: an editor is open for as
-     * long as the user needs, so the passage it refers to has to stay lit. It
-     * re-resolves once after the reveal settles for the same reason the flash
-     * does — the virtualiser replaces the nodes the first range pointed at — and
-     * then leaves the highlight alone.
-     * @param range - the passage to keep lit.
-     * @param resolve - re-resolution used once after the reveal settles.
-     */
-    function holdRange(range, resolve = null) {
-      if (!canPaintHighlight()) return
-      try {
-        let highlight = new Highlight(paintSafeRange(range))
-        window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight)
-        if (resolve === null) return
-        setTimeout(() => {
-          if (window.CSS.highlights.get(FLASH_HIGHLIGHT) !== highlight) return
-          const live = resolve()
-          if (live === null) return
-          highlight = new Highlight(paintSafeRange(live))
-          window.CSS.highlights.set(FLASH_HIGHLIGHT, highlight)
-        }, 90)
-      } catch (failure) {
-        console.error('[dsh-quote-chat] hold highlight failed:', failure)
-      }
-    }
-
-    /**
      * Resolve one annotation, scrolling the transcript until its row loads.
      *
      * This is the part that was missing. The transcript unmounts rows that
