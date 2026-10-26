@@ -95,6 +95,8 @@ import { tableHtml, escapeHtml } from './html.js'
 import { createPopovers } from './ui/popovers.js'
 import { createCards } from './ui/cards.js'
 import { createMarkerLayer } from './ui/markers.js'
+import { createSideChat } from './ui/side-chat.js'
+import { useDraft, useDraftOccurrences } from './ui/draft-hooks.js'
 import { elementOf, cssEscape } from './dom.js'
 import {
   rangeAt, captureAnchor, resolveAnchor, locateText, textOf, nodePath, nodeAtPath,
@@ -146,41 +148,6 @@ function installStyles(ctx) {
 // #endregion
 
 // #region generic helpers
-
-/**
- * Read the live composer draft through the standard `useInput` seat.
- * @param useInput - the slot's standard `useInput` prop, when present.
- * @param fallback - value reported when the seat is missing.
- * @returns the current draft text.
- */
-function useDraft(useInput, fallback = '') {
-  const inert = (selector) => selector({ draft: fallback })
-  return (typeof useInput === 'function' ? useInput : inert)(
-    (state) => state.draft,
-    (left, right) => left === right,
-  )
-}
-
-/**
- * Read the draft's reference occurrences (the inline chips) through the same
- * seat.
- *
- * `InputState.occurrences` is the editor's own projection of the chips in
- * the draft, in clipboard order. It is what lets a removal cut exactly the
- * right span instead of re-deriving one from text offsets the user may have
- * edited around.
- * @param useInput - the slot's standard `useInput` prop, when present.
- * @returns the occurrence list, empty when unavailable.
- */
-function useDraftOccurrences(useInput) {
-  const empty = React.useMemo(() => [], [])
-  const inert = () => empty
-  const picked = (typeof useInput === 'function' ? useInput : inert)(
-    (state) => state.occurrences,
-    (left, right) => left === right,
-  )
-  return Array.isArray(picked) ? picked : empty
-}
 
 /** Drop the visible selection so the toolbar does not immediately reopen. */
 function clearSelection() {
@@ -349,6 +316,32 @@ const { MarkerLayer } = createMarkerLayer({
   columnElement: (flow) => layout.columnElement(flow),
   anchorAboveBubble: (flow, box, size) => layout.anchorAboveBubble(flow, box, size),
 })
+
+/**
+ * The side chat.
+ *
+ * Created once during wiring. The tab body keeps its own message list and abort controller; the
+ * only thing it borrows from the instance is the quote handoff.
+ */
+/**
+ * The passage a freshly opened side chat should show.
+ *
+ * One handoff per plugin instance: navigation params win, and a pending quote is a 15-second
+ * fallback for a Host that opens the tab without carrying them. The rules live in
+ * quote-handoff.js.
+ */
+const quoteHandoff = createQuoteHandoff()
+
+/**
+ * The quote a freshly opened side chat should show.
+ * @param carried - the quote the tab's own navigation params carried.
+ * @returns the carried quote, a fresh pending one, or an empty string.
+ */
+function quoteForTab(carried) {
+  return quoteHandoff.forTab(carried)
+}
+
+const { SideChat, SideChatTab } = createSideChat({ quoteForTab })
 
 const { ActionPopup, ComposerPopover } = createPopovers({
   findFlow: layout.findFlow,
@@ -638,275 +631,6 @@ function diagnoseMiss(flow, annotation) {
 
 // #endregion
 
-// #region side chat panel
-
-/**
- * One side-chat thread: the quoted passage, the exchange so far, and the
- * composer. All state is local to this tab.
- * @param props - the quote, a translate function, and the composer actions.
- */
-function SideChat(props) {
-  const { quote, t, locale, inputActions, useInput } = props
-  const draft = useDraft(useInput)
-  const [messages, setMessages] = React.useState([])
-  const [question, setQuestion] = React.useState('')
-  const [busy, setBusy] = React.useState(false)
-  const [error, setError] = React.useState('')
-  const [expanded, setExpanded] = React.useState(false)
-  const [added, setAdded] = React.useState(false)
-  const abortRef = React.useRef(null)
-  const threadRef = React.useRef(null)
-
-  // A new passage is a new thread: the previous exchange was about a
-  // different quote, and mixing the two would make answers unattributable.
-  React.useEffect(() => {
-    abortRef.current?.abort()
-    abortRef.current = null
-    setMessages([])
-    setQuestion('')
-    setError('')
-    setBusy(false)
-    setAdded(false)
-  }, [quote])
-
-  React.useEffect(() => () => { abortRef.current?.abort() }, [])
-
-  const scrollToEnd = React.useCallback(() => {
-    const element = threadRef.current
-    if (element !== null) element.scrollTop = element.scrollHeight
-  }, [])
-
-  React.useEffect(scrollToEnd, [messages, scrollToEnd])
-
-  const submit = React.useCallback(async () => {
-    const text = question.trim()
-    if (text === '' || busy) return
-    const history = messages
-      .filter((message) => message.text.trim() !== '')
-      .map((message) => ({ role: message.role, text: message.text }))
-    // The Host wants completed Q/A pairs, so fold the finished exchange and
-    // send the new question separately.
-    const replayed = []
-    for (let index = 0; index < history.length; index += 1) {
-      const current = history[index]
-      const next = history[index + 1]
-      if (current.role === 'user' && next !== undefined && next.role === 'assistant') {
-        replayed.push({ question: current.text, answer: next.text })
-        index += 1
-      }
-    }
-    setMessages((current) => [...current, { role: 'user', text }, { role: 'assistant', text: '' }])
-    setQuestion('')
-    setError('')
-    setBusy(true)
-    const controller = new AbortController()
-    abortRef.current = controller
-    try {
-      await askSideChat({ quote, question: text, history: replayed, locale }, controller.signal, (delta) => {
-        setMessages((current) => {
-          const copy = current.slice()
-          const last = copy.length - 1
-          if (last < 0) return current
-          copy[last] = { role: 'assistant', text: copy[last].text + delta }
-          return copy
-        })
-      })
-    } catch (failure) {
-      if (controller.signal.aborted) {
-        setMessages((current) => {
-          const copy = current.slice()
-          const last = copy.length - 1
-          if (last >= 0 && copy[last].role === 'assistant' && copy[last].text === '') copy.pop()
-          return copy
-        })
-      } else {
-        setError(failure instanceof Error ? failure.message : String(failure))
-      }
-    } finally {
-      if (abortRef.current === controller) abortRef.current = null
-      setBusy(false)
-    }
-  }, [question, busy, messages, quote, locale])
-
-  const stop = React.useCallback(() => {
-    abortRef.current?.abort()
-    abortRef.current = null
-    setBusy(false)
-  }, [])
-
-  /** Append one passage to the current session's composer draft. */
-  const addToChat = React.useCallback((text) => {
-    const payload = text
-      .split(/\r?\n/)
-      .map((line) => (line === '' ? '>' : `> ${line}`))
-      .join('\n')
-    const current = typeof draft === 'string' ? draft : ''
-    if (typeof inputActions?.captureInsertion === 'function'
-      && typeof inputActions?.insertText === 'function') {
-      const span = inputActions.captureInsertion()
-      if (inputActions.insertText(`${payload}\n\n`, span) === true) {
-        setAdded(true)
-        return
-      }
-    }
-    if (typeof inputActions?.setDraft === 'function') {
-      inputActions.setDraft(current.trim() === '' ? payload : `${current}\n\n${payload}`)
-      setAdded(true)
-    }
-  }, [draft, inputActions])
-
-  React.useEffect(() => {
-    if (!added) return undefined
-    const timer = setTimeout(() => setAdded(false), 2200)
-    return () => clearTimeout(timer)
-  }, [added])
-
-  const lastAssistant = [...messages].reverse()
-    .find((message) => message.role === 'assistant' && message.text !== '')
-  const lastQuestion = [...messages].reverse().find((message) => message.role === 'user')
-
-  return h('div', { className: 'qc-side' },
-    h('div', { className: 'qc-side-head' },
-      h('span', { className: 'qc-side-head-title' }, t('side.title')),
-      messages.length > 0
-        ? h('button', {
-          type: 'button',
-          onClick: () => { setMessages([]); setError(''); setAdded(false) },
-        }, t('side.clear'))
-        : null,
-    ),
-    h('div', { className: 'qc-quote' },
-      h('div', { className: 'qc-quote-label' },
-        h('span', null, t('side.quote')),
-        quote.length > 260
-          ? h('button', {
-            type: 'button',
-            onClick: () => setExpanded((value) => !value),
-          }, expanded ? t('side.collapseQuote') : t('side.expandQuote'))
-          : null,
-      ),
-      h('div', { className: `qc-quote-body${expanded ? '' : ' qc-clamped'}` }, quote),
-    ),
-    h('div', { ref: threadRef, className: 'qc-thread' },
-      messages.length === 0
-        ? h('div', { className: 'qc-empty' }, t('side.empty'))
-        : messages.map((message, index) => h('div', {
-          key: `${index}-${message.role}`,
-          className: `qc-msg qc-msg-${message.role}`,
-        },
-        h('div', { className: 'qc-msg-role' },
-          message.role === 'user' ? t('side.you') : t('side.assistant')),
-        h('div', { className: 'qc-msg-body' },
-          message.text === '' && busy && index === messages.length - 1
-            ? h('span', { className: 'qc-dots' })
-            : message.text),
-        message.role === 'assistant' && message.text !== ''
-          ? h('div', { className: 'qc-msg-actions' },
-            h('button', {
-              type: 'button',
-              onClick: () => addToChat(message.text),
-            }, t('side.addToChat')))
-          : null,
-        )),
-      error === ''
-        ? null
-        : h('div', { className: 'qc-msg-error' }, `${t('side.errorPrefix')}${error}`),
-    ),
-    h('div', { className: 'qc-side-compose' },
-      h('textarea', {
-        value: question,
-        placeholder: t('side.placeholder'),
-        rows: 2,
-        onChange: (event) => setQuestion(event.target.value),
-        onKeyDown: (event) => {
-          if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent?.isComposing) {
-            event.preventDefault()
-            submit()
-          }
-        },
-      }),
-      h('div', { className: 'qc-side-compose-row' },
-        h('span', { className: 'qc-side-compose-hint' }, added ? t('side.added') : ''),
-        lastAssistant !== undefined
-          ? h('button', {
-            type: 'button',
-            className: 'qc-btn qc-btn-ghost',
-            onClick: () => addToChat(
-              `> ${lastQuestion === undefined ? '' : lastQuestion.text}\n\n${lastAssistant.text}`,
-            ),
-          }, t('side.addToChat'))
-          : null,
-        busy
-          ? h('button', { type: 'button', className: 'qc-btn qc-btn-ghost', onClick: stop }, t('side.stop'))
-          : h('button', {
-            type: 'button',
-            className: 'qc-btn',
-            disabled: question.trim() === '',
-            onClick: submit,
-          }, t('side.send')),
-      ),
-    ),
-  )
-}
-
-/**
- * The passage a freshly opened side chat should show.
- *
- * One handoff per plugin instance: navigation params win, and a pending quote is a
- * 15-second fallback for a Host that opens the tab without carrying them. The rules and
- * the window live in quote-handoff.js.
- */
-const quoteHandoff = createQuoteHandoff()
-
-/**
- * The quote a freshly opened side chat should show.
- * @param carried - the quote the tab's own navigation params carried.
- * @returns the carried quote, a fresh pending one, or an empty string.
- */
-function quoteForTab(carried) {
-  return quoteHandoff.forTab(carried)
-}
-
-/**
- * The tab body: read the quote the tab was opened with, then hand it to the
- * panel.
- *
- * `t` arrives from the framework (a registration with `locale` gets the
- * bound translate seat), `pluginCtx` from this registration's `inject`, and
- * `inputActions`/`useInput` are standard session props.
- * @param props - standard session props, the tab hook context, and the
- * injected seats.
- */
-function SideChatTab(props) {
-  const { useTabInfo, inputActions, useInput, t, pluginCtx } = props
-  const info = typeof useTabInfo === 'function' ? useTabInfo() : undefined
-  const quote = quoteForTab(info?.tab?.navigation?.params?.quote)
-  // A locale switch must reach the Host prompt language, so subscribe to the
-  // locale snapshot rather than reading it once.
-  const localeService = pluginCtx?.locale
-  const locale = React.useSyncExternalStore(
-    React.useCallback(
-      (listener) => (typeof localeService?.subscribe === 'function' ? localeService.subscribe(listener) : () => {}),
-      [localeService],
-    ),
-    React.useCallback(
-      () => (typeof localeService?.getLocale === 'function' ? localeService.getLocale().active : 'zh'),
-      [localeService],
-    ),
-    React.useCallback(() => 'zh', []),
-  )
-
-  if (quote === '') {
-    return h('div', { className: 'qc-side' },
-      h('div', { className: 'qc-quote' },
-        h('div', { className: 'qc-quote-body' }, t('side.noQuote')),
-      ),
-    )
-  }
-  return h(SideChat, { quote, t, locale: locale === 'en' ? 'en' : 'zh', inputActions, useInput })
-}
-
-// #endregion
 
 // #region table anchor
 

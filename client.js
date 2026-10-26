@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:1888205f757df58c
+ * Artifact: sha256:f32c7d4bd75e740e
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -49,7 +49,7 @@ function __dshQuoteChatFactory(hostRequire) {
     inject: () => inject
   });
   module.exports = __toCommonJS(index_exports);
-  var import_react5 = __toESM(require("react"), 1);
+  var import_react7 = __toESM(require("react"), 1);
   var import_react_dom4 = require("react-dom");
 
   // src/locales.js
@@ -2374,11 +2374,271 @@ function __dshQuoteChatFactory(hostRequire) {
     return { MarkerLayer: MarkerLayer2 };
   }
 
+  // src/ui/side-chat.js
+  var import_react6 = __toESM(require("react"), 1);
+
+  // src/ui/draft-hooks.js
+  var import_react5 = __toESM(require("react"), 1);
+  function useDraft(useInput, fallback = "") {
+    const inert = (selector) => selector({ draft: fallback });
+    return (typeof useInput === "function" ? useInput : inert)(
+      (state) => state.draft,
+      (left, right) => left === right
+    );
+  }
+  function useDraftOccurrences(useInput) {
+    const empty = import_react5.default.useMemo(() => [], []);
+    const inert = () => empty;
+    const picked = (typeof useInput === "function" ? useInput : inert)(
+      (state) => state.occurrences,
+      (left, right) => left === right
+    );
+    return Array.isArray(picked) ? picked : empty;
+  }
+
+  // src/ui/side-chat.js
+  var h5 = import_react6.default.createElement;
+  function createSideChat({ quoteForTab: quoteForTab2 }) {
+    function SideChat2(props) {
+      const { quote, t, locale, inputActions, useInput } = props;
+      const draft = useDraft(useInput);
+      const [messages, setMessages] = import_react6.default.useState([]);
+      const [question, setQuestion] = import_react6.default.useState("");
+      const [busy, setBusy] = import_react6.default.useState(false);
+      const [error, setError] = import_react6.default.useState("");
+      const [expanded, setExpanded] = import_react6.default.useState(false);
+      const [added, setAdded] = import_react6.default.useState(false);
+      const abortRef = import_react6.default.useRef(null);
+      const threadRef = import_react6.default.useRef(null);
+      import_react6.default.useEffect(() => {
+        abortRef.current?.abort();
+        abortRef.current = null;
+        setMessages([]);
+        setQuestion("");
+        setError("");
+        setBusy(false);
+        setAdded(false);
+      }, [quote]);
+      import_react6.default.useEffect(() => () => {
+        abortRef.current?.abort();
+      }, []);
+      const scrollToEnd = import_react6.default.useCallback(() => {
+        const element = threadRef.current;
+        if (element !== null) element.scrollTop = element.scrollHeight;
+      }, []);
+      import_react6.default.useEffect(scrollToEnd, [messages, scrollToEnd]);
+      const submit = import_react6.default.useCallback(async () => {
+        const text = question.trim();
+        if (text === "" || busy) return;
+        const history = messages.filter((message) => message.text.trim() !== "").map((message) => ({ role: message.role, text: message.text }));
+        const replayed = [];
+        for (let index = 0; index < history.length; index += 1) {
+          const current = history[index];
+          const next = history[index + 1];
+          if (current.role === "user" && next !== void 0 && next.role === "assistant") {
+            replayed.push({ question: current.text, answer: next.text });
+            index += 1;
+          }
+        }
+        setMessages((current) => [...current, { role: "user", text }, { role: "assistant", text: "" }]);
+        setQuestion("");
+        setError("");
+        setBusy(true);
+        const controller = new AbortController();
+        abortRef.current = controller;
+        try {
+          await askSideChat({ quote, question: text, history: replayed, locale }, controller.signal, (delta) => {
+            setMessages((current) => {
+              const copy = current.slice();
+              const last = copy.length - 1;
+              if (last < 0) return current;
+              copy[last] = { role: "assistant", text: copy[last].text + delta };
+              return copy;
+            });
+          });
+        } catch (failure) {
+          if (controller.signal.aborted) {
+            setMessages((current) => {
+              const copy = current.slice();
+              const last = copy.length - 1;
+              if (last >= 0 && copy[last].role === "assistant" && copy[last].text === "") copy.pop();
+              return copy;
+            });
+          } else {
+            setError(failure instanceof Error ? failure.message : String(failure));
+          }
+        } finally {
+          if (abortRef.current === controller) abortRef.current = null;
+          setBusy(false);
+        }
+      }, [question, busy, messages, quote, locale]);
+      const stop = import_react6.default.useCallback(() => {
+        abortRef.current?.abort();
+        abortRef.current = null;
+        setBusy(false);
+      }, []);
+      const addToChat = import_react6.default.useCallback((text) => {
+        const payload = text.split(/\r?\n/).map((line) => line === "" ? ">" : `> ${line}`).join("\n");
+        const current = typeof draft === "string" ? draft : "";
+        if (typeof inputActions?.captureInsertion === "function" && typeof inputActions?.insertText === "function") {
+          const span = inputActions.captureInsertion();
+          if (inputActions.insertText(`${payload}
+
+  `, span) === true) {
+            setAdded(true);
+            return;
+          }
+        }
+        if (typeof inputActions?.setDraft === "function") {
+          inputActions.setDraft(current.trim() === "" ? payload : `${current}
+
+  ${payload}`);
+          setAdded(true);
+        }
+      }, [draft, inputActions]);
+      import_react6.default.useEffect(() => {
+        if (!added) return void 0;
+        const timer = setTimeout(() => setAdded(false), 2200);
+        return () => clearTimeout(timer);
+      }, [added]);
+      const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant" && message.text !== "");
+      const lastQuestion = [...messages].reverse().find((message) => message.role === "user");
+      return h5(
+        "div",
+        { className: "qc-side" },
+        h5(
+          "div",
+          { className: "qc-side-head" },
+          h5("span", { className: "qc-side-head-title" }, t("side.title")),
+          messages.length > 0 ? h5("button", {
+            type: "button",
+            onClick: () => {
+              setMessages([]);
+              setError("");
+              setAdded(false);
+            }
+          }, t("side.clear")) : null
+        ),
+        h5(
+          "div",
+          { className: "qc-quote" },
+          h5(
+            "div",
+            { className: "qc-quote-label" },
+            h5("span", null, t("side.quote")),
+            quote.length > 260 ? h5("button", {
+              type: "button",
+              onClick: () => setExpanded((value) => !value)
+            }, expanded ? t("side.collapseQuote") : t("side.expandQuote")) : null
+          ),
+          h5("div", { className: `qc-quote-body${expanded ? "" : " qc-clamped"}` }, quote)
+        ),
+        h5(
+          "div",
+          { ref: threadRef, className: "qc-thread" },
+          messages.length === 0 ? h5("div", { className: "qc-empty" }, t("side.empty")) : messages.map((message, index) => h5(
+            "div",
+            {
+              key: `${index}-${message.role}`,
+              className: `qc-msg qc-msg-${message.role}`
+            },
+            h5(
+              "div",
+              { className: "qc-msg-role" },
+              message.role === "user" ? t("side.you") : t("side.assistant")
+            ),
+            h5(
+              "div",
+              { className: "qc-msg-body" },
+              message.text === "" && busy && index === messages.length - 1 ? h5("span", { className: "qc-dots" }) : message.text
+            ),
+            message.role === "assistant" && message.text !== "" ? h5(
+              "div",
+              { className: "qc-msg-actions" },
+              h5("button", {
+                type: "button",
+                onClick: () => addToChat(message.text)
+              }, t("side.addToChat"))
+            ) : null
+          )),
+          error === "" ? null : h5("div", { className: "qc-msg-error" }, `${t("side.errorPrefix")}${error}`)
+        ),
+        h5(
+          "div",
+          { className: "qc-side-compose" },
+          h5("textarea", {
+            value: question,
+            placeholder: t("side.placeholder"),
+            rows: 2,
+            onChange: (event) => setQuestion(event.target.value),
+            onKeyDown: (event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent?.isComposing) {
+                event.preventDefault();
+                submit();
+              }
+            }
+          }),
+          h5(
+            "div",
+            { className: "qc-side-compose-row" },
+            h5("span", { className: "qc-side-compose-hint" }, added ? t("side.added") : ""),
+            lastAssistant !== void 0 ? h5("button", {
+              type: "button",
+              className: "qc-btn qc-btn-ghost",
+              onClick: () => addToChat(
+                `> ${lastQuestion === void 0 ? "" : lastQuestion.text}
+
+  ${lastAssistant.text}`
+              )
+            }, t("side.addToChat")) : null,
+            busy ? h5("button", { type: "button", className: "qc-btn qc-btn-ghost", onClick: stop }, t("side.stop")) : h5("button", {
+              type: "button",
+              className: "qc-btn",
+              disabled: question.trim() === "",
+              onClick: submit
+            }, t("side.send"))
+          )
+        )
+      );
+    }
+    function SideChatTab2(props) {
+      const { useTabInfo, inputActions, useInput, t, pluginCtx } = props;
+      const info = typeof useTabInfo === "function" ? useTabInfo() : void 0;
+      const quote = quoteForTab2(info?.tab?.navigation?.params?.quote);
+      const localeService = pluginCtx?.locale;
+      const locale = import_react6.default.useSyncExternalStore(
+        import_react6.default.useCallback(
+          (listener) => typeof localeService?.subscribe === "function" ? localeService.subscribe(listener) : () => {
+          },
+          [localeService]
+        ),
+        import_react6.default.useCallback(
+          () => typeof localeService?.getLocale === "function" ? localeService.getLocale().active : "zh",
+          [localeService]
+        ),
+        import_react6.default.useCallback(() => "zh", [])
+      );
+      if (quote === "") {
+        return h5(
+          "div",
+          { className: "qc-side" },
+          h5(
+            "div",
+            { className: "qc-quote" },
+            h5("div", { className: "qc-quote-body" }, t("side.noQuote"))
+          )
+        );
+      }
+      return h5(SideChat2, { quote, t, locale: locale === "en" ? "en" : "zh", inputActions, useInput });
+    }
+    return { SideChat: SideChat2, SideChatTab: SideChatTab2 };
+  }
+
   // src/index.js
   var MAX_QUOTE_CHARS = 8e3;
   var MAX_ANNOTATIONS = 12;
   var VIEWPORT_MARGIN4 = 8;
-  var h5 = import_react5.default.createElement;
+  var h6 = import_react7.default.createElement;
   var NS = "quoteChat";
   var TAB_ID = "dsh-quote-chat:side";
   var TAB_KIND = "dsh-quote-chat";
@@ -2395,22 +2655,6 @@ function __dshQuoteChatFactory(hostRequire) {
         tag.remove();
       };
     }, "quote-chat: stylesheet");
-  }
-  function useDraft(useInput, fallback = "") {
-    const inert = (selector) => selector({ draft: fallback });
-    return (typeof useInput === "function" ? useInput : inert)(
-      (state) => state.draft,
-      (left, right) => left === right
-    );
-  }
-  function useDraftOccurrences(useInput) {
-    const empty = import_react5.default.useMemo(() => [], []);
-    const inert = () => empty;
-    const picked = (typeof useInput === "function" ? useInput : inert)(
-      (state) => state.occurrences,
-      (left, right) => left === right
-    );
-    return Array.isArray(picked) ? picked : empty;
   }
   function clearSelection() {
     if (typeof window === "undefined") return;
@@ -2504,6 +2748,11 @@ function __dshQuoteChatFactory(hostRequire) {
     columnElement: (flow) => layout.columnElement(flow),
     anchorAboveBubble: (flow, box, size) => layout.anchorAboveBubble(flow, box, size)
   });
+  var quoteHandoff = createQuoteHandoff();
+  function quoteForTab(carried) {
+    return quoteHandoff.forTab(carried);
+  }
+  var { SideChat, SideChatTab } = createSideChat({ quoteForTab });
   var { ActionPopup, ComposerPopover } = createPopovers({
     findFlow: layout.findFlow,
     anchorInTranscript: (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer)
@@ -2519,23 +2768,23 @@ function __dshQuoteChatFactory(hostRequire) {
   var removeAnnotation = (sessionId, id) => annotationStore.remove(sessionId, id);
   var updateAnnotation = (sessionId, id, comment) => annotationStore.update(sessionId, id, comment);
   function useAnnotations(sessionId) {
-    const subscribe = import_react5.default.useCallback(
+    const subscribe = import_react7.default.useCallback(
       (listener) => annotationStore.subscribe(sessionId, listener),
       [sessionId]
     );
-    const snapshot = import_react5.default.useCallback(
+    const snapshot = import_react7.default.useCallback(
       () => annotationStore.snapshot(sessionId),
       [sessionId]
     );
-    return import_react5.default.useSyncExternalStore(subscribe, snapshot, snapshot);
+    return import_react7.default.useSyncExternalStore(subscribe, snapshot, snapshot);
   }
   var chipRegistry = createChipRegistry();
   var chipBridge = createDraftBridge({ registry: chipRegistry, source: CHIP_SOURCE });
   var chipJumpHandler = { current: null };
   function TableAddButton(props) {
     const { label, onAdd } = props;
-    const [target, setTarget] = import_react5.default.useState(null);
-    import_react5.default.useEffect(() => {
+    const [target, setTarget] = import_react7.default.useState(null);
+    import_react7.default.useEffect(() => {
       if (typeof document === "undefined") return void 0;
       let frame = 0;
       let pending = null;
@@ -2582,13 +2831,13 @@ function __dshQuoteChatFactory(hostRequire) {
       top: Math.max(VIEWPORT_MARGIN4, target.rect.top + 4)
     };
     return (0, import_react_dom4.createPortal)(
-      h5("button", {
+      h6("button", {
         type: "button",
         className: "qc-table-add",
         style: { left: `${position.left}px`, top: `${position.top}px` },
         onMouseDown: (event) => event.preventDefault(),
         onClick: () => onAdd(target.element)
-      }, h5(IconAnnotate, null), label),
+      }, h6(IconAnnotate, null), label),
       document.body
     );
   }
@@ -2603,242 +2852,6 @@ function __dshQuoteChatFactory(hostRequire) {
       return `翻遍对话仍未加载到原文所在消息 / row never loaded (${rows.length} rows mounted, quote ${quote.length} chars: ${head})`;
     }
     return `消息还在，但其中找不到这段引文 / row present, quote missing (${quote.length} chars: ${head})`;
-  }
-  function SideChat(props) {
-    const { quote, t, locale, inputActions, useInput } = props;
-    const draft = useDraft(useInput);
-    const [messages, setMessages] = import_react5.default.useState([]);
-    const [question, setQuestion] = import_react5.default.useState("");
-    const [busy, setBusy] = import_react5.default.useState(false);
-    const [error, setError] = import_react5.default.useState("");
-    const [expanded, setExpanded] = import_react5.default.useState(false);
-    const [added, setAdded] = import_react5.default.useState(false);
-    const abortRef = import_react5.default.useRef(null);
-    const threadRef = import_react5.default.useRef(null);
-    import_react5.default.useEffect(() => {
-      abortRef.current?.abort();
-      abortRef.current = null;
-      setMessages([]);
-      setQuestion("");
-      setError("");
-      setBusy(false);
-      setAdded(false);
-    }, [quote]);
-    import_react5.default.useEffect(() => () => {
-      abortRef.current?.abort();
-    }, []);
-    const scrollToEnd = import_react5.default.useCallback(() => {
-      const element = threadRef.current;
-      if (element !== null) element.scrollTop = element.scrollHeight;
-    }, []);
-    import_react5.default.useEffect(scrollToEnd, [messages, scrollToEnd]);
-    const submit = import_react5.default.useCallback(async () => {
-      const text = question.trim();
-      if (text === "" || busy) return;
-      const history = messages.filter((message) => message.text.trim() !== "").map((message) => ({ role: message.role, text: message.text }));
-      const replayed = [];
-      for (let index = 0; index < history.length; index += 1) {
-        const current = history[index];
-        const next = history[index + 1];
-        if (current.role === "user" && next !== void 0 && next.role === "assistant") {
-          replayed.push({ question: current.text, answer: next.text });
-          index += 1;
-        }
-      }
-      setMessages((current) => [...current, { role: "user", text }, { role: "assistant", text: "" }]);
-      setQuestion("");
-      setError("");
-      setBusy(true);
-      const controller = new AbortController();
-      abortRef.current = controller;
-      try {
-        await askSideChat({ quote, question: text, history: replayed, locale }, controller.signal, (delta) => {
-          setMessages((current) => {
-            const copy = current.slice();
-            const last = copy.length - 1;
-            if (last < 0) return current;
-            copy[last] = { role: "assistant", text: copy[last].text + delta };
-            return copy;
-          });
-        });
-      } catch (failure) {
-        if (controller.signal.aborted) {
-          setMessages((current) => {
-            const copy = current.slice();
-            const last = copy.length - 1;
-            if (last >= 0 && copy[last].role === "assistant" && copy[last].text === "") copy.pop();
-            return copy;
-          });
-        } else {
-          setError(failure instanceof Error ? failure.message : String(failure));
-        }
-      } finally {
-        if (abortRef.current === controller) abortRef.current = null;
-        setBusy(false);
-      }
-    }, [question, busy, messages, quote, locale]);
-    const stop = import_react5.default.useCallback(() => {
-      abortRef.current?.abort();
-      abortRef.current = null;
-      setBusy(false);
-    }, []);
-    const addToChat = import_react5.default.useCallback((text) => {
-      const payload = text.split(/\r?\n/).map((line) => line === "" ? ">" : `> ${line}`).join("\n");
-      const current = typeof draft === "string" ? draft : "";
-      if (typeof inputActions?.captureInsertion === "function" && typeof inputActions?.insertText === "function") {
-        const span = inputActions.captureInsertion();
-        if (inputActions.insertText(`${payload}
-
-  `, span) === true) {
-          setAdded(true);
-          return;
-        }
-      }
-      if (typeof inputActions?.setDraft === "function") {
-        inputActions.setDraft(current.trim() === "" ? payload : `${current}
-
-  ${payload}`);
-        setAdded(true);
-      }
-    }, [draft, inputActions]);
-    import_react5.default.useEffect(() => {
-      if (!added) return void 0;
-      const timer = setTimeout(() => setAdded(false), 2200);
-      return () => clearTimeout(timer);
-    }, [added]);
-    const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant" && message.text !== "");
-    const lastQuestion = [...messages].reverse().find((message) => message.role === "user");
-    return h5(
-      "div",
-      { className: "qc-side" },
-      h5(
-        "div",
-        { className: "qc-side-head" },
-        h5("span", { className: "qc-side-head-title" }, t("side.title")),
-        messages.length > 0 ? h5("button", {
-          type: "button",
-          onClick: () => {
-            setMessages([]);
-            setError("");
-            setAdded(false);
-          }
-        }, t("side.clear")) : null
-      ),
-      h5(
-        "div",
-        { className: "qc-quote" },
-        h5(
-          "div",
-          { className: "qc-quote-label" },
-          h5("span", null, t("side.quote")),
-          quote.length > 260 ? h5("button", {
-            type: "button",
-            onClick: () => setExpanded((value) => !value)
-          }, expanded ? t("side.collapseQuote") : t("side.expandQuote")) : null
-        ),
-        h5("div", { className: `qc-quote-body${expanded ? "" : " qc-clamped"}` }, quote)
-      ),
-      h5(
-        "div",
-        { ref: threadRef, className: "qc-thread" },
-        messages.length === 0 ? h5("div", { className: "qc-empty" }, t("side.empty")) : messages.map((message, index) => h5(
-          "div",
-          {
-            key: `${index}-${message.role}`,
-            className: `qc-msg qc-msg-${message.role}`
-          },
-          h5(
-            "div",
-            { className: "qc-msg-role" },
-            message.role === "user" ? t("side.you") : t("side.assistant")
-          ),
-          h5(
-            "div",
-            { className: "qc-msg-body" },
-            message.text === "" && busy && index === messages.length - 1 ? h5("span", { className: "qc-dots" }) : message.text
-          ),
-          message.role === "assistant" && message.text !== "" ? h5(
-            "div",
-            { className: "qc-msg-actions" },
-            h5("button", {
-              type: "button",
-              onClick: () => addToChat(message.text)
-            }, t("side.addToChat"))
-          ) : null
-        )),
-        error === "" ? null : h5("div", { className: "qc-msg-error" }, `${t("side.errorPrefix")}${error}`)
-      ),
-      h5(
-        "div",
-        { className: "qc-side-compose" },
-        h5("textarea", {
-          value: question,
-          placeholder: t("side.placeholder"),
-          rows: 2,
-          onChange: (event) => setQuestion(event.target.value),
-          onKeyDown: (event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent?.isComposing) {
-              event.preventDefault();
-              submit();
-            }
-          }
-        }),
-        h5(
-          "div",
-          { className: "qc-side-compose-row" },
-          h5("span", { className: "qc-side-compose-hint" }, added ? t("side.added") : ""),
-          lastAssistant !== void 0 ? h5("button", {
-            type: "button",
-            className: "qc-btn qc-btn-ghost",
-            onClick: () => addToChat(
-              `> ${lastQuestion === void 0 ? "" : lastQuestion.text}
-
-  ${lastAssistant.text}`
-            )
-          }, t("side.addToChat")) : null,
-          busy ? h5("button", { type: "button", className: "qc-btn qc-btn-ghost", onClick: stop }, t("side.stop")) : h5("button", {
-            type: "button",
-            className: "qc-btn",
-            disabled: question.trim() === "",
-            onClick: submit
-          }, t("side.send"))
-        )
-      )
-    );
-  }
-  var quoteHandoff = createQuoteHandoff();
-  function quoteForTab(carried) {
-    return quoteHandoff.forTab(carried);
-  }
-  function SideChatTab(props) {
-    const { useTabInfo, inputActions, useInput, t, pluginCtx } = props;
-    const info = typeof useTabInfo === "function" ? useTabInfo() : void 0;
-    const quote = quoteForTab(info?.tab?.navigation?.params?.quote);
-    const localeService = pluginCtx?.locale;
-    const locale = import_react5.default.useSyncExternalStore(
-      import_react5.default.useCallback(
-        (listener) => typeof localeService?.subscribe === "function" ? localeService.subscribe(listener) : () => {
-        },
-        [localeService]
-      ),
-      import_react5.default.useCallback(
-        () => typeof localeService?.getLocale === "function" ? localeService.getLocale().active : "zh",
-        [localeService]
-      ),
-      import_react5.default.useCallback(() => "zh", [])
-    );
-    if (quote === "") {
-      return h5(
-        "div",
-        { className: "qc-side" },
-        h5(
-          "div",
-          { className: "qc-quote" },
-          h5("div", { className: "qc-quote-body" }, t("side.noQuote"))
-        )
-      );
-    }
-    return h5(SideChat, { quote, t, locale: locale === "en" ? "en" : "zh", inputActions, useInput });
   }
   function tableAnchor(flow, table) {
     const row = table.closest("[data-chat-node-key]") ?? null;
@@ -2861,14 +2874,14 @@ function __dshQuoteChatFactory(hostRequire) {
       const t = typeof props.t === "function" ? props.t : boundT;
       const draft = useDraft(useInput);
       const occurrences = useDraftOccurrences(useInput);
-      const inputStateRef = import_react5.default.useRef(null);
+      const inputStateRef = import_react7.default.useRef(null);
       inputStateRef.current = { draft, occurrences };
       const annotations = useAnnotations(sessionId);
-      const [overlay, setOverlay] = import_react5.default.useState(null);
-      const [notice, setNotice] = import_react5.default.useState("");
-      const overlayRef = import_react5.default.useRef(null);
+      const [overlay, setOverlay] = import_react7.default.useState(null);
+      const [notice, setNotice] = import_react7.default.useState("");
+      const overlayRef = import_react7.default.useRef(null);
       overlayRef.current = overlay;
-      const labels = import_react5.default.useMemo(() => ({
+      const labels = import_react7.default.useMemo(() => ({
         annotate: t("popup.annotate"),
         askInSide: t("popup.askInSide"),
         tooLong: t("popup.tooLong"),
@@ -2899,7 +2912,7 @@ function __dshQuoteChatFactory(hostRequire) {
         save: t("bubble.save"),
         delete: t("bubble.delete")
       }), [t]);
-      import_react5.default.useEffect(() => {
+      import_react7.default.useEffect(() => {
         if (overlay === null) return void 0;
         const onPointerDown = (event) => {
           const surface = document.querySelector(".qc-popup, .qc-compose");
@@ -2916,7 +2929,7 @@ function __dshQuoteChatFactory(hostRequire) {
           document.removeEventListener("keydown", onKeyDown, true);
         };
       }, [overlay === null]);
-      import_react5.default.useEffect(() => {
+      import_react7.default.useEffect(() => {
         if (typeof document === "undefined") return void 0;
         let frame = 0;
         let pointerDown = false;
@@ -2970,23 +2983,23 @@ function __dshQuoteChatFactory(hostRequire) {
           document.removeEventListener("selectionchange", schedule);
         };
       }, [labels]);
-      import_react5.default.useEffect(() => {
+      import_react7.default.useEffect(() => {
         if (notice === "") return void 0;
         const timer = setTimeout(() => setNotice(""), 3200);
         return () => clearTimeout(timer);
       }, [notice]);
-      import_react5.default.useEffect(() => () => clearFlashRange(), []);
-      const writeChip = import_react5.default.useCallback((annotation) => chipBridge.place(
+      import_react7.default.useEffect(() => () => clearFlashRange(), []);
+      const writeChip = import_react7.default.useCallback((annotation) => chipBridge.place(
         inputActions,
         () => ({ draft, occurrences: inputStateRef.current?.occurrences }),
         annotation,
         labels
       ), [draft, inputActions, labels]);
-      const cancelCompose = import_react5.default.useCallback(() => {
+      const cancelCompose = import_react7.default.useCallback(() => {
         clearFlashRange();
         setOverlay(null);
       }, []);
-      const commit = import_react5.default.useCallback((source, comment) => {
+      const commit = import_react7.default.useCallback((source, comment) => {
         if (sessionId === void 0) return;
         const text = typeof comment === "string" ? comment.trim() : "";
         const stored = addAnnotation(sessionId, {
@@ -3013,7 +3026,7 @@ function __dshQuoteChatFactory(hostRequire) {
         const range = flow === null ? null : resolveAnchor(flow, stored.anchor);
         if (range !== null) flashRange(range);
       }, [sessionId, labels, writeChip]);
-      const annotateTable = import_react5.default.useCallback((table) => {
+      const annotateTable = import_react7.default.useCallback((table) => {
         const markdown = tableToMarkdown(table);
         if (markdown === "") return;
         const flow = findFlow();
@@ -3031,7 +3044,7 @@ function __dshQuoteChatFactory(hostRequire) {
         });
         clearSelection();
       }, []);
-      const onHighlight = import_react5.default.useCallback((annotation, on) => {
+      const onHighlight = import_react7.default.useCallback((annotation, on) => {
         const flow = findFlow();
         if (flow === null) return;
         if (!on) {
@@ -3045,7 +3058,7 @@ function __dshQuoteChatFactory(hostRequire) {
           return live === null ? null : resolveAnchor(live, annotation.anchor);
         });
       }, []);
-      const onJump = import_react5.default.useCallback((annotation) => {
+      const onJump = import_react7.default.useCallback((annotation) => {
         const flow = findFlow();
         if (flow === null) {
           setNotice(diagnoseMiss(null, annotation));
@@ -3066,7 +3079,7 @@ function __dshQuoteChatFactory(hostRequire) {
           setNotice(diagnoseMiss(findFlow(), annotation));
         });
       }, []);
-      import_react5.default.useEffect(() => {
+      import_react7.default.useEffect(() => {
         chipJumpHandler.current = (ref) => {
           const match = annotations.find((item) => item.id === ref);
           if (match === void 0) return false;
@@ -3077,7 +3090,7 @@ function __dshQuoteChatFactory(hostRequire) {
           if (chipJumpHandler.current !== null) chipJumpHandler.current = null;
         };
       }, [annotations, onJump]);
-      const onRemove = import_react5.default.useCallback((annotation) => {
+      const onRemove = import_react7.default.useCallback((annotation) => {
         if (sessionId === void 0) return;
         chipBridge.release(
           inputActions,
@@ -3086,12 +3099,12 @@ function __dshQuoteChatFactory(hostRequire) {
         );
         removeAnnotation(sessionId, annotation.id);
       }, [draft, inputActions, sessionId]);
-      const onUpdate = import_react5.default.useCallback((annotation, comment) => {
+      const onUpdate = import_react7.default.useCallback((annotation, comment) => {
         if (sessionId === void 0) return;
         chipRegistry.updateComment(annotation.id, comment);
         updateAnnotation(sessionId, annotation.id, comment);
       }, [sessionId]);
-      const onAsk = import_react5.default.useCallback((source) => {
+      const onAsk = import_react7.default.useCallback((source) => {
         const opener = ctx.get("sidebarRight");
         if (typeof opener?.openTab !== "function") return;
         quoteHandoff.remember(source.text);
@@ -3110,10 +3123,10 @@ function __dshQuoteChatFactory(hostRequire) {
       }, [ctx, labels, t]);
       const canAnnotate = typeof inputActions?.setDraft === "function" || typeof inputActions?.captureInsertion === "function" && typeof inputActions?.insertText === "function";
       const canAsk = typeof ctx.get("sidebarRight")?.openTab === "function";
-      return h5(
-        import_react5.default.Fragment,
+      return h6(
+        import_react7.default.Fragment,
         null,
-        overlay === null ? null : overlay.kind === "actions" ? h5(ActionPopup, {
+        overlay === null ? null : overlay.kind === "actions" ? h6(ActionPopup, {
           anchor: overlay.source.rect,
           canAnnotate,
           canAsk,
@@ -3133,16 +3146,16 @@ function __dshQuoteChatFactory(hostRequire) {
             setOverlay({ kind: "compose", source });
           },
           onAsk: () => onAsk(overlay.source)
-        }) : h5(ComposerPopover, {
+        }) : h6(ComposerPopover, {
           source: overlay.source,
           labels,
           onConfirm: (comment) => commit(overlay.source, comment),
           onCancel: cancelCompose
         }),
-        h5(ChipCards, { annotations, occurrences, labels, onJump, onRemove }),
-        h5(MarkerLayer, { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
-        h5(TableAddButton, { label: labels.tableAdd, onAdd: annotateTable }),
-        typeof notice === "string" && notice !== "" ? h5("div", { className: "qc-notice" }, notice) : null
+        h6(ChipCards, { annotations, occurrences, labels, onJump, onRemove }),
+        h6(MarkerLayer, { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
+        h6(TableAddButton, { label: labels.tableAdd, onAdd: annotateTable }),
+        typeof notice === "string" && notice !== "" ? h6("div", { className: "qc-notice" }, notice) : null
       );
     };
   }
