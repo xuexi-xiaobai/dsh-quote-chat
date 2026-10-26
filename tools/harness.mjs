@@ -32,7 +32,7 @@
  * `launchPersistentContext` against the same profile the MCP server used, so the DSH login and the
  * session list survive exactly as before. Nothing about the app under test changes.
  */
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync, writeFile } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -149,13 +149,43 @@ export async function openBrowser(options = {}) {
   let recordingStarted = false
 
   const goto = async (url) => {
-    // Recording starts on the first navigation: every helper it needs is defined by then, and a
-    // suite always navigates before doing anything.
+    await page.goto(url, { waitUntil: 'domcontentloaded' })
+    // Recording starts AFTER the first navigation commits. Starting it before meant the CDP session was
+    // created against the initial about:blank document, and a cross-document navigation invalidated it:
+    // every capture then failed with "Target page, context or browser has been closed".
     if (!recordingStarted && options.video !== undefined && options.video !== false) {
       recordingStarted = true
       await beginRecording()
     }
-    await page.goto(url, { waitUntil: 'domcontentloaded' })
+  }
+
+  /**
+   * Keep the compositor painting, so the screencast keeps sending frames.
+   *
+   * A CDP screencast is paint-driven: a still page sends nothing, and a mostly-static run yields a low
+   * capture rate no matter what output rate the file claims. Measured: 4.8fps over 12.7s.
+   *
+   * This installs a 1x1, fully transparent element with an endless CSS animation. It occupies no layout
+   * space and cannot be seen, but its animation makes Chromium produce a frame every vsync, so the
+   * transition being recorded is captured at the display's rate rather than at "whenever something else
+   * happened to change".
+   *
+   * Removing it is unnecessary: it disappears with the page.
+   */
+  const startFramePump = async () => {
+    if (options.video === undefined || options.video === false) return
+    await read(() => {
+      if (document.getElementById('qc-frame-pump') !== null) return
+      const style = document.createElement('style')
+      style.id = 'qc-frame-pump-style'
+      style.textContent = '@keyframes qc-frame-pump{from{opacity:.004}to{opacity:.005}}'
+        + '#qc-frame-pump{position:fixed;left:0;bottom:0;width:1px;height:1px;'
+        + 'pointer-events:none;z-index:-1;animation:qc-frame-pump .5s linear infinite alternate}'
+      document.head.append(style)
+      const pump = document.createElement('div')
+      pump.id = 'qc-frame-pump'
+      document.body.append(pump)
+    })
   }
 
   /**
@@ -318,26 +348,27 @@ export async function openBrowser(options = {}) {
   const pluginErrors = () => errors.filter((line) => line.includes('[dsh-quote-chat]'))
 
   /**
-   * Frame capture, started at launch when `video` is requested.
+   * Frame capture by polling `Page.captureScreenshot` at a fixed rate.
    *
-   * ## Why not Playwright's own `recordVideo`
+   * ## Why not a CDP screencast
    *
-   * It fails here with "Video rendering requires ffmpeg binary": the feature needs the ffmpeg build
-   * matching the installed Playwright revision, and the machine has ffmpeg-1009 and ffmpeg-1013 while
-   * this alpha build expects its own. Patching that would tie the harness to one build's internals.
-   * Its capture rate is fixed as well, so the requested frame rate could not be met through it.
+   * The screencast pushes a frame only when the page paints. On a mostly-static run it delivered 4.8fps —
+   * 61 real frames inside a 380-frame file — and an animated element did not help, because opacity is
+   * composited and produces no screencast frames. A video whose motion was captured at 5fps cannot answer
+   * "was the glide smooth?".
    *
-   * ## What this does
+   * ## What the measurements support
    *
-   * CDP screencast — the same frame source Playwright's recorder reads. The page pushes a frame
-   * whenever it paints; frames are written as numbered JPEGs and muxed by ffmpeg at an exact rate.
+   * A screenshot costs ~28ms at quality 60 and full size (35.7fps measured), giving ~19% headroom over
+   * 30fps, at ~103KB per frame.
    *
-   * The screencast rate is a ceiling, not a promise: a still page pushes fewer frames, and the muxer's
-   * `-r` holds each frame for the missing time so the duration stays correct. The report prints the
-   * captured rate next to the output rate, so the gap is visible rather than implied.
+   * Captures are serialised: a slow frame delays the next instead of queueing duplicates. The muxer uses
+   * the real capture span, so the duration stays right even if the rate dips.
    */
   let stopRecording = async () => ({ video: null })
   let frameDir = null
+  /** The recorder's CDP session, reused by helpers so only one exists per page. */
+  let recorderSession = null
 
   const beginRecording = async (settings = {}) => {
     if (options.video === undefined || options.video === false) return
@@ -348,79 +379,82 @@ export async function openBrowser(options = {}) {
     mkdirSync(frameDir, { recursive: true })
 
     const session = await context.newCDPSession(page)
-    let frameIndex = 0
-    let lastWrite = 0
-    // Throttle to the requested rate, so the output is predictable even when the page paints faster.
+    // Published so other helpers (the animation rate) reuse it. A second session on the same page
+    // disturbed the first one: after detaching it, the recorder's captures failed with "Target page,
+    // context or browser has been closed" and the run produced zero frames.
+    recorderSession = session
     const interval = 1000 / fps
+    let frameIndex = 0
+    let running = true
+    let loopFinished = false
+    /** Writes still in flight; the recording cannot be muxed until they all land. */
+    const pending = new Set()
     const startedAt = Date.now()
 
-    // A single write failure is reported once and then ignored: a broken recording should say so
-    // rather than hide behind an empty directory.
-    let writeFailureReported = false
-    session.on('Page.screencastFrame', (event) => {
-      const now = Date.now()
-      if (now - lastWrite >= interval) {
-        lastWrite = now
+    // Write asynchronously and do NOT await it in the loop: a slow disk would otherwise show up as a
+    // dropped frame. Files are named by capture index, so completion order does not matter.
+    const persist = (index, payload) => {
+      const task = new Promise((resolve) => {
+        writeFile(
+          join(frameDir, `frame-${String(index).padStart(6, '0')}.jpg`),
+          payload,
+          () => resolve(),
+        )
+      })
+      pending.add(task)
+      void task.then(() => pending.delete(task))
+    }
+
+    // Reschedule from COMPLETION, not on a fixed timer: a timer that fires while a capture is in flight
+    // either skips its slot or stacks up, both of which lose frames.
+    const loop = async () => {
+      while (running) {
+        const ticked = Date.now()
         try {
-          const payload = Buffer.from(event.data, 'base64')
-          if (payload.length === 0) {
-            if (!writeFailureReported) {
-              writeFailureReported = true
-              console.warn('[harness] screencast delivered an empty frame')
-            }
-          } else {
-            writeFileSync(
-              join(frameDir, `frame-${String(frameIndex).padStart(6, '0')}.jpg`),
-              payload,
-            )
-            frameIndex += 1
-          }
+          const shot = await session.send('Page.captureScreenshot', { format: 'jpeg', quality: 60 })
+          persist(frameIndex, Buffer.from(shot.data, 'base64'))
+          frameIndex += 1
         } catch (failure) {
-          if (!writeFailureReported) {
-            writeFailureReported = true
-            console.warn('[harness] frame write failed:', failure?.message ?? failure)
+          if (frameIndex === 0) {
+            console.warn('[harness] first frame failed:', failure?.message ?? failure)
           }
         }
+        // Sleep only the remainder of the interval that the capture did not already consume.
+        const spent = Date.now() - ticked
+        const rest = interval - spent
+        if (rest > 0) await new Promise((resolve) => setTimeout(resolve, rest))
       }
-      // Acknowledge every frame, or the screencast stalls after the first one.
-      session.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => {})
-    })
-
-    // Page.enable is required: without it startScreencast succeeds but emits no frames at all.
-    await session.send('Page.enable')
-    await session.send('Page.startScreencast', {
-      format: 'jpeg',
-      quality: 85,
-      maxWidth: 1920,
-      maxHeight: 1200,
-      everyNthFrame: 1,
-    })
+      loopFinished = true
+    }
+    if (options.video !== undefined && options.video !== false) void loop()
 
     stopRecording = async () => {
-      await session.send('Page.stopScreencast').catch(() => {})
+      running = false
+      // Wait for the loop to exit and for every queued write to land, or ffmpeg reads a partial set.
+      let waited = 0
+      while ((!loopFinished || pending.size > 0) && waited < 5000) {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        waited += 20
+      }
       await session.detach().catch(() => {})
       const seconds = Math.max(0.001, (Date.now() - startedAt) / 1000)
       const captured = frameIndex
       if (captured === 0) return { video: null, frames: 0, frameDir }
 
       const output = join(RECORDINGS, `run-${stamp}-${fps}fps.mp4`)
-      // The rate the frames REALLY arrived at. Using the requested rate here would compress the
-      // timeline: 21 frames described as 30fps is 0.7s, not the 2.1s the run actually took.
+      // The rate the frames REALLY represent, so the duration survives a dip in capture speed. Using the
+      // requested rate here would compress the timeline whenever the loop fell behind.
       const sourceFps = Math.max(1, Math.round((captured / seconds) * 1000) / 1000)
       try {
         execFileSync(FFMPEG, [
           '-y',
-          // How fast the frames arrived...
           '-framerate', String(sourceFps),
           '-i', join(frameDir, 'frame-%06d.jpg'),
           '-c:v', 'libx264',
           '-preset', 'veryfast',
           '-crf', '18',
-          // yuv420p needs even dimensions.
           '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
           '-pix_fmt', 'yuv420p',
-          // ...and the output rate. Frames are duplicated to reach it, so the duration is preserved
-          // and every frame carries an exact 1/fps timestamp.
           '-r', String(fps),
           output,
         ], { stdio: 'pipe' })
@@ -432,12 +466,37 @@ export async function openBrowser(options = {}) {
         video: output,
         frames: captured,
         fps,
-        // What the screencast actually delivered, in frames per second.
         capturedFps: Math.round((captured / seconds) * 10) / 10,
-        sourceFps: Math.round((captured / seconds) * 1000) / 1000,
+        sourceFps,
         seconds: Math.round(seconds * 10) / 10,
         frameDir,
       }
+    }
+  }
+
+  /**
+   * Slow down (or speed up) CSS animations and transitions for the whole page.
+   *
+   * A 300ms transition is captured by only 7 or 8 frames at this machine's 25fps ceiling, which shows that
+   * the panel moved but not how. Slowing the page to a quarter speed puts ~30 frames inside the same
+   * transition, so a recording can show the easing. Nothing about the plugin changes; this is the browser's
+   * own animation timeline.
+   *
+   * @param rate - playback rate; 0.25 is quarter speed, 1 restores real time.
+   */
+  const setAnimationRate = async (rate) => {
+    // Reuse the recorder's session when there is one. Opening a second session and detaching it broke
+    // the recorder: every later capture failed and the run produced no frames at all.
+    const borrowed = recorderSession !== null
+    const session = borrowed ? recorderSession : await context.newCDPSession(page)
+    try {
+      await session.send('Animation.enable')
+      await session.send('Animation.setPlaybackRate', { playbackRate: rate })
+    } catch (failure) {
+      console.warn('[harness] could not set the animation rate:', failure?.message ?? failure)
+    } finally {
+      // Only detach a session this helper opened itself.
+      if (!borrowed) await session.detach().catch(() => {})
     }
   }
 
@@ -547,7 +606,7 @@ export async function openBrowser(options = {}) {
 
   return {
     page, context, goto, waitFor, read, count, click, tripleClick, hover, type, press,
-    moveAway, rightClickAt, clickAt, dragSelect, textOf, pluginErrors, errors, close, prepareSession, collapseRightSidebar,
+    moveAway, rightClickAt, clickAt, dragSelect, setAnimationRate, textOf, pluginErrors, errors, close, prepareSession, collapseRightSidebar,
   }
 }
 

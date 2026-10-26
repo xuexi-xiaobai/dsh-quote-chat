@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:f341900dc807c91e
+ * Artifact: sha256:74d219420cf62846
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -802,7 +802,20 @@ function __dshQuoteChatFactory(hostRequire) {
           if (box.width > 0 && box.height > 0) return element;
         }
       }
-      return null;
+      const editables = [...document.querySelectorAll('[contenteditable="true"]')].filter((element) => element.closest(SIDEBAR_TAB_SELECTOR) === null).filter((element) => {
+        const box = element.getBoundingClientRect();
+        return box.width > 0 && box.height > 0;
+      });
+      let lowest = null;
+      let lowestTop = -Infinity;
+      for (const element of editables) {
+        const top = element.getBoundingClientRect().top;
+        if (top > lowestTop) {
+          lowestTop = top;
+          lowest = element;
+        }
+      }
+      return lowest;
     }
     function visibleChatArea(scroller) {
       const box = scroller.getBoundingClientRect();

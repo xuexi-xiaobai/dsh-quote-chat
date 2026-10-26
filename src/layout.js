@@ -204,7 +204,27 @@ export function createLayout() {
         if (box.width > 0 && box.height > 0) return element
       }
     }
-    return null
+
+    // None of the slot wrappers has a box in this build — all three measure 0x0 — so without this the
+    // band's bottom fell through to the scroller's own bottom and extended under the composer. The
+    // visible editable is the reliable anchor: its top edge is the composer's top edge.
+    const editables = [...document.querySelectorAll('[contenteditable="true"]')]
+      .filter((element) => element.closest(SIDEBAR_TAB_SELECTOR) === null)
+      .filter((element) => {
+        const box = element.getBoundingClientRect()
+        return box.width > 0 && box.height > 0
+      })
+    // The composer is the lowest of them; any other editable belongs to something else on screen.
+    let lowest = null
+    let lowestTop = -Infinity
+    for (const element of editables) {
+      const top = element.getBoundingClientRect().top
+      if (top > lowestTop) {
+        lowestTop = top
+        lowest = element
+      }
+    }
+    return lowest
   }
 
   /**
