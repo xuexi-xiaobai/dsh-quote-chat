@@ -76,10 +76,12 @@ export async function run({ browser, check: report, url }) {
   check('the run starts from a clean slate', (await count('.qc-marker')) === 0)
 
   // The composer is a Lexical editor: select its contents with a real triple-click, then delete.
-  // Writing textContent would be ignored, which is exactly the fidelity this harness protects.
+  // The composer is a Lexical editor: writing textContent would be ignored, so its contents are
+  // selected and removed with a real Backspace. Selecting happens in the page (selectNodeContents)
+  // rather than with a click: a click on an arbitrary position would land inside the text and
+  // select nothing useful.
   const composerSelector = '[contenteditable="true"]'
   if ((await count(composerSelector)) > 0) {
-    await browser.tripleClick(composerSelector + ':last-of-type').catch(() => {})
     await read(() => {
       const editors = [...document.querySelectorAll('[contenteditable="true"]')]
       const composer = editors[editors.length - 1]
