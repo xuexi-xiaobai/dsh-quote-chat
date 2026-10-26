@@ -16,6 +16,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const source = await readFile(join(here, '..', 'src', 'index.js'), 'utf8')
 // The painter moved to its own module.
 const highlightSource = await readFile(join(here, '..', 'src', 'highlight.js'), 'utf8')
+const stylesheetSource = await readFile(join(here, '..', 'src', 'stylesheet.js'), 'utf8')
 
 const cases = []
 const check = (name, ok, detail) => cases.push({ name, ok, detail })
@@ -61,7 +62,8 @@ check('no positioned flash overlay remains',
 
 // The stylesheet is a template literal. A backtick inside it ends the string
 // early and the whole bundle fails to parse — this bit twice, so it is a test now.
-const cssMatch = /const (?:CSS|STYLESHEET) = `([\s\S]*?)`\n/.exec(source)
+// The stylesheet lives in its own module now, so this reads it there.
+const cssMatch = /export const STYLESHEET = `([\s\S]*?)`\n/.exec(highlightSource === null ? '' : stylesheetSource)
 check('CSS block is extractable', cssMatch !== null, 'could not find the CSS template literal')
 if (cssMatch !== null) {
   const css = cssMatch[1]

@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:fe23c9dfea29e751
+ * Artifact: sha256:14045504e59cae51
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -1081,22 +1081,7 @@ function __dshQuoteChatFactory(hostRequire) {
     return { reveal, scrollToRange, nextFrame };
   }
 
-  // src/index.js
-  var MAX_QUOTE_CHARS = 8e3;
-  var MAX_ANNOTATIONS = 12;
-  var VIEWPORT_MARGIN = 8;
-  var ANCHOR_GAP = 8;
-  var BUBBLE_PANEL_WIDTH = 320;
-  var BUBBLE_PANEL_HEIGHT = 200;
-  var BUBBLE_CLEARANCE = 30;
-  var HOVER_LINGER_MS = 260;
-  var CARD_EXIT_MS = 130;
-  var h = import_react.default.createElement;
-  var NS = "quoteChat";
-  var TAB_ID = "dsh-quote-chat:side";
-  var TAB_KIND = "dsh-quote-chat";
-  var NON_ANSWER_SELECTOR = 'textarea, input, [contenteditable="true"], [data-slot="conversation.composer"]';
-  var UNSAFE_IN_CARD = "script, style, iframe, object, embed, link, meta";
+  // src/stylesheet.js
   var STYLESHEET = `
   .qc-popup{position:fixed;z-index:60;display:flex;align-items:stretch;gap:2px;padding:3px;
     border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-overlay);
@@ -1520,6 +1505,23 @@ function __dshQuoteChatFactory(hostRequire) {
     border:1px solid var(--dsw-alias-border-l2);font-weight:400}
   .qc-btn-ghost:hover{background:var(--dsw-alias-bg-layer-2)}
   `;
+
+  // src/index.js
+  var MAX_QUOTE_CHARS = 8e3;
+  var MAX_ANNOTATIONS = 12;
+  var VIEWPORT_MARGIN = 8;
+  var ANCHOR_GAP = 8;
+  var BUBBLE_PANEL_WIDTH = 320;
+  var BUBBLE_PANEL_HEIGHT = 200;
+  var BUBBLE_CLEARANCE = 30;
+  var HOVER_LINGER_MS = 260;
+  var CARD_EXIT_MS = 130;
+  var h = import_react.default.createElement;
+  var NS = "quoteChat";
+  var TAB_ID = "dsh-quote-chat:side";
+  var TAB_KIND = "dsh-quote-chat";
+  var NON_ANSWER_SELECTOR = 'textarea, input, [contenteditable="true"], [data-slot="conversation.composer"]';
+  var UNSAFE_IN_CARD = "script, style, iframe, object, embed, link, meta";
   function installStyles(ctx) {
     ctx.effect(() => {
       if (typeof document === "undefined") return void 0;

@@ -17,7 +17,9 @@ import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const source = await readFile(join(here, '..', 'src', 'index.js'), 'utf8')
-const css = /const (?:CSS|STYLESHEET) = `([\s\S]*?)`\n/.exec(source)?.[1] ?? ''
+// The stylesheet is its own module now.
+const stylesheetSource = await readFile(join(here, '..', 'src', 'stylesheet.js'), 'utf8')
+const css = /export const STYLESHEET = `([\s\S]*?)`\n/.exec(stylesheetSource)?.[1] ?? ''
 // Layout rules moved to their own module: assert against it where the claim is about layout.
 const layoutSource = await readFile(join(here, '..', 'src', 'layout.js'), 'utf8')
 const navigationSource = await readFile(join(here, '..', 'src', 'navigation.js'), 'utf8')
