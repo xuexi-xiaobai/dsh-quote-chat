@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:8db39b018bcefbc2
+ * Artifact: sha256:dee2fd478c5d527f
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -49,8 +49,8 @@ function __dshQuoteChatFactory(hostRequire) {
     inject: () => inject
   });
   module.exports = __toCommonJS(index_exports);
-  var import_react8 = __toESM(require("react"), 1);
-  var import_react_dom5 = require("react-dom");
+  var import_react9 = __toESM(require("react"), 1);
+  var import_react_dom6 = require("react-dom");
 
   // src/locales.js
   var zh = {
@@ -2960,11 +2960,106 @@ function __dshQuoteChatFactory(hostRequire) {
     };
   }
 
+  // src/ui/table.js
+  var import_react8 = __toESM(require("react"), 1);
+  var import_react_dom5 = require("react-dom");
+  var h7 = import_react8.default.createElement;
+  var VIEWPORT_MARGIN4 = 8;
+  var TABLE_BUTTON_INSET = 116;
+  var TABLE_BUTTON_OFFSET = 4;
+  function TableAddButton(props) {
+    const { label, onAdd } = props;
+    const [target, setTarget] = import_react8.default.useState(null);
+    import_react8.default.useEffect(() => {
+      if (typeof document === "undefined") return void 0;
+      let frame = 0;
+      let pending = null;
+      const apply2 = () => {
+        frame = 0;
+        if (pending === null) {
+          setTarget((current) => current === null ? current : null);
+          return;
+        }
+        const rect = pending.getBoundingClientRect();
+        setTarget((current) => {
+          if (current !== null && current.element === pending && current.rect.top === rect.top && current.rect.right === rect.right) return current;
+          return { element: pending, rect };
+        });
+      };
+      const schedule = () => {
+        if (frame !== 0) return;
+        frame = requestAnimationFrame(apply2);
+      };
+      const onMove = (event) => {
+        const element = elementOf(event.target);
+        const flow = element?.closest(FLOW_SELECTOR) ?? null;
+        const table = flow === null || element === null ? null : element.closest("table");
+        pending = table !== null && flow !== null && flow.contains(table) ? table : null;
+        schedule();
+      };
+      const onLeave = () => {
+        pending = null;
+        schedule();
+      };
+      document.addEventListener("mousemove", onMove, true);
+      document.addEventListener("mouseleave", onLeave, true);
+      document.addEventListener("scroll", onLeave, true);
+      return () => {
+        if (frame !== 0) cancelAnimationFrame(frame);
+        document.removeEventListener("mousemove", onMove, true);
+        document.removeEventListener("mouseleave", onLeave, true);
+        document.removeEventListener("scroll", onLeave, true);
+      };
+    }, []);
+    if (target === null || typeof document === "undefined") return null;
+    const position = {
+      left: Math.max(VIEWPORT_MARGIN4, target.rect.right - TABLE_BUTTON_INSET),
+      top: Math.max(VIEWPORT_MARGIN4, target.rect.top + TABLE_BUTTON_OFFSET)
+    };
+    return (0, import_react_dom5.createPortal)(
+      h7("button", {
+        type: "button",
+        className: "qc-table-add",
+        style: { left: `${position.left}px`, top: `${position.top}px` },
+        // Keep the pointer where it is: focusing the button would fire a mousemove elsewhere and
+        // clear the target before the click.
+        onMouseDown: (event) => event.preventDefault(),
+        onClick: () => onAdd(target.element)
+      }, h7(IconAnnotate, null), label),
+      document.body
+    );
+  }
+  function diagnoseMiss(flow, annotation) {
+    const anchor = annotation.anchor ?? {};
+    const quote = typeof anchor.quote === "string" ? anchor.quote : "";
+    const head = quote.length > 18 ? `${quote.slice(0, 18)}…` : quote;
+    if (flow === null) return `找不到对话区域 / no chat flow (quote ${quote.length} chars: ${head})`;
+    const rows = flow.querySelectorAll("[data-chat-node-key]");
+    const row = anchor.nodeKey === "" ? null : flow.querySelector(`[data-chat-node-key="${cssEscape(anchor.nodeKey)}"]`);
+    if (row === null) {
+      return `翻遍对话仍未加载到原文所在消息 / row never loaded (${rows.length} rows mounted, quote ${quote.length} chars: ${head})`;
+    }
+    return `消息还在，但其中找不到这段引文 / row present, quote missing (${quote.length} chars: ${head})`;
+  }
+  function tableAnchor(flow, table) {
+    const row = table.closest("[data-chat-node-key]") ?? null;
+    const path = nodePath(flow, table);
+    return {
+      nodeKey: row?.getAttribute("data-chat-node-key") ?? "",
+      // A table anchors as a single element: start and end are the same node, so the range covers
+      // the whole table rather than a character run.
+      startPath: path,
+      startOffset: 0,
+      endPath: path,
+      endOffset: table.childNodes.length,
+      quote: table.innerText.trim()
+    };
+  }
+
   // src/index.js
   var MAX_QUOTE_CHARS = 8e3;
   var MAX_ANNOTATIONS = 12;
-  var VIEWPORT_MARGIN4 = 8;
-  var h7 = import_react8.default.createElement;
+  var h8 = import_react9.default.createElement;
   var NS = "quoteChat";
   var TAB_ID = "dsh-quote-chat:side";
   var TAB_KIND = "dsh-quote-chat";
@@ -3093,105 +3188,19 @@ function __dshQuoteChatFactory(hostRequire) {
   var removeAnnotation = (sessionId, id) => annotationStore.remove(sessionId, id);
   var updateAnnotation = (sessionId, id, comment) => annotationStore.update(sessionId, id, comment);
   function useAnnotations(sessionId) {
-    const subscribe = import_react8.default.useCallback(
+    const subscribe = import_react9.default.useCallback(
       (listener) => annotationStore.subscribe(sessionId, listener),
       [sessionId]
     );
-    const snapshot = import_react8.default.useCallback(
+    const snapshot = import_react9.default.useCallback(
       () => annotationStore.snapshot(sessionId),
       [sessionId]
     );
-    return import_react8.default.useSyncExternalStore(subscribe, snapshot, snapshot);
+    return import_react9.default.useSyncExternalStore(subscribe, snapshot, snapshot);
   }
   var chipRegistry = createChipRegistry();
   var chipBridge = createDraftBridge({ registry: chipRegistry, source: CHIP_SOURCE });
   var chipJumpHandler = { current: null };
-  function TableAddButton(props) {
-    const { label, onAdd } = props;
-    const [target, setTarget] = import_react8.default.useState(null);
-    import_react8.default.useEffect(() => {
-      if (typeof document === "undefined") return void 0;
-      let frame = 0;
-      let pending = null;
-      const apply2 = () => {
-        frame = 0;
-        if (pending === null) {
-          setTarget((current) => current === null ? current : null);
-          return;
-        }
-        const rect = pending.getBoundingClientRect();
-        setTarget((current) => {
-          if (current !== null && current.element === pending && current.rect.top === rect.top && current.rect.right === rect.right) return current;
-          return { element: pending, rect };
-        });
-      };
-      const schedule = () => {
-        if (frame !== 0) return;
-        frame = requestAnimationFrame(apply2);
-      };
-      const onMove = (event) => {
-        const element = elementOf(event.target);
-        const flow = element?.closest(FLOW_SELECTOR) ?? null;
-        const table = flow === null || element === null ? null : element.closest("table");
-        pending = table !== null && flow !== null && flow.contains(table) ? table : null;
-        schedule();
-      };
-      const onLeave = () => {
-        pending = null;
-        schedule();
-      };
-      document.addEventListener("mousemove", onMove, true);
-      document.addEventListener("mouseleave", onLeave, true);
-      document.addEventListener("scroll", onLeave, true);
-      return () => {
-        if (frame !== 0) cancelAnimationFrame(frame);
-        document.removeEventListener("mousemove", onMove, true);
-        document.removeEventListener("mouseleave", onLeave, true);
-        document.removeEventListener("scroll", onLeave, true);
-      };
-    }, []);
-    if (target === null || typeof document === "undefined") return null;
-    const position = {
-      left: Math.max(VIEWPORT_MARGIN4, target.rect.right - 116),
-      top: Math.max(VIEWPORT_MARGIN4, target.rect.top + 4)
-    };
-    return (0, import_react_dom5.createPortal)(
-      h7("button", {
-        type: "button",
-        className: "qc-table-add",
-        style: { left: `${position.left}px`, top: `${position.top}px` },
-        onMouseDown: (event) => event.preventDefault(),
-        onClick: () => onAdd(target.element)
-      }, h7(IconAnnotate, null), label),
-      document.body
-    );
-  }
-  function diagnoseMiss(flow, annotation) {
-    const anchor = annotation.anchor ?? {};
-    const quote = typeof anchor.quote === "string" ? anchor.quote : "";
-    const head = quote.length > 18 ? `${quote.slice(0, 18)}…` : quote;
-    if (flow === null) return `找不到对话区域 / no chat flow (quote ${quote.length} chars: ${head})`;
-    const rows = flow.querySelectorAll("[data-chat-node-key]");
-    const row = anchor.nodeKey === "" ? null : flow.querySelector(`[data-chat-node-key="${cssEscape(anchor.nodeKey)}"]`);
-    if (row === null) {
-      return `翻遍对话仍未加载到原文所在消息 / row never loaded (${rows.length} rows mounted, quote ${quote.length} chars: ${head})`;
-    }
-    return `消息还在，但其中找不到这段引文 / row present, quote missing (${quote.length} chars: ${head})`;
-  }
-  function tableAnchor(flow, table) {
-    const row = table.closest("[data-chat-node-key]") ?? null;
-    const path = nodePath(flow, table);
-    return {
-      nodeKey: row?.getAttribute("data-chat-node-key") ?? "",
-      // A table anchors as a single element: start and end are the same node,
-      // so the range covers the whole table rather than a character run.
-      startPath: path,
-      startOffset: 0,
-      endPath: path,
-      endOffset: table.childNodes.length,
-      quote: table.innerText.trim()
-    };
-  }
   function applyImpl(ctx) {
     installStyles(ctx);
     ctx.effect(() => ctx.locale.register(NS, { zh, en }), "quote-chat: dictionaries");

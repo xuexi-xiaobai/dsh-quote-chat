@@ -65,6 +65,7 @@ import { createMarkerLayer } from './ui/markers.js'
 import { createSideChat } from './ui/side-chat.js'
 import { useDraft, useDraftOccurrences } from './ui/draft-hooks.js'
 import { annotationDock } from './ui/dock.js'
+import { TableAddButton, diagnoseMiss, tableAnchor } from './ui/table.js'
 import { elementOf, cssEscape } from './dom.js'
 import {
   rangeAt, captureAnchor, resolveAnchor, locateText, textOf, nodePath, nodeAtPath,
@@ -434,139 +435,6 @@ const chipJumpHandler = { current: null }
 // side-chat-transport.js; this module is imported above.
 
 // #region floating surfaces
-
-// #endregion
-
-// #region table affordance
-
-/**
- * The "add this table" button that follows the pointer across answer tables.
- *
- * A table cannot share an annotation with the prose around it, so it gets
- * its own control instead of relying on a text selection.
- * @param props - the label and the handler.
- */
-function TableAddButton(props) {
-  const { label, onAdd } = props
-  const [target, setTarget] = React.useState(null)
-
-  React.useEffect(() => {
-    if (typeof document === 'undefined') return undefined
-    let frame = 0
-    let pending = null
-    const apply = () => {
-      frame = 0
-      if (pending === null) {
-        setTarget((current) => (current === null ? current : null))
-        return
-      }
-      const rect = pending.getBoundingClientRect()
-      setTarget((current) => {
-        if (current !== null && current.element === pending
-          && current.rect.top === rect.top && current.rect.right === rect.right) return current
-        return { element: pending, rect }
-      })
-    }
-    const schedule = () => {
-      if (frame !== 0) return
-      frame = requestAnimationFrame(apply)
-    }
-    const onMove = (event) => {
-      const element = elementOf(event.target)
-      const flow = element?.closest(FLOW_SELECTOR) ?? null
-      const table = flow === null || element === null ? null : element.closest('table')
-      pending = table !== null && flow !== null && flow.contains(table) ? table : null
-      schedule()
-    }
-    const onLeave = () => {
-      pending = null
-      schedule()
-    }
-    document.addEventListener('mousemove', onMove, true)
-    document.addEventListener('mouseleave', onLeave, true)
-    document.addEventListener('scroll', onLeave, true)
-    return () => {
-      if (frame !== 0) cancelAnimationFrame(frame)
-      document.removeEventListener('mousemove', onMove, true)
-      document.removeEventListener('mouseleave', onLeave, true)
-      document.removeEventListener('scroll', onLeave, true)
-    }
-  }, [])
-
-  if (target === null || typeof document === 'undefined') return null
-  const position = {
-    left: Math.max(VIEWPORT_MARGIN, target.rect.right - 116),
-    top: Math.max(VIEWPORT_MARGIN, target.rect.top + 4),
-  }
-  return createPortal(
-    h('button', {
-      type: 'button',
-      className: 'qc-table-add',
-      style: { left: `${position.left}px`, top: `${position.top}px` },
-      onMouseDown: (event) => event.preventDefault(),
-      onClick: () => onAdd(target.element),
-    }, h(IconAnnotate, null), label),
-    document.body,
-  )
-}
-
-/**
- * Explain why a jump missed, in terms of the state that actually failed.
- *
- * "Not found" is useless when debugging, because the failures are different:
- * no flow at all, the row unmounted (the transcript pages distant rows out
- * of the DOM), or the row present but the passage gone from it. Reporting the
- * mounted-row count and the stored quote length turns the next report into a
- * diagnosis instead of another guess.
- * @param flow - the chat flow, or null.
- * @param annotation - the annotation that failed to resolve.
- * @returns the notice text.
- */
-function diagnoseMiss(flow, annotation) {
-  const anchor = annotation.anchor ?? {}
-  const quote = typeof anchor.quote === 'string' ? anchor.quote : ''
-  const head = quote.length > 18 ? `${quote.slice(0, 18)}…` : quote
-  if (flow === null) return `找不到对话区域 / no chat flow (quote ${quote.length} chars: ${head})`
-  const rows = flow.querySelectorAll('[data-chat-node-key]')
-  const row = anchor.nodeKey === ''
-    ? null
-    : flow.querySelector(`[data-chat-node-key="${cssEscape(anchor.nodeKey)}"]`)
-  if (row === null) {
-    return `翻遍对话仍未加载到原文所在消息 / row never loaded (${rows.length} rows mounted, quote ${quote.length} chars: ${head})`
-  }
-  return `消息还在，但其中找不到这段引文 / row present, quote missing (${quote.length} chars: ${head})`
-}
-
-// #endregion
-
-// #endregion
-
-// #region table anchor
-
-/**
- * Anchor one table inside the flow, addressed by its own DOM path so the
- * gutter marker lands on the table rather than on the paragraph before it.
- *
- * The path is relative to the flow, matching `captureAnchor`, so a table
- * survives the row around it being rebuilt.
- * @param flow - the chat flow container.
- * @param table - the table element.
- * @returns the anchor record.
- */
-function tableAnchor(flow, table) {
-  const row = table.closest('[data-chat-node-key]') ?? null
-  const path = nodePath(flow, table)
-  return {
-    nodeKey: row?.getAttribute('data-chat-node-key') ?? '',
-    // A table anchors as a single element: start and end are the same node,
-    // so the range covers the whole table rather than a character run.
-    startPath: path,
-    startOffset: 0,
-    endPath: path,
-    endOffset: table.childNodes.length,
-    quote: table.innerText.trim(),
-  }
-}
 
 // #endregion
 
