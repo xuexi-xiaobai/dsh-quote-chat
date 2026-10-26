@@ -31,7 +31,12 @@ for (const line of buffer.split('\n').filter(Boolean)) {
   try {
     const frame = JSON.parse(line)
     if (frame.id === 2 && frame.result?.tools !== undefined) {
-      for (const tool of frame.result.tools) console.log(tool.name)
+      for (const tool of frame.result.tools) {
+        console.log(tool.name)
+        if (process.argv.includes('--schemas') && tool.name === 'browser_hover') {
+          console.log(JSON.stringify(tool.inputSchema, null, 1))
+        }
+      }
     }
   } catch { /* banner */ }
 }

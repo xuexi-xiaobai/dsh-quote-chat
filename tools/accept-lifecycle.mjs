@@ -346,6 +346,68 @@ try {
   check('the comment box closed on save', saved.composePresent === false)
   await recorder.frame('saved')
 
+  // ── Hover the chip: the card must appear, and leave on its own ─────────
+  // The strip is its own component (src/ui/cards.js); this is the only browser-level proof that
+  // hovering a chip still produces a card and that the card clears itself afterwards.
+  // A synthetic MouseEvent does not produce the card: the strip listens on the document in the
+  // capture phase and reacts to where the pointer actually is. Drive a real pointer through the
+  // MCP hover, which accepts a unique CSS selector as its target.
+  const chipPresent = await evaluate(
+    `() => document.querySelectorAll('[data-composer-chip="quote-chat"]').length`,
+  )
+  let hoverState = { ok: false, reason: 'no chip' }
+  if (chipPresent >= 1) {
+    let hoverError = ''
+    try {
+      await call('browser_hover', {
+        element: 'the quote-chat chip in the composer',
+        target: '[data-composer-chip="quote-chat"]',
+      })
+    } catch (error) {
+      hoverError = String(error).slice(0, 160)
+    }
+    const chipInfo = await evaluate(`() => {
+      const chip = document.querySelector('[data-composer-chip="quote-chat"]')
+      if (chip === null) return null
+      const rect = chip.getBoundingClientRect()
+      return {
+        tag: chip.tagName,
+        cls: String(chip.className).slice(0, 40),
+        rect: { left: Math.round(rect.left), top: Math.round(rect.top), w: Math.round(rect.width), h: Math.round(rect.height) },
+        visible: rect.width > 0 && rect.height > 0,
+        qcNum: chip.getAttribute('data-qc-num'),
+        qcLabel: chip.getAttribute('data-qc-label')
+      }
+    }`)
+    hoverState = { ok: true, hoverError, chipInfo }
+  }
+  await sleep(700)
+  const hoverErrors = await call('browser_console_messages', { level: 'error' }).catch(() => '')
+  const relevant = hoverErrors.split('\n').filter((line) => /qc-|quote-chat|ChipCards|cards/i.test(line))
+  if (relevant.length > 0) console.log('   hover console:', relevant.slice(0, 2).join(' | ').slice(0, 300))
+  const cardShown = await evaluate(`() => ({
+    cards: document.querySelectorAll('.qc-card').length,
+    comment: (document.querySelector('.qc-card-comment')?.textContent ?? '').slice(0, 20),
+    body: (document.querySelector('.qc-card-body')?.textContent ?? '').slice(0, 20)
+  })`)
+  check('hovering a chip shows its card',
+    hoverState.ok === true && cardShown.cards >= 1,
+    JSON.stringify({ hoverState, ...cardShown }))
+  check('the card carries the comment and the passage',
+    cardShown.comment !== '' && cardShown.body !== '',
+    JSON.stringify(cardShown))
+
+  // Move the pointer away and wait past the linger plus the exit animation.
+  await evaluate(`() => {
+    document.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    return true
+  }`)
+  await sleep(900)
+  const cardGone = await evaluate(`() => ({ cards: document.querySelectorAll('.qc-card').length })`)
+  check('the card clears after the pointer leaves', cardGone.cards === 0,
+    JSON.stringify(cardGone))
+
+
   // ── Step 5: click the marker ────────────────────────────────────────────
   await evaluate(`() => {
     const marker = document.querySelector('.qc-marker')

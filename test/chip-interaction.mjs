@@ -15,6 +15,8 @@ import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const source = await readFile(join(here, '..', 'src', 'index.js'), 'utf8')
+// The annotation strip moved to its own module.
+const cardsSource = await readFile(new URL('../src/ui/cards.js', import.meta.url), 'utf8')
 // The stylesheet is its own module now.
 const stylesheetSource = await readFile(join(here, '..', 'src', 'stylesheet.js'), 'utf8')
 const css = /export const STYLESHEET = `([\s\S]*?)`\n/.exec(stylesheetSource)?.[1] ?? ''
@@ -32,7 +34,7 @@ check('table kind swaps the glyph',
   /\[data-composer-chip="quote-chat"\]\[data-qc-kind="table"\]\{--qc-glyph:var\(--qc-glyph-table\)\}/.test(css),
   'no rule switching to the table glyph')
 check('the kind attribute is set from the annotation',
-  /chip\.dataset\.qcKind = annotation\.kind === 'table' \? 'table' : 'text'/.test(source),
+  /chip\.dataset\.qcKind = annotation\.kind === 'table' \? 'table' : 'text'/.test(cardsSource),
   'data-qc-kind is not derived from annotation.kind')
 
 // ── 2. Glyph and × are mutually exclusive ──────────────────────────────────
@@ -49,10 +51,10 @@ check('the x is red', /background:#e[0-9a-f]{5}/i.test(removeRule) || removeRule
 // Its centre must land on the glyph's centre: the pill's left padding plus half
 // the glyph box. A left-edge anchor would put it visibly off-centre.
 check('the x is centred on the glyph slot',
-  /left: `\$\{hover\.anchor\.left \+ GLYPH_CENTRE\}px`/.test(source),
+  /left: `\$\{hover\.anchor\.left \+ GLYPH_CENTRE\}px`/.test(cardsSource),
   'the x is not positioned by the glyph centre')
 check('the glyph centre is derived from the pill padding',
-  /const GLYPH_CENTRE = 7 \+ \(13 \/ 2\)/.test(source),
+  /const GLYPH_CENTRE = 7 \+ \(13 \/ 2\)/.test(cardsSource),
   'GLYPH_CENTRE no longer matches padding-left + half glyph')
 check('the x is round like the pill',
   /\.qc-chip-remove\{[\s\S]{0,400}border-radius:999px/.test(css),
@@ -62,12 +64,12 @@ check('the x is round like the pill',
 // baseline and side bearings, so it sat high and looked undersized no matter how
 // it was nudged; the SVG is centred by construction.
 check('the cross is an svg, not a text character',
-  /className: 'qc-chip-remove',[\s\S]{0,800}h\('svg'/.test(source)
+  /className: 'qc-chip-remove',[\s\S]{0,800}h\('svg'/.test(cardsSource)
     && !/\}, '×'\)/.test(source),
   'the cross is still rendered as a text character')
 check('the cross strokes meet at the exact centre',
-  /viewBox: '0 0 10 10'/.test(source)
-    && /M2\.6 2\.6 L7\.4 7\.4 M7\.4 2\.6 L2\.6 7\.4/.test(source),
+  /viewBox: '0 0 10 10'/.test(cardsSource)
+    && /M2\.6 2\.6 L7\.4 7\.4 M7\.4 2\.6 L2\.6 7\.4/.test(cardsSource),
   'the cross path is not symmetric about (5,5)')
 check('the cross is drawn with round strokes',
   /\.qc-chip-remove svg path\{[^}]*stroke:#fff[^}]*stroke-linecap:round/.test(css),
@@ -80,7 +82,7 @@ check('the cross icon is at least 10px',
 
 // ── 4. Hover survives the trip to the × ────────────────────────────────────
 check('hover keeps the x reachable',
-  /target\.closest\('\.qc-chip-remove'\) !== null/.test(source),
+  /target\.closest\('\.qc-chip-remove'\) !== null/.test(cardsSource),
   'pointer logic no longer tolerates the x')
 
 let failed = 0

@@ -16,6 +16,8 @@ import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const source = await readFile(join(here, '..', 'src', 'index.js'), 'utf8')
+// The annotation strip moved to its own module.
+const cardsSource = await readFile(new URL('../src/ui/cards.js', import.meta.url), 'utf8')
 // The stylesheet is its own module now.
 const stylesheetSource = await readFile(join(here, '..', 'src', 'stylesheet.js'), 'utf8')
 const css = /export const STYLESHEET = `([\s\S]*?)`\n/.exec(stylesheetSource)?.[1] ?? ''
@@ -27,33 +29,33 @@ const check = (name, ok, detail) => cases.push({ name, ok, detail })
 check('a linger delay is defined',
   /const HOVER_LINGER_MS = \d+/.test(source), 'no HOVER_LINGER_MS constant')
 check('leaving schedules a close instead of closing',
-  /closeTimer = setTimeout\(\(\) => \{[\s\S]{0,120}setHover\(null\)/.test(source),
+  /closeTimer = setTimeout\(\(\) => \{[\s\S]{0,120}setHover\(null\)/.test(cardsSource),
   'the pointer-out path closes immediately')
 check('the close is a timeout, not a synchronous clear',
-  /if \(annotation === undefined \|\| annotation === null\) \{[\s\S]{0,400}setTimeout/.test(source),
+  /if \(annotation === undefined \|\| annotation === null\) \{[\s\S]{0,400}setTimeout/.test(cardsSource),
   'the exit path does not use a timer')
 check('coming back cancels the pending close',
-  /if \(closeTimer !== 0\) \{\s*clearTimeout\(closeTimer\)/.test(source),
+  /if \(closeTimer !== 0\) \{\s*clearTimeout\(closeTimer\)/.test(cardsSource),
   're-entering does not cancel the close')
 check('the pending close is cleared on unmount',
-  /if \(closeTimer !== 0\) clearTimeout\(closeTimer\)/.test(source),
+  /if \(closeTimer !== 0\) clearTimeout\(closeTimer\)/.test(cardsSource),
   'the close timer leaks on unmount')
 
 // The card must survive the trip from chip to card, so the pointer logic has to
 // treat both as "still on this annotation".
 check('the card counts as part of the hover',
-  /target\.closest\('\.qc-card'\) !== null/.test(source),
+  /target\.closest\('\.qc-card'\) !== null/.test(cardsSource),
   'the card is not treated as hoverable')
 
 // ── 3. No ordinal, no removal control in the card ─────────────────────────
 check('the card renders no number badge',
-  !/qc-card-num/.test(source) && !/qc-card-head/.test(source),
+  !/qc-card-num/.test(cardsSource) && !/qc-card-head/.test(cardsSource),
   'the card still builds a header/badge')
 check('the card renders no removal button',
-  !/qc-card-remove/.test(source) && !/qc-card-hint/.test(source),
+  !/qc-card-remove/.test(cardsSource) && !/qc-card-hint/.test(cardsSource),
   'the card still builds a removal control')
 check('the card carries a comment block and a body',
-  /className: 'qc-card-comment'/.test(source) && /className: 'qc-card-body'/.test(source),
+  /className: 'qc-card-comment'/.test(cardsSource) && /className: 'qc-card-body'/.test(cardsSource),
   'the card is missing its comment or body block')
 
 // ── 4. Compact sizing ──────────────────────────────────────────────────────

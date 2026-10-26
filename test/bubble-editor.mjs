@@ -17,6 +17,8 @@ import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const source = await readFile(join(here, '..', 'src', 'index.js'), 'utf8')
+// The annotation strip moved to its own module.
+const cardsSource = await readFile(new URL('../src/ui/cards.js', import.meta.url), 'utf8')
 // The stylesheet is its own module now.
 const stylesheetSource = await readFile(join(here, '..', 'src', 'stylesheet.js'), 'utf8')
 const css = /export const STYLESHEET = `([\s\S]*?)`\n/.exec(stylesheetSource)?.[1] ?? ''
@@ -119,7 +121,7 @@ check('the panel keeps only edit, save and delete',
   !/qc-bp-jump/.test(source) && !/qc-bp-quote/.test(source),
   'the panel still carries a jump button or a passage preview')
 check('a chip click still jumps',
-  /actionsRef\.current\.onJump\(annotation\)/.test(source),
+  /actionsRef\.current\.onJump\(annotation\)/.test(cardsSource),
   'clicking a chip no longer jumps')
 
 // ── 5. The bubble is clipped by the transcript, not floating over chrome ──
@@ -132,7 +134,7 @@ check('the hover card has an exit animation',
   /\.qc-card-out\{animation:qc-card-out/.test(css) && /@keyframes qc-card-out/.test(css),
   'the card still vanishes between frames')
 check('the card is kept mounted for the exit',
-  /CARD_EXIT_MS/.test(source) && /closing: true/.test(source),
+  /CARD_EXIT_MS/.test(cardsSource) && /closing: true/.test(cardsSource),
   'the card unmounts before its exit animation runs')
 check('the highlight fades in',
   /::highlight\(quote-chat-flash\)\{[\s\S]{0,300}animation:qc-hl-in/.test(css),

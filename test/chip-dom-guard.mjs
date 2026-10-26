@@ -14,6 +14,8 @@ import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const source = await readFile(join(here, '..', 'src', 'index.js'), 'utf8')
+// The annotation strip moved to its own module.
+const cardsSource = await readFile(new URL('../src/ui/cards.js', import.meta.url), 'utf8')
 // The painter moved to its own module.
 const highlightSource = await readFile(join(here, '..', 'src', 'highlight.js'), 'utf8')
 const stylesheetSource = await readFile(join(here, '..', 'src', 'stylesheet.js'), 'utf8')
@@ -46,9 +48,9 @@ for (const [pattern, label] of forbidden) {
 
 // The safe path must exist: the card is portaled, the chip gets attributes only.
 check('chip gets data attributes',
-  /chip\.dataset\.qcNum\s*=/.test(source), 'chip.dataset.qcNum assignment missing')
+  /chip\.dataset\.qcNum\s*=/.test(cardsSource), 'chip.dataset.qcNum assignment missing')
 check('annotation card is portaled to body',
-  /(className: 'qc-card'|'qc-card qc-card-out')/.test(source) && /createPortal\(/.test(source),
+  /(className: 'qc-card'|'qc-card qc-card-out')/.test(cardsSource) && /createPortal\(/.test(cardsSource),
   'qc-card portal missing')
 check('card is pinned to the chip rectangle',
   /anchor\.left/.test(source) && /getBoundingClientRect\(\)/.test(source),
@@ -77,7 +79,7 @@ if (cssMatch !== null) {
 
 // The card must replay rendered markup, not raw text.
 check('card renders captured markup',
-  /dangerouslySetInnerHTML: \{ __html: annotation\.previewHtml/.test(source),
+  /dangerouslySetInnerHTML: \{ __html: annotation\.previewHtml/.test(cardsSource),
   'the card no longer renders previewHtml')
 check('stored field matches what the card reads',
   /previewHtml: source\.kind === 'table' \? '' : source\.previewHtml/.test(source),
