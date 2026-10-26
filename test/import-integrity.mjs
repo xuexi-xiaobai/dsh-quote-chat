@@ -131,6 +131,15 @@ function analyse(raw, text) {
     }
   }
   for (const match of text.matchAll(/([A-Za-z_$][\w$]*)\s*=>/g)) declared.add(match[1])
+  // Destructured parameters, including defaults: create({ a, b = c })
+  // Every brace-delimited group that sits inside a parameter list, including defaults and
+  // multi-line signatures. Being generous here is right: the point is only to not report a name
+  // that the file obviously binds.
+  for (const match of text.matchAll(/\{([^{}]*)\}/g)) {
+    for (const piece of match[1].matchAll(/(?<![.\w$])([A-Za-z_$][\w$]*)\s*(?::|,|=|\}|$)/g)) {
+      if (piece[1] !== undefined) declared.add(piece[1])
+    }
+  }
   for (const match of text.matchAll(/([A-Za-z_$][\w$]*)\s*:/g)) declared.add(match[1])
   for (const match of text.matchAll(/(?<![.\w$])([A-Za-z_$][\w$]*)\s*=(?!=)/g)) declared.add(match[1])
   return { imports, exports, declared }

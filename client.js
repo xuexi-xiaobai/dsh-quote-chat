@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:a49d25e4e6e19287
+ * Artifact: sha256:1888205f757df58c
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -49,8 +49,8 @@ function __dshQuoteChatFactory(hostRequire) {
     inject: () => inject
   });
   module.exports = __toCommonJS(index_exports);
-  var import_react4 = __toESM(require("react"), 1);
-  var import_react_dom3 = require("react-dom");
+  var import_react5 = __toESM(require("react"), 1);
+  var import_react_dom4 = require("react-dom");
 
   // src/locales.js
   var zh = {
@@ -719,6 +719,24 @@ function __dshQuoteChatFactory(hostRequire) {
     '[data-slot="conversation.input.dock"]',
     "[data-composer-root]"
   ];
+  function composerContainer() {
+    if (typeof document === "undefined") return null;
+    const selectors = [
+      '[data-slot="conversation.composer.dock"]',
+      '[data-slot="conversation.input.dock"]',
+      "[data-composer-root]",
+      '[contenteditable="true"]'
+    ];
+    for (const selector of selectors) {
+      for (const element of document.querySelectorAll(selector)) {
+        if (element.closest("[data-sidebar-right-tab]") !== null) continue;
+        if (element.getClientRects().length > 0) {
+          return element.closest("[data-composer-root]") ?? element.parentElement ?? element;
+        }
+      }
+    }
+    return null;
+  }
   function createLayout() {
     const columnCache = /* @__PURE__ */ new WeakMap();
     const containerCache = /* @__PURE__ */ new WeakMap();
@@ -815,7 +833,7 @@ function __dshQuoteChatFactory(hostRequire) {
       const left = Math.min(Math.max(ANCHOR_INSET, localLeft), maxLeft);
       return { scroller, position: { top, left } };
     }
-    function anchorAboveBubble2(flow, bubble, size) {
+    function anchorAboveBubble(flow, bubble, size) {
       const scroller = containerFor(flow);
       if (scroller === null || scroller === void 0 || bubble === null) return null;
       prepareContainer(scroller);
@@ -885,21 +903,22 @@ function __dshQuoteChatFactory(hostRequire) {
       const found = flowColumnBox(flow);
       return found === null ? null : found.box;
     }
-    function columnElement2(flow) {
+    function columnElement(flow) {
       const found = flowColumnBox(flow);
       return found === null ? null : found.element;
     }
     return {
+      composerContainer,
       findFlow: findFlow2,
       scrollContainerOf,
       containerFor,
       findComposerDock,
       visibleChatArea,
       anchorInTranscript,
-      anchorAboveBubble: anchorAboveBubble2,
+      anchorAboveBubble,
       flowColumnBox,
       flowColumn,
-      columnElement: columnElement2
+      columnElement
     };
   }
 
@@ -1736,7 +1755,7 @@ function __dshQuoteChatFactory(hostRequire) {
   var HOVER_LINGER_MS = 260;
   var CARD_EXIT_MS = 130;
   var VIEWPORT_MARGIN2 = 8;
-  function createCards({ composerContainer: composerContainer2 }) {
+  function createCards({ composerContainer: composerContainer3 }) {
     function ChipCards2(props) {
       const { annotations, occurrences, labels, onJump, onRemove } = props;
       const actionsRef = import_react3.default.useRef({ onJump, onRemove });
@@ -1817,7 +1836,7 @@ function __dshQuoteChatFactory(hostRequire) {
             }
           }
         });
-        const composerHost = composerContainer2();
+        const composerHost = composerContainer3();
         if (composerHost !== null) {
           observer.observe(composerHost, { childList: true, subtree: true });
         }
@@ -1995,14 +2014,371 @@ function __dshQuoteChatFactory(hostRequire) {
     return { ChipCards: ChipCards2, AnnotationCard: AnnotationCard2 };
   }
 
+  // src/ui/markers.js
+  var import_react4 = __toESM(require("react"), 1);
+  var import_react_dom3 = require("react-dom");
+  var h4 = import_react4.default.createElement;
+  var VIEWPORT_MARGIN3 = 8;
+  var BUBBLE_CLEARANCE = 30;
+  var BUBBLE_PANEL_WIDTH = 320;
+  var BUBBLE_PANEL_HEIGHT = 200;
+  function createMarkerLayer({ findFlow: findFlow2, columnElement, anchorAboveBubble }) {
+    function chipOrdinals(occurrences) {
+      const ordinals = /* @__PURE__ */ new Map();
+      if (typeof document === "undefined") return ordinals;
+      const refs = occurrences.filter((item) => item.source === CHIP_SOURCE).map((item) => item.ref);
+      const chips = [...document.querySelectorAll('[data-composer-chip="quote-chat"]')].filter((element) => element.closest("[data-sidebar-right-tab]") === null);
+      for (let index = 0; index < chips.length && index < refs.length; index += 1) {
+        ordinals.set(refs[index], index + 1);
+      }
+      return ordinals;
+    }
+    function composerContainer3() {
+      if (typeof document === "undefined") return null;
+      const selectors = [
+        '[data-slot="conversation.composer.dock"]',
+        '[data-slot="conversation.input.dock"]',
+        "[data-composer-root]",
+        '[contenteditable="true"]'
+      ];
+      for (const selector of selectors) {
+        for (const element of document.querySelectorAll(selector)) {
+          if (element.closest("[data-sidebar-right-tab]") !== null) continue;
+          if (element.getClientRects().length > 0) {
+            return element.closest("[data-composer-root]") ?? element.parentElement ?? element;
+          }
+        }
+      }
+      return null;
+    }
+    const columnCache = /* @__PURE__ */ new WeakMap();
+    const containerCache = /* @__PURE__ */ new WeakMap();
+    function BubblePanel(props) {
+      const { annotation, anchor, labels, onSave, onDelete, onClose, inFlow = false, rel = null } = props;
+      const [text, setText] = import_react4.default.useState(annotation.comment);
+      const [flash, setFlash] = import_react4.default.useState("");
+      const ref = import_react4.default.useRef(null);
+      const areaRef = import_react4.default.useRef(null);
+      const [size, setSize] = import_react4.default.useState({ width: 0, height: 0 });
+      import_react4.default.useLayoutEffect(() => {
+        const element = ref.current;
+        if (element === null) return;
+        const box = element.getBoundingClientRect();
+        setSize({ width: box.width, height: box.height });
+        areaRef.current?.focus();
+      }, []);
+      import_react4.default.useEffect(() => {
+        const onDown = (event) => {
+          if (ref.current !== null && event.target instanceof Node && ref.current.contains(event.target)) return;
+          onClose();
+        };
+        const onKey = (event) => {
+          if (event.key === "Escape") onClose();
+        };
+        document.addEventListener("mousedown", onDown, true);
+        document.addEventListener("keydown", onKey, true);
+        return () => {
+          document.removeEventListener("mousedown", onDown, true);
+          document.removeEventListener("keydown", onKey, true);
+        };
+      }, [onClose]);
+      const width = size.width || 320;
+      const height = size.height || 200;
+      const rightEdge = rel !== null && rel.right !== void 0 ? rel.right : null;
+      const left = rel !== null ? rel.left : inFlow ? Math.max(0, anchor.width - width) : Math.min(
+        Math.max(VIEWPORT_MARGIN3, anchor.left),
+        Math.max(VIEWPORT_MARGIN3, window.innerWidth - width - VIEWPORT_MARGIN3)
+      );
+      const measured = height > 0 ? height : 0;
+      const top = rel !== null ? rel.bubbleTop === void 0 ? rel.top : Math.min(
+        Math.max(rel.bandTop, rel.bubbleTop - rel.gap - (measured || rel.gap)),
+        Math.max(rel.bandTop, rel.bandBottom - (measured || rel.gap))
+      ) : inFlow ? -(height + BUBBLE_CLEARANCE) : Math.min(
+        Math.max(VIEWPORT_MARGIN3, anchor.top),
+        Math.max(VIEWPORT_MARGIN3, window.innerHeight - height - VIEWPORT_MARGIN3)
+      );
+      const commit = () => {
+        setFlash(labels.saved);
+        setTimeout(() => onSave(text), 160);
+      };
+      return h4(
+        "div",
+        {
+          ref,
+          // Plugin chrome: the passage highlight must never paint over the editor, and
+          // text readers must skip it. Both are keyed off this attribute.
+          "data-qc-ignore": "1",
+          className: "qc-bubble-panel",
+          role: "dialog",
+          "aria-label": labels.edit,
+          style: rightEdge !== null ? {
+            right: `${rightEdge}px`,
+            top: `${top}px`,
+            visibility: size.width === 0 ? "hidden" : "visible"
+          } : {
+            left: `${left}px`,
+            top: `${top}px`,
+            visibility: size.width === 0 ? "hidden" : "visible"
+          }
+        },
+        // No passage preview and no jump button: the passage is already lit in the
+        // transcript behind this panel, which is a better answer than a truncated
+        // copy of it, and jumping is folded into opening the panel.
+        h4("div", { className: "qc-bp-label" }, labels.comment),
+        h4("textarea", {
+          ref: areaRef,
+          value: text,
+          placeholder: labels.bubblePlaceholder,
+          spellCheck: false,
+          onChange: (event) => setText(event.target.value),
+          onKeyDown: (event) => {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              commit();
+            }
+          }
+        }),
+        h4(
+          "div",
+          { className: "qc-bp-actions" },
+          h4("button", {
+            type: "button",
+            className: "qc-bp-delete",
+            onClick: () => {
+              setFlash(labels.deleted);
+              onDelete();
+            }
+          }, labels.delete),
+          h4("button", {
+            type: "button",
+            className: "qc-bp-save",
+            onClick: commit
+          }, labels.save)
+        ),
+        flash === "" ? null : h4("span", {
+          className: "qc-bp-done",
+          style: { left: `${left}px`, top: `${top + height + 6}px` }
+        }, flash)
+      );
+    }
+    function samePositions(left, right) {
+      if (left.length !== right.length) return false;
+      for (let index = 0; index < left.length; index += 1) {
+        const a = left[index];
+        const b = right[index];
+        if (a.id !== b.id || a.row !== b.row || a.number !== b.number) return false;
+      }
+      return true;
+    }
+    function rowOf(range, flow) {
+      const element = elementOf(range.startContainer);
+      if (element === null) return null;
+      const block = element.closest(BLOCK_SELECTOR);
+      if (block !== null && block !== flow && flow.contains(block)) return block;
+      const row = element.closest("[data-chat-node-key]");
+      if (row !== null) return row;
+      let ancestor = element;
+      while (ancestor !== null) {
+        if (ancestor !== flow && ancestor.getClientRects().length > 0) return ancestor;
+        ancestor = ancestor.parentElement;
+      }
+      return null;
+    }
+    function MarkerLayer2(props) {
+      const { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove } = props;
+      const [positions, setPositions] = import_react4.default.useState([]);
+      const [editing, setEditing] = import_react4.default.useState(null);
+      import_react4.default.useEffect(() => {
+        if (typeof document === "undefined") return void 0;
+        let frame = 0;
+        let timer = 0;
+        let measured = [];
+        const measure = () => {
+          frame = 0;
+          const flow2 = findFlow2();
+          if (flow2 === null) {
+            measured = [];
+            setPositions((current) => current.length === 0 ? current : []);
+            return;
+          }
+          const ordinals = chipOrdinals(occurrences);
+          const next = [];
+          for (const annotation of annotations) {
+            const number = ordinals.get(annotation.id);
+            if (number === void 0) continue;
+            const range = resolveAnchor(flow2, annotation.anchor);
+            if (range === null) continue;
+            const row = rowOf(range, flow2);
+            if (row === null) continue;
+            next.push({
+              id: annotation.id,
+              row,
+              // The base class is already the blue bubble; only tables recolour.
+              tone: annotation.kind === "table" ? "qc-marker-table" : "",
+              number,
+              title: labels.jump.replace("{n}", String(number))
+            });
+          }
+          measured = next;
+          publish(next);
+        };
+        const publish = (next) => {
+          setPositions((current) => samePositions(current, next) ? current : next);
+        };
+        const reflow = () => {
+          frame = 0;
+          if (measured.length === 0) return;
+          publish(measured);
+        };
+        const schedule = () => {
+          if (frame !== 0) return;
+          frame = requestAnimationFrame(measure);
+        };
+        const onColumnResize = () => {
+          schedule();
+        };
+        schedule();
+        const debounced = () => {
+          clearTimeout(timer);
+          timer = setTimeout(schedule, 80);
+        };
+        const observer = new MutationObserver(debounced);
+        const flow = findFlow2();
+        if (flow !== null) observer.observe(flow, { childList: true, subtree: true });
+        let columnObserver = null;
+        const watchColumn = () => {
+          const flow2 = findFlow2();
+          const target = flow2 === null ? null : columnElement(flow2);
+          if (target === null) return;
+          if (columnObserver !== null && columnObserver.__qcTarget === target) return;
+          if (columnObserver !== null) columnObserver.disconnect();
+          if (typeof ResizeObserver !== "function") return;
+          columnObserver = new ResizeObserver(onColumnResize);
+          columnObserver.__qcTarget = target;
+          columnObserver.observe(target);
+        };
+        watchColumn();
+        let lastRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+        const onWindowResize = () => {
+          const ratio = window.devicePixelRatio || 1;
+          const zoomed = ratio !== lastRatio;
+          lastRatio = ratio;
+          if (zoomed) {
+          }
+          schedule();
+        };
+        window.addEventListener("resize", onWindowResize);
+        if (window.visualViewport !== void 0 && window.visualViewport !== null) {
+          window.visualViewport.addEventListener("resize", onWindowResize);
+        }
+        return () => {
+          if (frame !== 0) cancelAnimationFrame(frame);
+          clearTimeout(timer);
+          window.removeEventListener("resize", onWindowResize);
+          if (window.visualViewport !== void 0 && window.visualViewport !== null) {
+            window.visualViewport.removeEventListener("resize", onWindowResize);
+          }
+          observer.disconnect();
+          if (columnObserver !== null) columnObserver.disconnect();
+        };
+      }, [annotations, occurrences, labels]);
+      import_react4.default.useEffect(() => {
+        if (typeof document === "undefined") return;
+        for (const position of positions) {
+          const row = position.row;
+          if (row === void 0 || !row.isConnected) continue;
+          if (row.dataset.qcHost === "1") continue;
+          if (getComputedStyle(row).position === "static") row.style.position = "relative";
+          row.classList.add("qc-hosts-bubble");
+          row.dataset.qcHost = "1";
+        }
+      }, [positions]);
+      if (typeof document === "undefined") return null;
+      if (positions.length === 0 && editing === null) return null;
+      const nodes = [];
+      for (const position of positions) {
+        const row = position.row;
+        if (row === void 0 || !row.isConnected) continue;
+        nodes.push((0, import_react_dom3.createPortal)(h4("button", {
+          key: position.id,
+          type: "button",
+          "data-qc-ignore": "1",
+          // The ordinal is drawn by CSS from this attribute rather than being a text
+          // node. A real text node inside the paragraph joins its textContent AND gets
+          // painted by CSS.highlights when the passage is lit - which is how the
+          // fluorescent marker ended up covering the bubble's own number.
+          "data-qc-number": String(position.number),
+          // Stable handle for the annotation this bubble stands for. The editor is
+          // positioned against this exact bubble.
+          "data-qc-for": position.id,
+          className: "qc-marker " + position.tone + (editing !== null && editing.id === position.id ? " qc-marker-active" : ""),
+          title: position.title,
+          "aria-label": position.title,
+          onClick: () => {
+            const annotation = annotations.find((item) => item.id === position.id);
+            if (annotation === void 0) return;
+            const already = editing !== null && editing.id === position.id;
+            setEditing(already ? null : { id: position.id, row });
+            if (!already) onHighlight(annotation, true);
+            else onHighlight(annotation, false);
+          }
+        }), row));
+      }
+      const editor = editing === null ? null : (() => {
+        const annotation = annotations.find((item) => item.id === editing.id);
+        if (annotation === void 0) return null;
+        const row = editing.row;
+        const flow = findFlow2();
+        const bubble = row !== void 0 && row !== null && row.isConnected ? row.querySelector('.qc-marker[data-qc-for="' + editing.id + '"]') : null;
+        const box = bubble === null || bubble === void 0 ? row !== void 0 && row !== null && row.isConnected ? row.getBoundingClientRect() : null : bubble.getBoundingClientRect();
+        const anchored = flow === null || box === null ? null : anchorAboveBubble(flow, box, {
+          width: BUBBLE_PANEL_WIDTH,
+          // Assumed height for the first paint. The panel reports its real size after
+          // mounting, and the bottom-edge offset uses that measurement from then on.
+          height: BUBBLE_PANEL_HEIGHT
+        });
+        return (0, import_react_dom3.createPortal)(h4(BubblePanel, {
+          annotation,
+          rel: anchored === null ? null : anchored.position,
+          // Fallback geometry for the case where there is no transcript to anchor to.
+          anchor: {
+            left: box === null ? 0 : Math.min(box.right, window.innerWidth - 40),
+            top: box === null ? 0 : box.top,
+            bottom: box === null ? 0 : box.bottom,
+            width: box === null ? 0 : box.width
+          },
+          labels,
+          onJump: () => {
+            setEditing(null);
+            onHighlight(annotation, false);
+            onJump(annotation);
+          },
+          onSave: (comment) => {
+            setEditing(null);
+            onHighlight(annotation, false);
+            onUpdate(annotation, comment);
+          },
+          onDelete: () => {
+            setEditing(null);
+            onHighlight(annotation, false);
+            onRemove(annotation);
+          },
+          onClose: () => {
+            setEditing(null);
+            onHighlight(annotation, false);
+          }
+        }), anchored === null ? document.body : anchored.scroller);
+      })();
+      return h4(import_react4.default.Fragment, null, ...nodes, editor);
+    }
+    return { MarkerLayer: MarkerLayer2 };
+  }
+
   // src/index.js
   var MAX_QUOTE_CHARS = 8e3;
   var MAX_ANNOTATIONS = 12;
-  var VIEWPORT_MARGIN3 = 8;
-  var BUBBLE_PANEL_WIDTH = 320;
-  var BUBBLE_PANEL_HEIGHT = 200;
-  var BUBBLE_CLEARANCE = 30;
-  var h4 = import_react4.default.createElement;
+  var VIEWPORT_MARGIN4 = 8;
+  var h5 = import_react5.default.createElement;
   var NS = "quoteChat";
   var TAB_ID = "dsh-quote-chat:side";
   var TAB_KIND = "dsh-quote-chat";
@@ -2028,7 +2404,7 @@ function __dshQuoteChatFactory(hostRequire) {
     );
   }
   function useDraftOccurrences(useInput) {
-    const empty = import_react4.default.useMemo(() => [], []);
+    const empty = import_react5.default.useMemo(() => [], []);
     const inert = () => empty;
     const picked = (typeof useInput === "function" ? useInput : inert)(
       (state) => state.occurrences,
@@ -2121,15 +2497,19 @@ function __dshQuoteChatFactory(hostRequire) {
   }
   var layout = createLayout();
   var navigation = createNavigation({ layout });
-  var { ChipCards, AnnotationCard } = createCards({ composerContainer });
+  var { composerContainer: composerContainer2 } = layout;
+  var { ChipCards, AnnotationCard } = createCards({ composerContainer: layout.composerContainer });
+  var { MarkerLayer } = createMarkerLayer({
+    findFlow: layout.findFlow,
+    columnElement: (flow) => layout.columnElement(flow),
+    anchorAboveBubble: (flow, box, size) => layout.anchorAboveBubble(flow, box, size)
+  });
   var { ActionPopup, ComposerPopover } = createPopovers({
     findFlow: layout.findFlow,
     anchorInTranscript: (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer)
   });
   var revealWithSearch = (flow, annotation) => navigation.reveal(flow, annotation);
   var findFlow = () => layout.findFlow();
-  var anchorAboveBubble = (flow, bubble, size) => layout.anchorAboveBubble(flow, bubble, size);
-  var columnElement = (flow) => layout.columnElement(flow);
   var highlighter = createHighlighter();
   var flashRange = (range, ms = FLASH_MS, resolve = null) => highlighter.flash(range, ms, resolve);
   var clearFlashRange = () => highlighter.clear();
@@ -2139,369 +2519,23 @@ function __dshQuoteChatFactory(hostRequire) {
   var removeAnnotation = (sessionId, id) => annotationStore.remove(sessionId, id);
   var updateAnnotation = (sessionId, id, comment) => annotationStore.update(sessionId, id, comment);
   function useAnnotations(sessionId) {
-    const subscribe = import_react4.default.useCallback(
+    const subscribe = import_react5.default.useCallback(
       (listener) => annotationStore.subscribe(sessionId, listener),
       [sessionId]
     );
-    const snapshot = import_react4.default.useCallback(
+    const snapshot = import_react5.default.useCallback(
       () => annotationStore.snapshot(sessionId),
       [sessionId]
     );
-    return import_react4.default.useSyncExternalStore(subscribe, snapshot, snapshot);
+    return import_react5.default.useSyncExternalStore(subscribe, snapshot, snapshot);
   }
   var chipRegistry = createChipRegistry();
   var chipBridge = createDraftBridge({ registry: chipRegistry, source: CHIP_SOURCE });
   var chipJumpHandler = { current: null };
-  function chipOrdinals(occurrences) {
-    const ordinals = /* @__PURE__ */ new Map();
-    if (typeof document === "undefined") return ordinals;
-    const refs = occurrences.filter((item) => item.source === CHIP_SOURCE).map((item) => item.ref);
-    const chips = [...document.querySelectorAll('[data-composer-chip="quote-chat"]')].filter((element) => element.closest("[data-sidebar-right-tab]") === null);
-    for (let index = 0; index < chips.length && index < refs.length; index += 1) {
-      ordinals.set(refs[index], index + 1);
-    }
-    return ordinals;
-  }
-  function composerContainer() {
-    if (typeof document === "undefined") return null;
-    const selectors = [
-      '[data-slot="conversation.composer.dock"]',
-      '[data-slot="conversation.input.dock"]',
-      "[data-composer-root]",
-      '[contenteditable="true"]'
-    ];
-    for (const selector of selectors) {
-      for (const element of document.querySelectorAll(selector)) {
-        if (element.closest("[data-sidebar-right-tab]") !== null) continue;
-        if (element.getClientRects().length > 0) {
-          return element.closest("[data-composer-root]") ?? element.parentElement ?? element;
-        }
-      }
-    }
-    return null;
-  }
-  function BubblePanel(props) {
-    const { annotation, anchor, labels, onSave, onDelete, onClose, inFlow = false, rel = null } = props;
-    const [text, setText] = import_react4.default.useState(annotation.comment);
-    const [flash, setFlash] = import_react4.default.useState("");
-    const ref = import_react4.default.useRef(null);
-    const areaRef = import_react4.default.useRef(null);
-    const [size, setSize] = import_react4.default.useState({ width: 0, height: 0 });
-    import_react4.default.useLayoutEffect(() => {
-      const element = ref.current;
-      if (element === null) return;
-      const box = element.getBoundingClientRect();
-      setSize({ width: box.width, height: box.height });
-      areaRef.current?.focus();
-    }, []);
-    import_react4.default.useEffect(() => {
-      const onDown = (event) => {
-        if (ref.current !== null && event.target instanceof Node && ref.current.contains(event.target)) return;
-        onClose();
-      };
-      const onKey = (event) => {
-        if (event.key === "Escape") onClose();
-      };
-      document.addEventListener("mousedown", onDown, true);
-      document.addEventListener("keydown", onKey, true);
-      return () => {
-        document.removeEventListener("mousedown", onDown, true);
-        document.removeEventListener("keydown", onKey, true);
-      };
-    }, [onClose]);
-    const width = size.width || 320;
-    const height = size.height || 200;
-    const rightEdge = rel !== null && rel.right !== void 0 ? rel.right : null;
-    const left = rel !== null ? rel.left : inFlow ? Math.max(0, anchor.width - width) : Math.min(
-      Math.max(VIEWPORT_MARGIN3, anchor.left),
-      Math.max(VIEWPORT_MARGIN3, window.innerWidth - width - VIEWPORT_MARGIN3)
-    );
-    const measured = height > 0 ? height : 0;
-    const top = rel !== null ? rel.bubbleTop === void 0 ? rel.top : Math.min(
-      Math.max(rel.bandTop, rel.bubbleTop - rel.gap - (measured || rel.gap)),
-      Math.max(rel.bandTop, rel.bandBottom - (measured || rel.gap))
-    ) : inFlow ? -(height + BUBBLE_CLEARANCE) : Math.min(
-      Math.max(VIEWPORT_MARGIN3, anchor.top),
-      Math.max(VIEWPORT_MARGIN3, window.innerHeight - height - VIEWPORT_MARGIN3)
-    );
-    const commit = () => {
-      setFlash(labels.saved);
-      setTimeout(() => onSave(text), 160);
-    };
-    return h4(
-      "div",
-      {
-        ref,
-        // Plugin chrome: the passage highlight must never paint over the editor, and
-        // text readers must skip it. Both are keyed off this attribute.
-        "data-qc-ignore": "1",
-        className: "qc-bubble-panel",
-        role: "dialog",
-        "aria-label": labels.edit,
-        style: rightEdge !== null ? {
-          right: `${rightEdge}px`,
-          top: `${top}px`,
-          visibility: size.width === 0 ? "hidden" : "visible"
-        } : {
-          left: `${left}px`,
-          top: `${top}px`,
-          visibility: size.width === 0 ? "hidden" : "visible"
-        }
-      },
-      // No passage preview and no jump button: the passage is already lit in the
-      // transcript behind this panel, which is a better answer than a truncated
-      // copy of it, and jumping is folded into opening the panel.
-      h4("div", { className: "qc-bp-label" }, labels.comment),
-      h4("textarea", {
-        ref: areaRef,
-        value: text,
-        placeholder: labels.bubblePlaceholder,
-        spellCheck: false,
-        onChange: (event) => setText(event.target.value),
-        onKeyDown: (event) => {
-          if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-            event.preventDefault();
-            commit();
-          }
-        }
-      }),
-      h4(
-        "div",
-        { className: "qc-bp-actions" },
-        h4("button", {
-          type: "button",
-          className: "qc-bp-delete",
-          onClick: () => {
-            setFlash(labels.deleted);
-            onDelete();
-          }
-        }, labels.delete),
-        h4("button", {
-          type: "button",
-          className: "qc-bp-save",
-          onClick: commit
-        }, labels.save)
-      ),
-      flash === "" ? null : h4("span", {
-        className: "qc-bp-done",
-        style: { left: `${left}px`, top: `${top + height + 6}px` }
-      }, flash)
-    );
-  }
-  function samePositions(left, right) {
-    if (left.length !== right.length) return false;
-    for (let index = 0; index < left.length; index += 1) {
-      const a = left[index];
-      const b = right[index];
-      if (a.id !== b.id || a.row !== b.row || a.number !== b.number) return false;
-    }
-    return true;
-  }
-  function rowOf(range, flow) {
-    const element = elementOf(range.startContainer);
-    if (element === null) return null;
-    const block = element.closest(BLOCK_SELECTOR);
-    if (block !== null && block !== flow && flow.contains(block)) return block;
-    const row = element.closest("[data-chat-node-key]");
-    if (row !== null) return row;
-    let ancestor = element;
-    while (ancestor !== null) {
-      if (ancestor !== flow && ancestor.getClientRects().length > 0) return ancestor;
-      ancestor = ancestor.parentElement;
-    }
-    return null;
-  }
-  function MarkerLayer(props) {
-    const { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove } = props;
-    const [positions, setPositions] = import_react4.default.useState([]);
-    const [editing, setEditing] = import_react4.default.useState(null);
-    import_react4.default.useEffect(() => {
-      if (typeof document === "undefined") return void 0;
-      let frame = 0;
-      let timer = 0;
-      let measured = [];
-      const measure = () => {
-        frame = 0;
-        const flow2 = findFlow();
-        if (flow2 === null) {
-          measured = [];
-          setPositions((current) => current.length === 0 ? current : []);
-          return;
-        }
-        const ordinals = chipOrdinals(occurrences);
-        const next = [];
-        for (const annotation of annotations) {
-          const number = ordinals.get(annotation.id);
-          if (number === void 0) continue;
-          const range = resolveAnchor(flow2, annotation.anchor);
-          if (range === null) continue;
-          const row = rowOf(range, flow2);
-          if (row === null) continue;
-          next.push({
-            id: annotation.id,
-            row,
-            // The base class is already the blue bubble; only tables recolour.
-            tone: annotation.kind === "table" ? "qc-marker-table" : "",
-            number,
-            title: labels.jump.replace("{n}", String(number))
-          });
-        }
-        measured = next;
-        publish(next);
-      };
-      const publish = (next) => {
-        setPositions((current) => samePositions(current, next) ? current : next);
-      };
-      const reflow = () => {
-        frame = 0;
-        if (measured.length === 0) return;
-        publish(measured);
-      };
-      const schedule = () => {
-        if (frame !== 0) return;
-        frame = requestAnimationFrame(measure);
-      };
-      const onColumnResize = () => {
-        schedule();
-      };
-      schedule();
-      const debounced = () => {
-        clearTimeout(timer);
-        timer = setTimeout(schedule, 80);
-      };
-      const observer = new MutationObserver(debounced);
-      const flow = findFlow();
-      if (flow !== null) observer.observe(flow, { childList: true, subtree: true });
-      let columnObserver = null;
-      const watchColumn = () => {
-        const flow2 = findFlow();
-        const target = flow2 === null ? null : columnElement(flow2);
-        if (target === null) return;
-        if (columnObserver !== null && columnObserver.__qcTarget === target) return;
-        if (columnObserver !== null) columnObserver.disconnect();
-        if (typeof ResizeObserver !== "function") return;
-        columnObserver = new ResizeObserver(onColumnResize);
-        columnObserver.__qcTarget = target;
-        columnObserver.observe(target);
-      };
-      watchColumn();
-      let lastRatio = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
-      const onWindowResize = () => {
-        const ratio = window.devicePixelRatio || 1;
-        const zoomed = ratio !== lastRatio;
-        lastRatio = ratio;
-        if (zoomed) {
-        }
-        schedule();
-      };
-      window.addEventListener("resize", onWindowResize);
-      if (window.visualViewport !== void 0 && window.visualViewport !== null) {
-        window.visualViewport.addEventListener("resize", onWindowResize);
-      }
-      return () => {
-        if (frame !== 0) cancelAnimationFrame(frame);
-        clearTimeout(timer);
-        window.removeEventListener("resize", onWindowResize);
-        if (window.visualViewport !== void 0 && window.visualViewport !== null) {
-          window.visualViewport.removeEventListener("resize", onWindowResize);
-        }
-        observer.disconnect();
-        if (columnObserver !== null) columnObserver.disconnect();
-      };
-    }, [annotations, occurrences, labels]);
-    import_react4.default.useEffect(() => {
-      if (typeof document === "undefined") return;
-      for (const position of positions) {
-        const row = position.row;
-        if (row === void 0 || !row.isConnected) continue;
-        if (row.dataset.qcHost === "1") continue;
-        if (getComputedStyle(row).position === "static") row.style.position = "relative";
-        row.classList.add("qc-hosts-bubble");
-        row.dataset.qcHost = "1";
-      }
-    }, [positions]);
-    if (typeof document === "undefined") return null;
-    if (positions.length === 0 && editing === null) return null;
-    const nodes = [];
-    for (const position of positions) {
-      const row = position.row;
-      if (row === void 0 || !row.isConnected) continue;
-      nodes.push((0, import_react_dom3.createPortal)(h4("button", {
-        key: position.id,
-        type: "button",
-        "data-qc-ignore": "1",
-        // The ordinal is drawn by CSS from this attribute rather than being a text
-        // node. A real text node inside the paragraph joins its textContent AND gets
-        // painted by CSS.highlights when the passage is lit - which is how the
-        // fluorescent marker ended up covering the bubble's own number.
-        "data-qc-number": String(position.number),
-        // Stable handle for the annotation this bubble stands for. The editor is
-        // positioned against this exact bubble.
-        "data-qc-for": position.id,
-        className: "qc-marker " + position.tone + (editing !== null && editing.id === position.id ? " qc-marker-active" : ""),
-        title: position.title,
-        "aria-label": position.title,
-        onClick: () => {
-          const annotation = annotations.find((item) => item.id === position.id);
-          if (annotation === void 0) return;
-          const already = editing !== null && editing.id === position.id;
-          setEditing(already ? null : { id: position.id, row });
-          if (!already) onHighlight(annotation, true);
-          else onHighlight(annotation, false);
-        }
-      }), row));
-    }
-    const editor = editing === null ? null : (() => {
-      const annotation = annotations.find((item) => item.id === editing.id);
-      if (annotation === void 0) return null;
-      const row = editing.row;
-      const flow = findFlow();
-      const bubble = row !== void 0 && row !== null && row.isConnected ? row.querySelector('.qc-marker[data-qc-for="' + editing.id + '"]') : null;
-      const box = bubble === null || bubble === void 0 ? row !== void 0 && row !== null && row.isConnected ? row.getBoundingClientRect() : null : bubble.getBoundingClientRect();
-      const anchored = flow === null || box === null ? null : anchorAboveBubble(flow, box, {
-        width: BUBBLE_PANEL_WIDTH,
-        // Assumed height for the first paint. The panel reports its real size after
-        // mounting, and the bottom-edge offset uses that measurement from then on.
-        height: BUBBLE_PANEL_HEIGHT
-      });
-      return (0, import_react_dom3.createPortal)(h4(BubblePanel, {
-        annotation,
-        rel: anchored === null ? null : anchored.position,
-        // Fallback geometry for the case where there is no transcript to anchor to.
-        anchor: {
-          left: box === null ? 0 : Math.min(box.right, window.innerWidth - 40),
-          top: box === null ? 0 : box.top,
-          bottom: box === null ? 0 : box.bottom,
-          width: box === null ? 0 : box.width
-        },
-        labels,
-        onJump: () => {
-          setEditing(null);
-          onHighlight(annotation, false);
-          onJump(annotation);
-        },
-        onSave: (comment) => {
-          setEditing(null);
-          onHighlight(annotation, false);
-          onUpdate(annotation, comment);
-        },
-        onDelete: () => {
-          setEditing(null);
-          onHighlight(annotation, false);
-          onRemove(annotation);
-        },
-        onClose: () => {
-          setEditing(null);
-          onHighlight(annotation, false);
-        }
-      }), anchored === null ? document.body : anchored.scroller);
-    })();
-    return h4(import_react4.default.Fragment, null, ...nodes, editor);
-  }
   function TableAddButton(props) {
     const { label, onAdd } = props;
-    const [target, setTarget] = import_react4.default.useState(null);
-    import_react4.default.useEffect(() => {
+    const [target, setTarget] = import_react5.default.useState(null);
+    import_react5.default.useEffect(() => {
       if (typeof document === "undefined") return void 0;
       let frame = 0;
       let pending = null;
@@ -2544,17 +2578,17 @@ function __dshQuoteChatFactory(hostRequire) {
     }, []);
     if (target === null || typeof document === "undefined") return null;
     const position = {
-      left: Math.max(VIEWPORT_MARGIN3, target.rect.right - 116),
-      top: Math.max(VIEWPORT_MARGIN3, target.rect.top + 4)
+      left: Math.max(VIEWPORT_MARGIN4, target.rect.right - 116),
+      top: Math.max(VIEWPORT_MARGIN4, target.rect.top + 4)
     };
-    return (0, import_react_dom3.createPortal)(
-      h4("button", {
+    return (0, import_react_dom4.createPortal)(
+      h5("button", {
         type: "button",
         className: "qc-table-add",
         style: { left: `${position.left}px`, top: `${position.top}px` },
         onMouseDown: (event) => event.preventDefault(),
         onClick: () => onAdd(target.element)
-      }, h4(IconAnnotate, null), label),
+      }, h5(IconAnnotate, null), label),
       document.body
     );
   }
@@ -2573,15 +2607,15 @@ function __dshQuoteChatFactory(hostRequire) {
   function SideChat(props) {
     const { quote, t, locale, inputActions, useInput } = props;
     const draft = useDraft(useInput);
-    const [messages, setMessages] = import_react4.default.useState([]);
-    const [question, setQuestion] = import_react4.default.useState("");
-    const [busy, setBusy] = import_react4.default.useState(false);
-    const [error, setError] = import_react4.default.useState("");
-    const [expanded, setExpanded] = import_react4.default.useState(false);
-    const [added, setAdded] = import_react4.default.useState(false);
-    const abortRef = import_react4.default.useRef(null);
-    const threadRef = import_react4.default.useRef(null);
-    import_react4.default.useEffect(() => {
+    const [messages, setMessages] = import_react5.default.useState([]);
+    const [question, setQuestion] = import_react5.default.useState("");
+    const [busy, setBusy] = import_react5.default.useState(false);
+    const [error, setError] = import_react5.default.useState("");
+    const [expanded, setExpanded] = import_react5.default.useState(false);
+    const [added, setAdded] = import_react5.default.useState(false);
+    const abortRef = import_react5.default.useRef(null);
+    const threadRef = import_react5.default.useRef(null);
+    import_react5.default.useEffect(() => {
       abortRef.current?.abort();
       abortRef.current = null;
       setMessages([]);
@@ -2590,15 +2624,15 @@ function __dshQuoteChatFactory(hostRequire) {
       setBusy(false);
       setAdded(false);
     }, [quote]);
-    import_react4.default.useEffect(() => () => {
+    import_react5.default.useEffect(() => () => {
       abortRef.current?.abort();
     }, []);
-    const scrollToEnd = import_react4.default.useCallback(() => {
+    const scrollToEnd = import_react5.default.useCallback(() => {
       const element = threadRef.current;
       if (element !== null) element.scrollTop = element.scrollHeight;
     }, []);
-    import_react4.default.useEffect(scrollToEnd, [messages, scrollToEnd]);
-    const submit = import_react4.default.useCallback(async () => {
+    import_react5.default.useEffect(scrollToEnd, [messages, scrollToEnd]);
+    const submit = import_react5.default.useCallback(async () => {
       const text = question.trim();
       if (text === "" || busy) return;
       const history = messages.filter((message) => message.text.trim() !== "").map((message) => ({ role: message.role, text: message.text }));
@@ -2643,12 +2677,12 @@ function __dshQuoteChatFactory(hostRequire) {
         setBusy(false);
       }
     }, [question, busy, messages, quote, locale]);
-    const stop = import_react4.default.useCallback(() => {
+    const stop = import_react5.default.useCallback(() => {
       abortRef.current?.abort();
       abortRef.current = null;
       setBusy(false);
     }, []);
-    const addToChat = import_react4.default.useCallback((text) => {
+    const addToChat = import_react5.default.useCallback((text) => {
       const payload = text.split(/\r?\n/).map((line) => line === "" ? ">" : `> ${line}`).join("\n");
       const current = typeof draft === "string" ? draft : "";
       if (typeof inputActions?.captureInsertion === "function" && typeof inputActions?.insertText === "function") {
@@ -2667,21 +2701,21 @@ function __dshQuoteChatFactory(hostRequire) {
         setAdded(true);
       }
     }, [draft, inputActions]);
-    import_react4.default.useEffect(() => {
+    import_react5.default.useEffect(() => {
       if (!added) return void 0;
       const timer = setTimeout(() => setAdded(false), 2200);
       return () => clearTimeout(timer);
     }, [added]);
     const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant" && message.text !== "");
     const lastQuestion = [...messages].reverse().find((message) => message.role === "user");
-    return h4(
+    return h5(
       "div",
       { className: "qc-side" },
-      h4(
+      h5(
         "div",
         { className: "qc-side-head" },
-        h4("span", { className: "qc-side-head-title" }, t("side.title")),
-        messages.length > 0 ? h4("button", {
+        h5("span", { className: "qc-side-head-title" }, t("side.title")),
+        messages.length > 0 ? h5("button", {
           type: "button",
           onClick: () => {
             setMessages([]);
@@ -2690,54 +2724,54 @@ function __dshQuoteChatFactory(hostRequire) {
           }
         }, t("side.clear")) : null
       ),
-      h4(
+      h5(
         "div",
         { className: "qc-quote" },
-        h4(
+        h5(
           "div",
           { className: "qc-quote-label" },
-          h4("span", null, t("side.quote")),
-          quote.length > 260 ? h4("button", {
+          h5("span", null, t("side.quote")),
+          quote.length > 260 ? h5("button", {
             type: "button",
             onClick: () => setExpanded((value) => !value)
           }, expanded ? t("side.collapseQuote") : t("side.expandQuote")) : null
         ),
-        h4("div", { className: `qc-quote-body${expanded ? "" : " qc-clamped"}` }, quote)
+        h5("div", { className: `qc-quote-body${expanded ? "" : " qc-clamped"}` }, quote)
       ),
-      h4(
+      h5(
         "div",
         { ref: threadRef, className: "qc-thread" },
-        messages.length === 0 ? h4("div", { className: "qc-empty" }, t("side.empty")) : messages.map((message, index) => h4(
+        messages.length === 0 ? h5("div", { className: "qc-empty" }, t("side.empty")) : messages.map((message, index) => h5(
           "div",
           {
             key: `${index}-${message.role}`,
             className: `qc-msg qc-msg-${message.role}`
           },
-          h4(
+          h5(
             "div",
             { className: "qc-msg-role" },
             message.role === "user" ? t("side.you") : t("side.assistant")
           ),
-          h4(
+          h5(
             "div",
             { className: "qc-msg-body" },
-            message.text === "" && busy && index === messages.length - 1 ? h4("span", { className: "qc-dots" }) : message.text
+            message.text === "" && busy && index === messages.length - 1 ? h5("span", { className: "qc-dots" }) : message.text
           ),
-          message.role === "assistant" && message.text !== "" ? h4(
+          message.role === "assistant" && message.text !== "" ? h5(
             "div",
             { className: "qc-msg-actions" },
-            h4("button", {
+            h5("button", {
               type: "button",
               onClick: () => addToChat(message.text)
             }, t("side.addToChat"))
           ) : null
         )),
-        error === "" ? null : h4("div", { className: "qc-msg-error" }, `${t("side.errorPrefix")}${error}`)
+        error === "" ? null : h5("div", { className: "qc-msg-error" }, `${t("side.errorPrefix")}${error}`)
       ),
-      h4(
+      h5(
         "div",
         { className: "qc-side-compose" },
-        h4("textarea", {
+        h5("textarea", {
           value: question,
           placeholder: t("side.placeholder"),
           rows: 2,
@@ -2749,11 +2783,11 @@ function __dshQuoteChatFactory(hostRequire) {
             }
           }
         }),
-        h4(
+        h5(
           "div",
           { className: "qc-side-compose-row" },
-          h4("span", { className: "qc-side-compose-hint" }, added ? t("side.added") : ""),
-          lastAssistant !== void 0 ? h4("button", {
+          h5("span", { className: "qc-side-compose-hint" }, added ? t("side.added") : ""),
+          lastAssistant !== void 0 ? h5("button", {
             type: "button",
             className: "qc-btn qc-btn-ghost",
             onClick: () => addToChat(
@@ -2762,7 +2796,7 @@ function __dshQuoteChatFactory(hostRequire) {
   ${lastAssistant.text}`
             )
           }, t("side.addToChat")) : null,
-          busy ? h4("button", { type: "button", className: "qc-btn qc-btn-ghost", onClick: stop }, t("side.stop")) : h4("button", {
+          busy ? h5("button", { type: "button", className: "qc-btn qc-btn-ghost", onClick: stop }, t("side.stop")) : h5("button", {
             type: "button",
             className: "qc-btn",
             disabled: question.trim() === "",
@@ -2781,30 +2815,30 @@ function __dshQuoteChatFactory(hostRequire) {
     const info = typeof useTabInfo === "function" ? useTabInfo() : void 0;
     const quote = quoteForTab(info?.tab?.navigation?.params?.quote);
     const localeService = pluginCtx?.locale;
-    const locale = import_react4.default.useSyncExternalStore(
-      import_react4.default.useCallback(
+    const locale = import_react5.default.useSyncExternalStore(
+      import_react5.default.useCallback(
         (listener) => typeof localeService?.subscribe === "function" ? localeService.subscribe(listener) : () => {
         },
         [localeService]
       ),
-      import_react4.default.useCallback(
+      import_react5.default.useCallback(
         () => typeof localeService?.getLocale === "function" ? localeService.getLocale().active : "zh",
         [localeService]
       ),
-      import_react4.default.useCallback(() => "zh", [])
+      import_react5.default.useCallback(() => "zh", [])
     );
     if (quote === "") {
-      return h4(
+      return h5(
         "div",
         { className: "qc-side" },
-        h4(
+        h5(
           "div",
           { className: "qc-quote" },
-          h4("div", { className: "qc-quote-body" }, t("side.noQuote"))
+          h5("div", { className: "qc-quote-body" }, t("side.noQuote"))
         )
       );
     }
-    return h4(SideChat, { quote, t, locale: locale === "en" ? "en" : "zh", inputActions, useInput });
+    return h5(SideChat, { quote, t, locale: locale === "en" ? "en" : "zh", inputActions, useInput });
   }
   function tableAnchor(flow, table) {
     const row = table.closest("[data-chat-node-key]") ?? null;
@@ -2827,14 +2861,14 @@ function __dshQuoteChatFactory(hostRequire) {
       const t = typeof props.t === "function" ? props.t : boundT;
       const draft = useDraft(useInput);
       const occurrences = useDraftOccurrences(useInput);
-      const inputStateRef = import_react4.default.useRef(null);
+      const inputStateRef = import_react5.default.useRef(null);
       inputStateRef.current = { draft, occurrences };
       const annotations = useAnnotations(sessionId);
-      const [overlay, setOverlay] = import_react4.default.useState(null);
-      const [notice, setNotice] = import_react4.default.useState("");
-      const overlayRef = import_react4.default.useRef(null);
+      const [overlay, setOverlay] = import_react5.default.useState(null);
+      const [notice, setNotice] = import_react5.default.useState("");
+      const overlayRef = import_react5.default.useRef(null);
       overlayRef.current = overlay;
-      const labels = import_react4.default.useMemo(() => ({
+      const labels = import_react5.default.useMemo(() => ({
         annotate: t("popup.annotate"),
         askInSide: t("popup.askInSide"),
         tooLong: t("popup.tooLong"),
@@ -2865,7 +2899,7 @@ function __dshQuoteChatFactory(hostRequire) {
         save: t("bubble.save"),
         delete: t("bubble.delete")
       }), [t]);
-      import_react4.default.useEffect(() => {
+      import_react5.default.useEffect(() => {
         if (overlay === null) return void 0;
         const onPointerDown = (event) => {
           const surface = document.querySelector(".qc-popup, .qc-compose");
@@ -2882,7 +2916,7 @@ function __dshQuoteChatFactory(hostRequire) {
           document.removeEventListener("keydown", onKeyDown, true);
         };
       }, [overlay === null]);
-      import_react4.default.useEffect(() => {
+      import_react5.default.useEffect(() => {
         if (typeof document === "undefined") return void 0;
         let frame = 0;
         let pointerDown = false;
@@ -2936,23 +2970,23 @@ function __dshQuoteChatFactory(hostRequire) {
           document.removeEventListener("selectionchange", schedule);
         };
       }, [labels]);
-      import_react4.default.useEffect(() => {
+      import_react5.default.useEffect(() => {
         if (notice === "") return void 0;
         const timer = setTimeout(() => setNotice(""), 3200);
         return () => clearTimeout(timer);
       }, [notice]);
-      import_react4.default.useEffect(() => () => clearFlashRange(), []);
-      const writeChip = import_react4.default.useCallback((annotation) => chipBridge.place(
+      import_react5.default.useEffect(() => () => clearFlashRange(), []);
+      const writeChip = import_react5.default.useCallback((annotation) => chipBridge.place(
         inputActions,
         () => ({ draft, occurrences: inputStateRef.current?.occurrences }),
         annotation,
         labels
       ), [draft, inputActions, labels]);
-      const cancelCompose = import_react4.default.useCallback(() => {
+      const cancelCompose = import_react5.default.useCallback(() => {
         clearFlashRange();
         setOverlay(null);
       }, []);
-      const commit = import_react4.default.useCallback((source, comment) => {
+      const commit = import_react5.default.useCallback((source, comment) => {
         if (sessionId === void 0) return;
         const text = typeof comment === "string" ? comment.trim() : "";
         const stored = addAnnotation(sessionId, {
@@ -2979,7 +3013,7 @@ function __dshQuoteChatFactory(hostRequire) {
         const range = flow === null ? null : resolveAnchor(flow, stored.anchor);
         if (range !== null) flashRange(range);
       }, [sessionId, labels, writeChip]);
-      const annotateTable = import_react4.default.useCallback((table) => {
+      const annotateTable = import_react5.default.useCallback((table) => {
         const markdown = tableToMarkdown(table);
         if (markdown === "") return;
         const flow = findFlow();
@@ -2997,7 +3031,7 @@ function __dshQuoteChatFactory(hostRequire) {
         });
         clearSelection();
       }, []);
-      const onHighlight = import_react4.default.useCallback((annotation, on) => {
+      const onHighlight = import_react5.default.useCallback((annotation, on) => {
         const flow = findFlow();
         if (flow === null) return;
         if (!on) {
@@ -3011,7 +3045,7 @@ function __dshQuoteChatFactory(hostRequire) {
           return live === null ? null : resolveAnchor(live, annotation.anchor);
         });
       }, []);
-      const onJump = import_react4.default.useCallback((annotation) => {
+      const onJump = import_react5.default.useCallback((annotation) => {
         const flow = findFlow();
         if (flow === null) {
           setNotice(diagnoseMiss(null, annotation));
@@ -3032,7 +3066,7 @@ function __dshQuoteChatFactory(hostRequire) {
           setNotice(diagnoseMiss(findFlow(), annotation));
         });
       }, []);
-      import_react4.default.useEffect(() => {
+      import_react5.default.useEffect(() => {
         chipJumpHandler.current = (ref) => {
           const match = annotations.find((item) => item.id === ref);
           if (match === void 0) return false;
@@ -3043,7 +3077,7 @@ function __dshQuoteChatFactory(hostRequire) {
           if (chipJumpHandler.current !== null) chipJumpHandler.current = null;
         };
       }, [annotations, onJump]);
-      const onRemove = import_react4.default.useCallback((annotation) => {
+      const onRemove = import_react5.default.useCallback((annotation) => {
         if (sessionId === void 0) return;
         chipBridge.release(
           inputActions,
@@ -3052,12 +3086,12 @@ function __dshQuoteChatFactory(hostRequire) {
         );
         removeAnnotation(sessionId, annotation.id);
       }, [draft, inputActions, sessionId]);
-      const onUpdate = import_react4.default.useCallback((annotation, comment) => {
+      const onUpdate = import_react5.default.useCallback((annotation, comment) => {
         if (sessionId === void 0) return;
         chipRegistry.updateComment(annotation.id, comment);
         updateAnnotation(sessionId, annotation.id, comment);
       }, [sessionId]);
-      const onAsk = import_react4.default.useCallback((source) => {
+      const onAsk = import_react5.default.useCallback((source) => {
         const opener = ctx.get("sidebarRight");
         if (typeof opener?.openTab !== "function") return;
         quoteHandoff.remember(source.text);
@@ -3076,10 +3110,10 @@ function __dshQuoteChatFactory(hostRequire) {
       }, [ctx, labels, t]);
       const canAnnotate = typeof inputActions?.setDraft === "function" || typeof inputActions?.captureInsertion === "function" && typeof inputActions?.insertText === "function";
       const canAsk = typeof ctx.get("sidebarRight")?.openTab === "function";
-      return h4(
-        import_react4.default.Fragment,
+      return h5(
+        import_react5.default.Fragment,
         null,
-        overlay === null ? null : overlay.kind === "actions" ? h4(ActionPopup, {
+        overlay === null ? null : overlay.kind === "actions" ? h5(ActionPopup, {
           anchor: overlay.source.rect,
           canAnnotate,
           canAsk,
@@ -3099,16 +3133,16 @@ function __dshQuoteChatFactory(hostRequire) {
             setOverlay({ kind: "compose", source });
           },
           onAsk: () => onAsk(overlay.source)
-        }) : h4(ComposerPopover, {
+        }) : h5(ComposerPopover, {
           source: overlay.source,
           labels,
           onConfirm: (comment) => commit(overlay.source, comment),
           onCancel: cancelCompose
         }),
-        h4(ChipCards, { annotations, occurrences, labels, onJump, onRemove }),
-        h4(MarkerLayer, { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
-        h4(TableAddButton, { label: labels.tableAdd, onAdd: annotateTable }),
-        typeof notice === "string" && notice !== "" ? h4("div", { className: "qc-notice" }, notice) : null
+        h5(ChipCards, { annotations, occurrences, labels, onJump, onRemove }),
+        h5(MarkerLayer, { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
+        h5(TableAddButton, { label: labels.tableAdd, onAdd: annotateTable }),
+        typeof notice === "string" && notice !== "" ? h5("div", { className: "qc-notice" }, notice) : null
       );
     };
   }

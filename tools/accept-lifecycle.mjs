@@ -408,6 +408,14 @@ try {
     JSON.stringify(cardGone))
 
 
+  {
+    const messages = await call('browser_console_messages', { level: 'error' }).catch(() => '')
+    const own = messages.split('\n').filter((line) => /qc-|quote-chat|MarkerLayer|markers|BubblePanel/i.test(line))
+    if (own.length > 0) console.log('   marker console:', own.slice(0, 3).join(' | ').slice(0, 500))
+    const markers = await evaluate(`() => document.querySelectorAll('.qc-marker').length`)
+    if (markers === 0) console.log('   no .qc-marker in the DOM')
+  }
+
   // ── Step 5: click the marker ────────────────────────────────────────────
   await evaluate(`() => {
     const marker = document.querySelector('.qc-marker')

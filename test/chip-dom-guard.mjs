@@ -53,7 +53,7 @@ check('annotation card is portaled to body',
   /(className: 'qc-card'|'qc-card qc-card-out')/.test(cardsSource) && /createPortal\(/.test(cardsSource),
   'qc-card portal missing')
 check('card is pinned to the chip rectangle',
-  /anchor\.left/.test(source) && /getBoundingClientRect\(\)/.test(source),
+  /anchor\.left/.test(cardsSource) && /getBoundingClientRect\(\)/.test(cardsSource),
   'chip-rectangle anchoring missing')
 
 // The jump flash must ride the highlight registry, not positioned boxes.

@@ -82,6 +82,36 @@ const COMPOSER_SELECTORS = [
 ]
 
 /**
+ * The subtree that can contain annotation chips.
+ *
+ * Scoping the composer watcher to this instead of `document.body` is what keeps a pane drag from
+ * waking it on every frame: the transcript re-renders constantly during a drag, but the composer
+ * does not.
+ *
+ * @returns the element to observe, or null when there is no composer yet.
+ */
+export function composerContainer() {
+  if (typeof document === 'undefined') return null
+  const selectors = [
+    '[data-slot="conversation.composer.dock"]',
+    '[data-slot="conversation.input.dock"]',
+    '[data-composer-root]',
+    '[contenteditable="true"]',
+  ]
+  for (const selector of selectors) {
+    for (const element of document.querySelectorAll(selector)) {
+      if (element.closest('[data-sidebar-right-tab]') !== null) continue
+      if (element.getClientRects().length > 0) {
+        // Climb to the nearest ancestor that also holds the chips, so a chip
+        // inserted next to the editor is still seen.
+        return element.closest('[data-composer-root]') ?? element.parentElement ?? element
+      }
+    }
+  }
+  return null
+}
+
+/**
  * Create one layout helper set.
  * @returns the lookups, measurements and placements.
  */
@@ -399,6 +429,7 @@ export function createLayout() {
   }
 
   return {
+    composerContainer,
     findFlow,
     scrollContainerOf,
     containerFor,
