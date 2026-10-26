@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Boot the client half for real.
  *
  * Two outages in a row were `ReferenceError`s that `node --check` accepted and no
@@ -179,29 +179,43 @@ const React = makeReact()
 const ReactDOM = { createPortal: (node) => node, render: () => {}, flushSync: (fn) => fn() }
 
 const registered = []
-const context = {
-  locale: { register: () => {}, bind: () => (key) => key, t: (key) => key },
-  effect: (fn) => {
-    const dispose = fn()
-    return typeof dispose === 'function' ? dispose : () => {}
-  },
-  inject: (_names, fn) => {
-    const result = typeof fn === 'function' ? fn({ slots: undefined }) : undefined
-    return typeof result === 'function' ? result : () => {}
-  },
-  get: () => undefined,
-  slots: {
-    inject: (_name, fn) => {
-      const result = typeof fn === 'function' ? fn() : undefined
+
+/**
+ * Build a fresh client context.
+ *
+ * A factory rather than one shared literal, because the per-instance test applies two plugin
+ * instances and needs each to register into a context it owns. A shared context would make
+ * the second apply indistinguishable from the first.
+ *
+ * @returns a context object in the shape `apply` expects.
+ */
+function makeContext() {
+  return {
+    locale: { register: () => {}, bind: () => (key) => key, t: (key) => key },
+    effect: (fn) => {
+      const dispose = fn()
+      return typeof dispose === 'function' ? dispose : () => {}
+    },
+    inject: (_names, fn) => {
+      const result = typeof fn === 'function' ? fn({ slots: undefined }) : undefined
       return typeof result === 'function' ? result : () => {}
     },
-    register: (spec, component) => {
-      registered.push({ spec, component })
-      return () => {}
+    get: () => undefined,
+    slots: {
+      inject: (_name, fn) => {
+        const result = typeof fn === 'function' ? fn() : undefined
+        return typeof result === 'function' ? result : () => {}
+      },
+      register: (spec, component) => {
+        registered.push({ spec, component })
+        return () => {}
+      },
     },
-  },
-  inputTriggers: { registerSource: () => () => {} },
+    inputTriggers: { registerSource: () => () => {} },
+  }
 }
+
+const context = makeContext()
 
 const sandbox = {
   document: documentStub,
@@ -275,6 +289,54 @@ check('client.js evaluates without throwing', bootError === null,
 check('the factory registers itself', exported !== null, 'no export object')
 check('the export exposes inject and apply',
   exported !== null && typeof exported.apply === 'function', 'apply is missing')
+
+// --- Evaluation boundary ---------------------------------------------------
+// The bundle must register a factory and do nothing else while the script runs. The reliable
+// evidence is structural plus behavioural rather than instrumenting `require`: a bundle that
+// evaluated its graph at load time would have a single shared instance, which the per-instance
+// checks below detect directly.
+const registersOnlyTheEnvelope = /__ModuleLoader__\.load\(\{[\s\S]*?factory\(/.test(source)
+const noTopLevelIife = !/^var __dshQuoteChat = \(\(\) =>/m.test(source)
+check('the bundle evaluates inside the factory, not at load',
+  registersOnlyTheEnvelope && noTopLevelIife,
+  `envelope=${registersOnlyTheEnvelope} noTopLevelIife=${noTopLevelIife}`)
+
+// --- Per-call instances ----------------------------------------------------
+// Two factory calls must produce two independent plugin instances. A bundle that evaluates
+// once at load fails this by construction.
+let secondError = null
+let secondExported = null
+try {
+  secondExported = sandbox.__factory((name) => {
+    if (name === 'react') return makeReact()
+    if (name === 'react-dom') return ReactDOM
+    return {}
+  })
+} catch (error) {
+  secondError = error
+}
+check('a second factory call succeeds', secondError === null,
+  secondError === null ? '' : `${secondError.name}: ${secondError.message}`)
+check('a second factory call returns its own export object',
+  secondExported !== null && secondExported !== exported
+    && typeof secondExported.apply === 'function',
+  'the second call did not produce an independent export object')
+
+// Applying the second instance must register into its own scope, which is the observable
+// form of "fresh module state".
+let secondRegistrations = null
+if (secondExported !== null && typeof secondExported.apply === 'function') {
+  const before = registered.length
+  try {
+    secondExported.apply(makeContext())
+    secondRegistrations = registered.length - before
+  } catch {
+    secondRegistrations = null
+  }
+}
+check('a second instance registers independently of the first',
+  typeof secondRegistrations === 'number' && secondRegistrations > 0,
+  'the second apply() registered nothing, so the instances share state')
 
 let applyError = null
 if (exported !== null && typeof exported.apply === 'function') {

@@ -51,14 +51,14 @@ const OUTPUT = join(here, 'client.js')
 const MODULE_ID = 'dsh-quote-chat'
 
 /**
- * Nothing is external.
+ * Bare specifiers forwarded to the Host's `require`.
  *
- * React cannot be declared as an esbuild external here: esbuild would resolve it when the
- * module graph evaluates, which happens BEFORE the Host calls the factory, so the resolution
- * would fail. The source therefore resolves React through `platform.js`, which the factory
- * binds explicitly. There is no external specifier left to declare.
+ * These stay external so the page loads one React, shared with the app and every other
+ * plugin. esbuild emits a `__require` helper for them, which resolves the `require` binding
+ * that `__dshQuoteChatFactory` receives as a parameter — available because the whole module
+ * graph is evaluated inside that function, not at script load.
  */
-const EXTERNALS = []
+const EXTERNALS = ['react', 'react-dom']
 
 const BANNER = `/**
  * dsh-quote-chat — browser half.
@@ -79,7 +79,7 @@ async function buildBundle() {
   const result = await esbuild({
     entryPoints: [ENTRY],
     bundle: true,
-    format: 'iife',
+    format: 'cjs',
     platform: 'browser',
     target: ['chrome110'],
     // No runtime dependencies: React and ReactDOM must come from the Host.
@@ -91,20 +91,8 @@ async function buildBundle() {
     charset: 'utf8',
     write: false,
     logLevel: 'silent',
-    globalName: '__dshQuoteChat',
-    footer: {
-      js: [
-        '// The Host reads this envelope: a fixed id and a synchronous factory.',
-        'window.__ModuleLoader__.load({',
-        `  id: '${MODULE_ID}',`,
-        '  factory(hostRequire) {',
-        '    // Bind the platform first: everything below reads React through this seam.',
-        '    __dshQuoteChat.bindPlatform(hostRequire)',
-        '    return { inject: __dshQuoteChat.inject, apply: __dshQuoteChat.apply }',
-        '  },',
-        '})',
-      ].join('\n'),
-    },
+    // No globalName: the bundle must not evaluate on load. It is emitted as a function
+    // body that the Host's `factory` runs, so each call builds a fresh instance.
   })
 
   if (result.errors.length > 0) {
@@ -115,10 +103,48 @@ async function buildBundle() {
   }
 
   const body = result.outputFiles[0].text
+  // The bundle is emitted as a function body. Nothing in it runs until the Host calls the
+  // factory, which is what keeps module-scope state per-instance.
+  const wrapped = [
+    'function __dshQuoteChatFactory(hostRequire) {',
+    '  let module = { exports: {} }',
+    '  let exports = module.exports',
+    '  // The Host require, visible to the module graph as `require`. esbuild\'s helper for the',
+    '  // external react/react-dom specifiers resolves through this binding, which exists because',
+    '  // the whole graph is evaluated inside this function rather than at script load.',
+    '  const require = hostRequire',
+    ...body.split('\n').map((line) => (line === '' ? '' : `  ${line}`)),
+    '  return module.exports',
+    '}',
+  ].join('\n')
+
   // The hash identifies the BUNDLE, not the file: it is computed before the banner that
   // carries it, so identical source always yields identical bytes and --check can pass.
-  const hash = createHash('sha256').update(body).digest('hex').slice(0, 16)
-  return { text: `${BANNER.replace('__ARTIFACT_HASH__', hash)}\n${body}`, hash }
+  const hash = createHash('sha256').update(wrapped).digest('hex').slice(0, 16)
+
+  // The envelope is emitted AFTER the wrapper closes. It must be the only top-level
+  // statement that runs on load, and it must not build the plugin: that happens when the
+  // Host calls `factory`.
+  const envelope = [
+    '// The Host reads this envelope: a fixed id and a synchronous factory.',
+    '//',
+    '// `__dshQuoteChatFactory` evaluates the whole module graph when called, so building the',
+    '// plugin happens inside `factory`, not at script load. Each factory call therefore gets',
+    '// its own instance of every module-scope value, which is the semantics the original',
+    '// concatenated build had.',
+    'window.__ModuleLoader__.load({',
+    `  id: '${MODULE_ID}',`,
+    '  factory(hostRequire) {',
+    '    const bundle = __dshQuoteChatFactory(hostRequire)',
+    '    return { inject: bundle.inject, apply: bundle.apply }',
+    '  },',
+    '})',
+  ].join('\n')
+
+  return {
+    text: `${BANNER.replace('__ARTIFACT_HASH__', hash)}\n${wrapped}\n\n${envelope}\n`,
+    hash,
+  }
 }
 
 const built = await buildBundle()

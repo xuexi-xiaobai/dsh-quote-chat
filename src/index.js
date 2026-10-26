@@ -73,34 +73,12 @@ const CARD_EXIT_MS = 130
 
 // ── implementation ────────────────────────────────────────────────────────────
 
-import { bindPlatform, getReact, getReactDom } from './platform.js'
+import React from 'react'
+import { createPortal } from 'react-dom'
 
-export { bindPlatform }
+/** Shorthand for React.createElement; the whole UI is written as plain calls. */
+const h = React.createElement
 
-/**
- * React, read through the platform seam.
- *
- * The Host supplies React through the factory's `require`, which runs after module
- * evaluation — so a top-level import would resolve too early. Every use below goes through
- * this proxy, which defers the read to the moment of use.
- */
-const React = new Proxy({}, {
-  get(_target, key) {
-    const value = getReact()[key]
-    return typeof value === 'function' ? value.bind(getReact()) : value
-  },
-})
-
-/**
- * Shorthand for React.createElement; the whole UI is written as plain calls.
- *
- * A function rather than a captured reference: `React.createElement` cannot be read at module
- * evaluation time, because the Host supplies React only when it calls the factory.
- */
-const h = (type, props, ...children) => getReact().createElement(type, props, ...children)
-
-/** ReactDOM.createPortal, likewise deferred. */
-const createPortal = (children, container) => getReactDom().createPortal(children, container)
 import { zh, en } from './locales.js'
 import { elementOf, cssEscape } from './dom.js'
 import {

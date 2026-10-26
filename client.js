@@ -5,12 +5,20 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:92b3405eb68b903d
+ * Artifact: sha256:31f33a47d6a1c57f
  */
-var __dshQuoteChat = (() => {
+function __dshQuoteChatFactory(hostRequire) {
+  let module = { exports: {} }
+  let exports = module.exports
+  // The Host require, visible to the module graph as `require`. esbuild's helper for the
+  // external react/react-dom specifiers resolves through this binding, which exists because
+  // the whole graph is evaluated inside this function rather than at script load.
+  const require = hostRequire
+  var __create = Object.create;
   var __defProp = Object.defineProperty;
   var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
   var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __getProtoOf = Object.getPrototypeOf;
   var __hasOwnProp = Object.prototype.hasOwnProperty;
   var __export = (target, all) => {
     for (var name in all)
@@ -24,44 +32,25 @@ var __dshQuoteChat = (() => {
     }
     return to;
   };
+  var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+    // If the importer is in node compatibility mode or this is not an ESM
+    // file that has been converted to a CommonJS file using a Babel-
+    // compatible transform (i.e. "__esModule" has not been set), then set
+    // "default" to the CommonJS "module.exports" for node compatibility.
+    isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+    mod
+  ));
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
   // src/index.js
   var index_exports = {};
   __export(index_exports, {
     apply: () => apply,
-    bindPlatform: () => bindPlatform,
     inject: () => inject
   });
-
-  // src/platform.js
-  var react = null;
-  var reactDom = null;
-  function bindPlatform(require2) {
-    if (react !== null) {
-      throw new Error("dsh-quote-chat: the Host factory ran more than once");
-    }
-    react = require2("react");
-    reactDom = require2("react-dom");
-    if (react === void 0 || react === null) {
-      throw new Error('dsh-quote-chat: the Host did not provide "react"');
-    }
-    if (reactDom === void 0 || reactDom === null || typeof reactDom.createPortal !== "function") {
-      throw new Error('dsh-quote-chat: the Host did not provide "react-dom" with createPortal');
-    }
-  }
-  function getReact() {
-    if (react === null) {
-      throw new Error("dsh-quote-chat: React was read before the Host provided it");
-    }
-    return react;
-  }
-  function getReactDom() {
-    if (reactDom === null) {
-      throw new Error("dsh-quote-chat: ReactDOM was read before the Host provided it");
-    }
-    return reactDom;
-  }
+  module.exports = __toCommonJS(index_exports);
+  var import_react = __toESM(require("react"), 1);
+  var import_react_dom = require("react-dom");
 
   // src/locales.js
   var zh = {
@@ -323,442 +312,435 @@ var __dshQuoteChat = (() => {
   var FLASH_MS = 2600;
   var HOVER_LINGER_MS = 260;
   var CARD_EXIT_MS = 130;
-  var React = new Proxy({}, {
-    get(_target, key) {
-      const value = getReact()[key];
-      return typeof value === "function" ? value.bind(getReact()) : value;
-    }
-  });
-  var h = (type, props, ...children) => getReact().createElement(type, props, ...children);
-  var createPortal = (children, container) => getReactDom().createPortal(children, container);
+  var h = import_react.default.createElement;
   var NS = "quoteChat";
   var TAB_ID = "dsh-quote-chat:side";
   var TAB_KIND = "dsh-quote-chat";
   var NON_ANSWER_SELECTOR = 'textarea, input, [contenteditable="true"], [data-slot="conversation.composer"]';
   var UNSAFE_IN_CARD = "script, style, iframe, object, embed, link, meta";
   var STYLESHEET = `
-.qc-popup{position:fixed;z-index:60;display:flex;align-items:stretch;gap:2px;padding:3px;
-  border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-overlay);
-  box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:12.5px;line-height:1.2;color:var(--dsw-alias-label-primary);
-  animation:qc-pop .1s ease-out;box-sizing:border-box}
-@keyframes qc-pop{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:none}}
-.qc-popup button{appearance:none;border:0;background:transparent;color:inherit;font:inherit;
-  display:flex;align-items:center;gap:5px;padding:6px 9px;border-radius:7px;cursor:pointer;white-space:nowrap}
-.qc-popup button:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2)}
-.qc-popup button:disabled{opacity:.45;cursor:default}
-.qc-popup button+button{box-shadow:inset 1px 0 0 var(--dsw-alias-border-l1)}
-.qc-popup svg{flex:none;opacity:.8}
+  .qc-popup{position:fixed;z-index:60;display:flex;align-items:stretch;gap:2px;padding:3px;
+    border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-overlay);
+    box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:12.5px;line-height:1.2;color:var(--dsw-alias-label-primary);
+    animation:qc-pop .1s ease-out;box-sizing:border-box}
+  @keyframes qc-pop{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:none}}
+  .qc-popup button{appearance:none;border:0;background:transparent;color:inherit;font:inherit;
+    display:flex;align-items:center;gap:5px;padding:6px 9px;border-radius:7px;cursor:pointer;white-space:nowrap}
+  .qc-popup button:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2)}
+  .qc-popup button:disabled{opacity:.45;cursor:default}
+  .qc-popup button+button{box-shadow:inset 1px 0 0 var(--dsw-alias-border-l1)}
+  .qc-popup svg{flex:none;opacity:.8}
 
-.qc-compose{position:fixed;z-index:60;width:min(420px,92vw);box-sizing:border-box;
-  border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:12px;
-  background:var(--dsw-alias-bg-overlay);
-  box-shadow:0 16px 40px rgba(0,0,0,.32),0 2px 8px rgba(0,0,0,.18);
-  padding:10px;color:var(--dsw-alias-label-primary);
-  font-size:12.5px;animation:qc-pop .1s ease-out}
-.qc-compose-preview{max-height:88px;overflow-y:auto;padding:6px 8px;border-radius:8px;
-  background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);
-  color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.55;word-break:break-word;
-  white-space:pre-wrap;margin-bottom:8px}
-.qc-compose-preview table{border-collapse:collapse;font-size:11px}
-.qc-compose-preview td,.qc-compose-preview th{border:1px solid var(--dsw-alias-border-l1);padding:2px 5px}
-.qc-compose-preview .katex{font-size:1em}
-.qc-compose textarea{width:100%;box-sizing:border-box;resize:none;min-height:2.6em;max-height:9em;
-  font:inherit;line-height:1.5;padding:7px 9px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);
-  background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);outline:none}
-.qc-compose textarea:focus{border-color:var(--dsw-alias-brand-primary)}
-.qc-compose-row{display:flex;align-items:center;gap:8px;margin-top:8px}
-.qc-compose-hint{flex:1;min-width:0;font-size:11px;color:var(--dsw-alias-label-secondary);opacity:.85;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.qc-compose-confirm{appearance:none;border:0;border-radius:999px;min-width:26px;height:26px;
-  padding:0 10px;flex:none;font:inherit;font-size:12px;font-weight:600;
-  display:flex;align-items:center;justify-content:center;cursor:pointer;
-  /* A solid accent with white ink. The theme token alone was too pale against the
-     popover surface in dark mode, leaving the button barely visible. */
-  background:#1f6ae0;color:#fff;
-  box-shadow:0 1px 3px rgba(0,0,0,.28);
-  transition:background .12s ease}
-.qc-compose-confirm svg{margin-right:5px}
-.qc-compose-confirm-text{white-space:nowrap}
-.qc-compose-confirm:hover{background:#1a5cc4}
-.qc-compose-confirm:active{background:#1550ac}
-.qc-compose-cancel:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
-.qc-compose-cancel{appearance:none;border:1px solid var(--dsw-alias-border-l2);background:transparent;
-  color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;border-radius:7px;
-  padding:4px 10px;cursor:pointer;flex:none}
+  .qc-compose{position:fixed;z-index:60;width:min(420px,92vw);box-sizing:border-box;
+    border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:12px;
+    background:var(--dsw-alias-bg-overlay);
+    box-shadow:0 16px 40px rgba(0,0,0,.32),0 2px 8px rgba(0,0,0,.18);
+    padding:10px;color:var(--dsw-alias-label-primary);
+    font-size:12.5px;animation:qc-pop .1s ease-out}
+  .qc-compose-preview{max-height:88px;overflow-y:auto;padding:6px 8px;border-radius:8px;
+    background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);
+    color:var(--dsw-alias-label-secondary);font-size:12px;line-height:1.55;word-break:break-word;
+    white-space:pre-wrap;margin-bottom:8px}
+  .qc-compose-preview table{border-collapse:collapse;font-size:11px}
+  .qc-compose-preview td,.qc-compose-preview th{border:1px solid var(--dsw-alias-border-l1);padding:2px 5px}
+  .qc-compose-preview .katex{font-size:1em}
+  .qc-compose textarea{width:100%;box-sizing:border-box;resize:none;min-height:2.6em;max-height:9em;
+    font:inherit;line-height:1.5;padding:7px 9px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);
+    background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);outline:none}
+  .qc-compose textarea:focus{border-color:var(--dsw-alias-brand-primary)}
+  .qc-compose-row{display:flex;align-items:center;gap:8px;margin-top:8px}
+  .qc-compose-hint{flex:1;min-width:0;font-size:11px;color:var(--dsw-alias-label-secondary);opacity:.85;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .qc-compose-confirm{appearance:none;border:0;border-radius:999px;min-width:26px;height:26px;
+    padding:0 10px;flex:none;font:inherit;font-size:12px;font-weight:600;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
+    /* A solid accent with white ink. The theme token alone was too pale against the
+       popover surface in dark mode, leaving the button barely visible. */
+    background:#1f6ae0;color:#fff;
+    box-shadow:0 1px 3px rgba(0,0,0,.28);
+    transition:background .12s ease}
+  .qc-compose-confirm svg{margin-right:5px}
+  .qc-compose-confirm-text{white-space:nowrap}
+  .qc-compose-confirm:hover{background:#1a5cc4}
+  .qc-compose-confirm:active{background:#1550ac}
+  .qc-compose-cancel:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
+  .qc-compose-cancel{appearance:none;border:1px solid var(--dsw-alias-border-l2);background:transparent;
+    color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;border-radius:7px;
+    padding:4px 10px;cursor:pointer;flex:none}
 
-/* ── The right-gutter bubble ────────────────────────────────────────────────
+  /* ── The right-gutter bubble ────────────────────────────────────────────────
 
-   A blue speech bubble pinned to the right of the text column, level with the
-   TOP of the annotated passage, carrying the same ordinal as the annotation's
-   chip. It marks where a passage came from without touching the prose itself.
+     A blue speech bubble pinned to the right of the text column, level with the
+     TOP of the annotated passage, carrying the same ordinal as the annotation's
+     chip. It marks where a passage came from without touching the prose itself.
 
-   Drawn with a tail, so it reads as a bubble rather than a plain badge: the tail
-   points back at the passage it belongs to. */
-/* The bubble is mounted INSIDE the row that holds its passage, and positioned
-   with CSS alone.
-  
-   That is what makes it independent of zoom, wrapping and pane drags: it shares
-   the row's box, so any transform of the row moves it by construction. Nothing
-   recomputes its position, so nothing can go stale. right docks it to the
-   column edge and top centres it on the row's first line.
-  
-   position:absolute against the row keeps it out of the text flow; the row is
-   given position:relative only while it hosts a bubble. */
-/* The bubble sits at the paragraph's top-right corner, INSIDE its box, in a
-   gutter created with padding-inline-end on the HOSTING BLOCK.
+     Drawn with a tail, so it reads as a bubble rather than a plain badge: the tail
+     points back at the passage it belongs to. */
+  /* The bubble is mounted INSIDE the row that holds its passage, and positioned
+     with CSS alone.
+    
+     That is what makes it independent of zoom, wrapping and pane drags: it shares
+     the row's box, so any transform of the row moves it by construction. Nothing
+     recomputes its position, so nothing can go stale. right docks it to the
+     column edge and top centres it on the row's first line.
+    
+     position:absolute against the row keeps it out of the text flow; the row is
+     given position:relative only while it hosts a bubble. */
+  /* The bubble sits at the paragraph's top-right corner, INSIDE its box, in a
+     gutter created with padding-inline-end on the HOSTING BLOCK.
 
-   Why padding after all: reserving room outside the box (negative right) lets the
-   scroll container clip the bubble, and reserving it with a border or by shrinking
-   the content box re-wraps the prose. Padding is applied once, when the bubble is
-   attached, and never changes afterwards - so the paragraph lays out exactly once
-   and cannot flicker on subsequent passes. */
-/* A hosting block reserves a right-hand gutter for its bubble.
-   Applied once per block: the paragraph lays out with the gutter from the start, so
-   adding a bubble never re-wraps the text and never changes the measured height. */
-.qc-hosts-bubble{padding-right:28px}
-.qc-marker{position:absolute;right:2px;top:0;z-index:2;
-  /* The ordinal is CSS-generated, not a text node: a real node inside the paragraph
-     would both join its textContent and be painted by the passage highlight. */
-  content:"";
-  display:flex;align-items:center;justify-content:center;
-  min-width:19px;height:19px;padding:0 5px;
-  border-radius:9.5px 9.5px 9.5px 3px;border:0;cursor:pointer;
-  font-size:11px;font-weight:600;line-height:1;color:#fff;font-family:inherit;
-  background:#2f7df6;
-  box-shadow:0 1px 4px rgba(0,0,0,.22);
-  transform-origin:left center;
-  transition:transform .12s ease,background .12s ease,box-shadow .12s ease}.qc-marker::after{content:attr(data-qc-number);line-height:1}
-.qc-marker:hover{transform:scale(1.16);background:#1f6ae0}
-.qc-marker:active{transform:scale(1.04)}
-/* Tables keep a distinct hue so a glance tells the two kinds apart. */
-.qc-marker-table{background:#17a673}
-.qc-marker-table:hover{background:#128a5f}
-/* The bubble the editor belongs to stays lit while the editor is open. */
-.qc-marker.qc-marker-active{background:#1f6ae0;box-shadow:0 0 0 2px rgba(47,125,246,.28),
-  0 1px 4px rgba(0,0,0,.22)}
+     Why padding after all: reserving room outside the box (negative right) lets the
+     scroll container clip the bubble, and reserving it with a border or by shrinking
+     the content box re-wraps the prose. Padding is applied once, when the bubble is
+     attached, and never changes afterwards - so the paragraph lays out exactly once
+     and cannot flicker on subsequent passes. */
+  /* A hosting block reserves a right-hand gutter for its bubble.
+     Applied once per block: the paragraph lays out with the gutter from the start, so
+     adding a bubble never re-wraps the text and never changes the measured height. */
+  .qc-hosts-bubble{padding-right:28px}
+  .qc-marker{position:absolute;right:2px;top:0;z-index:2;
+    /* The ordinal is CSS-generated, not a text node: a real node inside the paragraph
+       would both join its textContent and be painted by the passage highlight. */
+    content:"";
+    display:flex;align-items:center;justify-content:center;
+    min-width:19px;height:19px;padding:0 5px;
+    border-radius:9.5px 9.5px 9.5px 3px;border:0;cursor:pointer;
+    font-size:11px;font-weight:600;line-height:1;color:#fff;font-family:inherit;
+    background:#2f7df6;
+    box-shadow:0 1px 4px rgba(0,0,0,.22);
+    transform-origin:left center;
+    transition:transform .12s ease,background .12s ease,box-shadow .12s ease}.qc-marker::after{content:attr(data-qc-number);line-height:1}
+  .qc-marker:hover{transform:scale(1.16);background:#1f6ae0}
+  .qc-marker:active{transform:scale(1.04)}
+  /* Tables keep a distinct hue so a glance tells the two kinds apart. */
+  .qc-marker-table{background:#17a673}
+  .qc-marker-table:hover{background:#128a5f}
+  /* The bubble the editor belongs to stays lit while the editor is open. */
+  .qc-marker.qc-marker-active{background:#1f6ae0;box-shadow:0 0 0 2px rgba(47,125,246,.28),
+    0 1px 4px rgba(0,0,0,.22)}
 
-/* The bubble's own editor: change or delete the comment, without touching the
-   annotated passage. Sits above the bubble but still below app chrome. */
-/* In-flow placement: the panel is a child of the annotated paragraph, so it rides
-   with the text (scroll, zoom, reflow) and needs no reposition listener. It sits just
-   clear of the bubble so the two never overlap. */
-.qc-bubble-panel{position:absolute;z-index:40;box-sizing:border-box;
-  width:min(320px,80vw);padding:10px;
-  border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:12px;
-  background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);
-  box-shadow:0 16px 40px rgba(0,0,0,.32),0 2px 8px rgba(0,0,0,.18);
-  display:flex;flex-direction:column;gap:8px;
-  animation:qc-card-in .14s cubic-bezier(.2,.8,.3,1)}
-.qc-bubble-panel .qc-bp-label{font-size:11.5px;font-weight:600;
-  color:var(--dsw-alias-label-secondary);padding:0 1px}
-.qc-bubble-panel textarea{box-sizing:border-box;width:100%;min-height:64px;
-  resize:vertical;padding:7px 9px;border-radius:8px;font:inherit;font-size:12.5px;
-  line-height:1.55;color:inherit;background:var(--dsw-alias-bg-layer-2);
-  border:1px solid var(--dsw-alias-border-l2)}
-.qc-bubble-panel textarea:focus{outline:none;
-  border-color:var(--dsw-alias-state-accent-primary)}
-.qc-bp-actions{display:flex;align-items:center;gap:6px}
-/* Buttons carry a real hover/press state, not just a cursor change: a filled
-   background shift on hover, a drop under the finger on press, and a focused ring
-   for keyboard use. A pointer-only affordance is invisible at a glance. */
-.qc-bp-actions button{appearance:none;font:inherit;font-size:12px;font-weight:500;
-  cursor:pointer;padding:6px 13px;border-radius:8px;
-  border:1px solid var(--dsw-alias-border-l2);
-  background:var(--dsw-alias-bg-layer-2);color:inherit;
-  transition:background .14s ease,border-color .14s ease,transform .08s ease,
-    box-shadow .14s ease,opacity .14s ease}
-.qc-bp-actions button:hover:not(:disabled){
-  background:var(--dsw-alias-bg-layer-3);
-  border-color:var(--dsw-alias-border-l3)}
-.qc-bp-actions button:active:not(:disabled){transform:translateY(1px) scale(.985)}
-.qc-bp-actions button:focus-visible{outline:none;
-  box-shadow:0 0 0 2px var(--dsw-alias-state-accent-primary)}
-.qc-bp-actions button:disabled{opacity:.45;cursor:default}
-/* The save button is the panel's primary action, so it uses a solid, saturated
-   fill with white text.
-   It previously painted with --dsw-alias-state-accent-primary, which is a BORDER
-   and TEXT accent token, not a button fill: as a background it is pale, so white
-   text on it was almost unreadable. The token is still used for the focus ring,
-   which is what it is for. */
-.qc-bp-actions .qc-bp-save{margin-left:auto;border-color:transparent;
-  background:#1f6ae0;color:#fff;font-weight:600;
-  box-shadow:0 1px 2px rgba(16,63,145,.28)}
-.qc-bp-actions .qc-bp-save:hover:not(:disabled){
-  background:#1a5cc4;color:#fff;
-  box-shadow:0 3px 10px rgba(31,106,224,.38)}
-.qc-bp-actions .qc-bp-save:active:not(:disabled){
-  background:#1550ac;box-shadow:0 1px 3px rgba(16,63,145,.35)}
-.qc-bp-actions .qc-bp-save:focus-visible{
-  box-shadow:0 0 0 2px #fff,0 0 0 4px #1f6ae0}
-/* Delete is a destructive action: it only looks dangerous once you are on it. */
-.qc-bp-actions .qc-bp-delete{color:var(--dsw-alias-state-error-primary)}
-.qc-bp-actions .qc-bp-delete:hover:not(:disabled){
-  background:var(--dsw-alias-state-error-primary);color:#fff;
-  border-color:transparent}
+  /* The bubble's own editor: change or delete the comment, without touching the
+     annotated passage. Sits above the bubble but still below app chrome. */
+  /* In-flow placement: the panel is a child of the annotated paragraph, so it rides
+     with the text (scroll, zoom, reflow) and needs no reposition listener. It sits just
+     clear of the bubble so the two never overlap. */
+  .qc-bubble-panel{position:absolute;z-index:40;box-sizing:border-box;
+    width:min(320px,80vw);padding:10px;
+    border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:12px;
+    background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);
+    box-shadow:0 16px 40px rgba(0,0,0,.32),0 2px 8px rgba(0,0,0,.18);
+    display:flex;flex-direction:column;gap:8px;
+    animation:qc-card-in .14s cubic-bezier(.2,.8,.3,1)}
+  .qc-bubble-panel .qc-bp-label{font-size:11.5px;font-weight:600;
+    color:var(--dsw-alias-label-secondary);padding:0 1px}
+  .qc-bubble-panel textarea{box-sizing:border-box;width:100%;min-height:64px;
+    resize:vertical;padding:7px 9px;border-radius:8px;font:inherit;font-size:12.5px;
+    line-height:1.55;color:inherit;background:var(--dsw-alias-bg-layer-2);
+    border:1px solid var(--dsw-alias-border-l2)}
+  .qc-bubble-panel textarea:focus{outline:none;
+    border-color:var(--dsw-alias-state-accent-primary)}
+  .qc-bp-actions{display:flex;align-items:center;gap:6px}
+  /* Buttons carry a real hover/press state, not just a cursor change: a filled
+     background shift on hover, a drop under the finger on press, and a focused ring
+     for keyboard use. A pointer-only affordance is invisible at a glance. */
+  .qc-bp-actions button{appearance:none;font:inherit;font-size:12px;font-weight:500;
+    cursor:pointer;padding:6px 13px;border-radius:8px;
+    border:1px solid var(--dsw-alias-border-l2);
+    background:var(--dsw-alias-bg-layer-2);color:inherit;
+    transition:background .14s ease,border-color .14s ease,transform .08s ease,
+      box-shadow .14s ease,opacity .14s ease}
+  .qc-bp-actions button:hover:not(:disabled){
+    background:var(--dsw-alias-bg-layer-3);
+    border-color:var(--dsw-alias-border-l3)}
+  .qc-bp-actions button:active:not(:disabled){transform:translateY(1px) scale(.985)}
+  .qc-bp-actions button:focus-visible{outline:none;
+    box-shadow:0 0 0 2px var(--dsw-alias-state-accent-primary)}
+  .qc-bp-actions button:disabled{opacity:.45;cursor:default}
+  /* The save button is the panel's primary action, so it uses a solid, saturated
+     fill with white text.
+     It previously painted with --dsw-alias-state-accent-primary, which is a BORDER
+     and TEXT accent token, not a button fill: as a background it is pale, so white
+     text on it was almost unreadable. The token is still used for the focus ring,
+     which is what it is for. */
+  .qc-bp-actions .qc-bp-save{margin-left:auto;border-color:transparent;
+    background:#1f6ae0;color:#fff;font-weight:600;
+    box-shadow:0 1px 2px rgba(16,63,145,.28)}
+  .qc-bp-actions .qc-bp-save:hover:not(:disabled){
+    background:#1a5cc4;color:#fff;
+    box-shadow:0 3px 10px rgba(31,106,224,.38)}
+  .qc-bp-actions .qc-bp-save:active:not(:disabled){
+    background:#1550ac;box-shadow:0 1px 3px rgba(16,63,145,.35)}
+  .qc-bp-actions .qc-bp-save:focus-visible{
+    box-shadow:0 0 0 2px #fff,0 0 0 4px #1f6ae0}
+  /* Delete is a destructive action: it only looks dangerous once you are on it. */
+  .qc-bp-actions .qc-bp-delete{color:var(--dsw-alias-state-error-primary)}
+  .qc-bp-actions .qc-bp-delete:hover:not(:disabled){
+    background:var(--dsw-alias-state-error-primary);color:#fff;
+    border-color:transparent}
 
-/* A short confirmation, so a save is not a silent state change. */
-.qc-bp-done{position:fixed;z-index:41;pointer-events:none;
-  padding:5px 10px;border-radius:8px;font-size:12px;color:#fff;
-  background:rgba(24,24,24,.88);box-shadow:0 4px 14px rgba(0,0,0,.2);
-  animation:qc-done .9s ease forwards}
-@keyframes qc-done{
-  0%{opacity:0;transform:translateY(3px)}
-  18%{opacity:1;transform:translateY(0)}
-  75%{opacity:1;transform:translateY(0)}
-  100%{opacity:0;transform:translateY(-3px)}}
+  /* A short confirmation, so a save is not a silent state change. */
+  .qc-bp-done{position:fixed;z-index:41;pointer-events:none;
+    padding:5px 10px;border-radius:8px;font-size:12px;color:#fff;
+    background:rgba(24,24,24,.88);box-shadow:0 4px 14px rgba(0,0,0,.2);
+    animation:qc-done .9s ease forwards}
+  @keyframes qc-done{
+    0%{opacity:0;transform:translateY(3px)}
+    18%{opacity:1;transform:translateY(0)}
+    75%{opacity:1;transform:translateY(0)}
+    100%{opacity:0;transform:translateY(-3px)}}
 
-.qc-table-add{position:fixed;z-index:55;appearance:none;border:1px solid var(--dsw-alias-border-l2);
-  background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;
-  border-radius:8px;padding:4px 9px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.14);
-  display:flex;align-items:center;gap:5px;white-space:nowrap}
-.qc-table-add:hover{background:var(--dsw-alias-bg-layer-2)}
+  .qc-table-add{position:fixed;z-index:55;appearance:none;border:1px solid var(--dsw-alias-border-l2);
+    background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;
+    border-radius:8px;padding:4px 9px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.14);
+    display:flex;align-items:center;gap:5px;white-space:nowrap}
+  .qc-table-add:hover{background:var(--dsw-alias-bg-layer-2)}
 
-/* The jump flash is a range highlight painted by the browser, not a positioned
-   box: the ::highlight pseudo-element follows the text through scrolling and
-   reflow, so it can never end up glowing over the composer while the passage is
-   off-screen.
+  /* The jump flash is a range highlight painted by the browser, not a positioned
+     box: the ::highlight pseudo-element follows the text through scrolling and
+     reflow, so it can never end up glowing over the composer while the passage is
+     off-screen.
 
-   The highlight pseudo-element cannot be transitioned — it takes no transition
-   property — so the fade is produced by animating the painted colour itself. Two names are used:
-   the transient jump ADDS the highlight and lets qc-flash-in run its own
-   fade-in/fade-out; the editor HOLD registers a highlight that stays, so it does
-   not animate out at all. */
-::highlight(quote-chat-flash){background-color:rgba(255,214,0,.42);
-  text-decoration:underline;text-decoration-color:rgba(255,196,0,.55);
-  text-decoration-thickness:2px;
-  animation:qc-hl-in .22s ease-out}
-@keyframes qc-hl-in{
-  from{background-color:rgba(255,214,0,0);text-decoration-color:rgba(255,196,0,0)}
-  to{background-color:rgba(255,214,0,.42);text-decoration-color:rgba(255,196,0,.55)}}
-/* The held highlight (used while a bubble's editor is open) fades in the same
-   way but never fades out on its own. */
-::highlight(quote-chat-hold){background-color:rgba(255,214,0,.42);
-  text-decoration:underline;text-decoration-color:rgba(255,196,0,.55);
-  text-decoration-thickness:2px;
-  animation:qc-hl-in .22s ease-out}
+     The highlight pseudo-element cannot be transitioned — it takes no transition
+     property — so the fade is produced by animating the painted colour itself. Two names are used:
+     the transient jump ADDS the highlight and lets qc-flash-in run its own
+     fade-in/fade-out; the editor HOLD registers a highlight that stays, so it does
+     not animate out at all. */
+  ::highlight(quote-chat-flash){background-color:rgba(255,214,0,.42);
+    text-decoration:underline;text-decoration-color:rgba(255,196,0,.55);
+    text-decoration-thickness:2px;
+    animation:qc-hl-in .22s ease-out}
+  @keyframes qc-hl-in{
+    from{background-color:rgba(255,214,0,0);text-decoration-color:rgba(255,196,0,0)}
+    to{background-color:rgba(255,214,0,.42);text-decoration-color:rgba(255,196,0,.55)}}
+  /* The held highlight (used while a bubble's editor is open) fades in the same
+     way but never fades out on its own. */
+  ::highlight(quote-chat-hold){background-color:rgba(255,214,0,.42);
+    text-decoration:underline;text-decoration-color:rgba(255,196,0,.55);
+    text-decoration-thickness:2px;
+    animation:qc-hl-in .22s ease-out}
 
-/* ── The inline annotation chip ──────────────────────────────────────────────
+  /* ── The inline annotation chip ──────────────────────────────────────────────
 
-   A rounded pill sitting in the composer's text flow, showing the annotation's
-   label plus a leading glyph that names its kind:
+     A rounded pill sitting in the composer's text flow, showing the annotation's
+     label plus a leading glyph that names its kind:
 
-     text     引文 glyph
-     table    grid glyph
+       text     引文 glyph
+       table    grid glyph
 
-   On hover the glyph is replaced, in place, by a red × that removes the
-   annotation. The × lives INSIDE the chip's left edge — it takes over the glyph's
-   slot rather than floating outside — so the control is part of the pill and
-   cannot drift away from it.
+     On hover the glyph is replaced, in place, by a red × that removes the
+     annotation. The × lives INSIDE the chip's left edge — it takes over the glyph's
+     slot rather than floating outside — so the control is part of the pill and
+     cannot drift away from it.
 
-   Both glyphs and the × are drawn by pseudo-elements and a positioned overlay
-   keyed on the chip's own box. The chip's children are React's; nothing here
-   writes into them. */
-/* The chip follows the app's theme instead of hard-coding a light grey.
-   --qc-chip-bg resolves to the app's own layer token, so dark mode is inherited
-   rather than guessed at; the fallbacks only apply outside the host. */
-[data-composer-chip="quote-chat"]{display:inline-flex;align-items:center;
-  vertical-align:baseline;max-width:20em;padding:2px 9px 2px 7px;margin:0 1px;
-  border-radius:999px;
-  border:1px solid var(--dsw-alias-border-l2, rgba(0,0,0,.08));
-  background:var(--qc-chip-bg, var(--dsw-alias-bg-layer-2, #f2f2f2));
-  color:var(--dsw-alias-label-primary, #181818);
-  font-size:12.5px;line-height:1.5;cursor:pointer;position:relative;
-  transition:background .14s ease}
-[data-composer-chip="quote-chat"]:hover,
-[data-composer-chip="quote-chat"]:focus-within{
-  background:var(--qc-chip-bg-hover, var(--dsw-alias-bg-layer-3, #e8e8e8));
-  border-color:var(--dsw-alias-border-l3, rgba(0,0,0,.16))}
-/* The host's own marker glyph is the first child; it is hidden and replaced by a
-   CSS glyph so the node's contents are never touched. */
-[data-composer-chip="quote-chat"] > span:first-child{display:none}
-/* The kind glyph, occupying the left slot. */
-[data-composer-chip="quote-chat"]::before{content:"";
-  flex:none;width:13px;height:13px;margin-right:6px;
-  background-color:currentColor;opacity:.75;
-  -webkit-mask-image:var(--qc-glyph, var(--qc-glyph-text));
-  mask-image:var(--qc-glyph, var(--qc-glyph-text));
-  -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
-  -webkit-mask-position:center;mask-position:center;
-  -webkit-mask-size:contain;mask-size:contain;
-  transition:opacity .12s ease,visibility .12s ease}
-/* Hovering hides the kind glyph: the × takes its place in the same slot. */
-[data-composer-chip="quote-chat"]:hover::before,
-[data-composer-chip="quote-chat"]:focus-within::before{opacity:0;visibility:hidden}
-/*
- * The ordinal, drawn here rather than relying on the host's label.
- *
- * The host renders its label inside a child span, and that text was not reaching
- * the screen: the chip showed a glyph and nothing else. A pseudo-element is
- * rendered by CSS from an attribute the plugin sets, so it cannot be lost to the
- * editor's own rendering.
- */
-[data-composer-chip="quote-chat"]::after{content:attr(data-qc-label);
-  order:1;margin-left:0;font-size:12.5px;line-height:1.5;
-  color:var(--dsw-alias-label-primary, #181818);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-/* Keep the host's own label out of the way so the ordinal is the only text. */
-[data-composer-chip="quote-chat"] > span:last-child{display:none}
+     Both glyphs and the × are drawn by pseudo-elements and a positioned overlay
+     keyed on the chip's own box. The chip's children are React's; nothing here
+     writes into them. */
+  /* The chip follows the app's theme instead of hard-coding a light grey.
+     --qc-chip-bg resolves to the app's own layer token, so dark mode is inherited
+     rather than guessed at; the fallbacks only apply outside the host. */
+  [data-composer-chip="quote-chat"]{display:inline-flex;align-items:center;
+    vertical-align:baseline;max-width:20em;padding:2px 9px 2px 7px;margin:0 1px;
+    border-radius:999px;
+    border:1px solid var(--dsw-alias-border-l2, rgba(0,0,0,.08));
+    background:var(--qc-chip-bg, var(--dsw-alias-bg-layer-2, #f2f2f2));
+    color:var(--dsw-alias-label-primary, #181818);
+    font-size:12.5px;line-height:1.5;cursor:pointer;position:relative;
+    transition:background .14s ease}
+  [data-composer-chip="quote-chat"]:hover,
+  [data-composer-chip="quote-chat"]:focus-within{
+    background:var(--qc-chip-bg-hover, var(--dsw-alias-bg-layer-3, #e8e8e8));
+    border-color:var(--dsw-alias-border-l3, rgba(0,0,0,.16))}
+  /* The host's own marker glyph is the first child; it is hidden and replaced by a
+     CSS glyph so the node's contents are never touched. */
+  [data-composer-chip="quote-chat"] > span:first-child{display:none}
+  /* The kind glyph, occupying the left slot. */
+  [data-composer-chip="quote-chat"]::before{content:"";
+    flex:none;width:13px;height:13px;margin-right:6px;
+    background-color:currentColor;opacity:.75;
+    -webkit-mask-image:var(--qc-glyph, var(--qc-glyph-text));
+    mask-image:var(--qc-glyph, var(--qc-glyph-text));
+    -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
+    -webkit-mask-position:center;mask-position:center;
+    -webkit-mask-size:contain;mask-size:contain;
+    transition:opacity .12s ease,visibility .12s ease}
+  /* Hovering hides the kind glyph: the × takes its place in the same slot. */
+  [data-composer-chip="quote-chat"]:hover::before,
+  [data-composer-chip="quote-chat"]:focus-within::before{opacity:0;visibility:hidden}
+  /*
+   * The ordinal, drawn here rather than relying on the host's label.
+   *
+   * The host renders its label inside a child span, and that text was not reaching
+   * the screen: the chip showed a glyph and nothing else. A pseudo-element is
+   * rendered by CSS from an attribute the plugin sets, so it cannot be lost to the
+   * editor's own rendering.
+   */
+  [data-composer-chip="quote-chat"]::after{content:attr(data-qc-label);
+    order:1;margin-left:0;font-size:12.5px;line-height:1.5;
+    color:var(--dsw-alias-label-primary, #181818);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* Keep the host's own label out of the way so the ordinal is the only text. */
+  [data-composer-chip="quote-chat"] > span:last-child{display:none}
 
-/* Glyph: a rounded rectangle with a quote stroke inside it — the same "quoted
-   text" mark the reference shows. Table chips get a grid glyph. */
-:root{
-  --qc-glyph-text:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='2' y='3' width='12' height='10' rx='2.5' fill='none' stroke='black' stroke-width='1.4'/><path d='M5.6 6.6h4.8M5.6 9.2h3' stroke='black' stroke-width='1.3' stroke-linecap='round'/></svg>");
-  --qc-glyph-table:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='2' y='3.2' width='12' height='9.6' rx='1.8' fill='none' stroke='black' stroke-width='1.3'/><path d='M2 6.4h12M2 9.6h12M6.2 3.2v9.6' stroke='black' stroke-width='1.1'/></svg>");
-}
-[data-composer-chip="quote-chat"][data-qc-kind="table"]{--qc-glyph:var(--qc-glyph-table)}
+  /* Glyph: a rounded rectangle with a quote stroke inside it — the same "quoted
+     text" mark the reference shows. Table chips get a grid glyph. */
+  :root{
+    --qc-glyph-text:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='2' y='3' width='12' height='10' rx='2.5' fill='none' stroke='black' stroke-width='1.4'/><path d='M5.6 6.6h4.8M5.6 9.2h3' stroke='black' stroke-width='1.3' stroke-linecap='round'/></svg>");
+    --qc-glyph-table:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='2' y='3.2' width='12' height='9.6' rx='1.8' fill='none' stroke='black' stroke-width='1.3'/><path d='M2 6.4h12M2 9.6h12M6.2 3.2v9.6' stroke='black' stroke-width='1.1'/></svg>");
+  }
+  [data-composer-chip="quote-chat"][data-qc-kind="table"]{--qc-glyph:var(--qc-glyph-table)}
 
-/* ── The hover removal control ───────────────────────────────────────────────
+  /* ── The hover removal control ───────────────────────────────────────────────
 
-   The red × sits in the chip's left slot, replacing the kind glyph on hover.
+     The red × sits in the chip's left slot, replacing the kind glyph on hover.
 
-   Shaped to belong to the pill: fully rounded like the chip, sized to the glyph
-   box it covers, and centred on the same point (the inline style positions it by
-   its centre).
+     Shaped to belong to the pill: fully rounded like the chip, sized to the glyph
+     box it covers, and centred on the same point (the inline style positions it by
+     its centre).
 
-   The cross is drawn as an SVG, not typed as a character. A text multiplication
-   sign inherits the font's baseline and side bearings, which made it sit high and
-   look undersized no matter how it was nudged; two strokes give exact geometry
-   and scale with the button. */
-.qc-chip-remove{position:fixed;z-index:45;
-  appearance:none;box-sizing:border-box;margin:0;padding:0;border:0;
-  border-radius:999px;background:#e8291c;
-  cursor:pointer;display:flex;align-items:center;justify-content:center;
-  transform:translate(-50%,-50%);box-shadow:0 0 0 1.5px var(--dsw-alias-bg-layer-1, #f2f2f2);
-  transition:background .12s ease,transform .12s ease}
-.qc-chip-remove svg{display:block;width:10px;height:10px;flex:none;
-  pointer-events:none}
-.qc-chip-remove svg path{stroke:#fff;stroke-width:2.1;stroke-linecap:round;
-  fill:none;vector-effect:non-scaling-stroke}
-.qc-chip-remove:hover{background:#c81f14;transform:translate(-50%,-50%) scale(1.1)}
+     The cross is drawn as an SVG, not typed as a character. A text multiplication
+     sign inherits the font's baseline and side bearings, which made it sit high and
+     look undersized no matter how it was nudged; two strokes give exact geometry
+     and scale with the button. */
+  .qc-chip-remove{position:fixed;z-index:45;
+    appearance:none;box-sizing:border-box;margin:0;padding:0;border:0;
+    border-radius:999px;background:#e8291c;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;
+    transform:translate(-50%,-50%);box-shadow:0 0 0 1.5px var(--dsw-alias-bg-layer-1, #f2f2f2);
+    transition:background .12s ease,transform .12s ease}
+  .qc-chip-remove svg{display:block;width:10px;height:10px;flex:none;
+    pointer-events:none}
+  .qc-chip-remove svg path{stroke:#fff;stroke-width:2.1;stroke-linecap:round;
+    fill:none;vector-effect:non-scaling-stroke}
+  .qc-chip-remove:hover{background:#c81f14;transform:translate(-50%,-50%) scale(1.1)}
 
-/* ── The hover preview card ──────────────────────────────────────────────────
+  /* ── The hover preview card ──────────────────────────────────────────────────
 
-   A compact panel floating above the chip, holding the rendered passage. Sized to
-   its content: a short passage should not open a 560px sheet. max-width caps
-   it, width:max-content lets it stay small.
+     A compact panel floating above the chip, holding the rendered passage. Sized to
+     its content: a short passage should not open a 560px sheet. max-width caps
+     it, width:max-content lets it stay small.
 
-   No ordinal and no removal control inside — the chip carries both. */
-.qc-card{position:fixed;z-index:50;
-  width:max-content;max-width:min(380px,80vw);box-sizing:border-box;
-  border:1px solid var(--dsw-alias-border-l3, rgba(0,0,0,.07));border-radius:12px;
-  background:var(--dsw-alias-bg-overlay, #fff);
-  box-shadow:0 8px 26px rgba(0,0,0,.15),0 2px 6px rgba(0,0,0,.05);
-  padding:8px 10px;color:var(--dsw-alias-label-primary, #181818);
-  animation:qc-card-in .16s cubic-bezier(.2,.8,.3,1)}
-@keyframes qc-card-in{
-  from{opacity:0;transform:translateY(4px) scale(.98)}
-  to{opacity:1;transform:translateY(0) scale(1)}}
-/* The exit runs while the card is still mounted; the parent unmounts it after
-   CARD_EXIT_MS. Filled mode keeps the final keyframe's state, so the card does not
-   flash back to full opacity on the last frame. */
-.qc-card-out{animation:qc-card-out .13s ease-in forwards}
-@keyframes qc-card-out{
-  from{opacity:1;transform:translateY(0) scale(1)}
-  to{opacity:0;transform:translateY(3px) scale(.985)}}
-.qc-card-comment{margin:0 0 7px;padding:6px 9px;border-radius:8px;
-  background:var(--dsw-alias-bg-layer-2, #f6f6f6);color:#4b4b4b;font-size:12px;line-height:1.55;
-  white-space:pre-wrap;word-break:break-word}
-.qc-card-body{max-height:220px;overflow:auto;font-size:12.5px;line-height:1.6;
-  word-break:break-word;
-  /* The captured markup keeps the answer's own class names, but the stylesheet
-     those classes belong to lives in the transcript, not here — so nothing is
-     inherited automatically. These defaults make the fragment readable on its
-     own: headings, lists, quotes and code all get a local shape. */
-}
-.qc-card-body h1,.qc-card-body h2,.qc-card-body h3,.qc-card-body h4{
-  margin:.5em 0 .35em;font-size:1em;font-weight:700;line-height:1.4}
-.qc-card-body p{margin:.35em 0}
-.qc-card-body ul,.qc-card-body ol{margin:.35em 0;padding-left:1.35em}
-.qc-card-body li{margin:.15em 0}
-.qc-card-body blockquote{margin:.4em 0;padding-left:.7em;
-  border-left:2px solid var(--dsw-alias-border-l2, #e0e0e0);color:var(--dsw-alias-label-secondary, #555)}
-.qc-card-body code{font-family:ui-monospace,monospace;font-size:.92em;
-  padding:.1em .3em;border-radius:4px;background:var(--dsw-alias-bg-layer-2, #f2f2f2)}
-.qc-card-body pre{margin:.4em 0;padding:7px 9px;border-radius:8px;
-  background:var(--dsw-alias-bg-layer-2, #f6f6f6);overflow-x:auto}
-.qc-card-body pre code{padding:0;background:none}
-.qc-card-body a{color:#3b6fd4;text-decoration:underline}
-.qc-card-body strong,.qc-card-body b{font-weight:700}
-.qc-card-body em,.qc-card-body i{font-style:italic}
-/* KaTeX ships its own layout rules with the transcript's stylesheet; pull in the
-   few that matter so a captured formula does not collapse into run-together
-   glyphs. The markup already carries the spans, so this only restores shape. */
-.qc-card-body .katex{font-size:1.05em;line-height:1.2}
-.qc-card-body .katex .base{position:relative;display:inline-block;white-space:nowrap}
-.qc-card-body .katex .vlist-t{display:inline-table;table-layout:fixed;
-  border-collapse:collapse}
-.qc-card-body .katex .vlist-r{display:table-row}
-.qc-card-body .katex .vlist{display:table-cell;vertical-align:bottom;position:relative}
-.qc-card-body .katex .vlist > span{display:block;height:0;position:relative}
-.qc-card-body .katex .vlist > span > span{display:inline-block}
-.qc-card-body .katex .msupsub{text-align:left}
-.qc-card-body .katex .mfrac > span > span{text-align:center}
-.qc-card-body .katex .mfrac .frac-line{border-bottom:1px solid currentColor;
-  display:inline-block;width:100%}
-.qc-card-body .katex .mord,.qc-card-body .katex .mbin,.qc-card-body .katex .mrel,
-.qc-card-body .katex .mopen,.qc-card-body .katex .mclose,.qc-card-body .katex .mpunct,
-.qc-card-body .katex .minner{display:inline-block}
-.qc-card-body .katex .mspace{display:inline-block}
-.qc-card-body .katex .sqrt > .root{margin-left:.2em}
-.qc-card-body .katex .hide-tail{overflow:hidden}
-.qc-card-body .katex .sizing,.qc-card-body .katex .fontsize-ensurer{display:inline-block}
-.qc-card-body table{border-collapse:collapse;width:100%;font-size:12.5px;margin:0}
-.qc-card-body td,.qc-card-body th{border:1px solid #e6e6e6;padding:6px 10px;
-  text-align:left}
-.qc-card-body th{background:#fafafa;font-weight:600}
-.qc-card-md{margin:0;white-space:pre-wrap;font:inherit;font-size:12px;line-height:1.55}
+     No ordinal and no removal control inside — the chip carries both. */
+  .qc-card{position:fixed;z-index:50;
+    width:max-content;max-width:min(380px,80vw);box-sizing:border-box;
+    border:1px solid var(--dsw-alias-border-l3, rgba(0,0,0,.07));border-radius:12px;
+    background:var(--dsw-alias-bg-overlay, #fff);
+    box-shadow:0 8px 26px rgba(0,0,0,.15),0 2px 6px rgba(0,0,0,.05);
+    padding:8px 10px;color:var(--dsw-alias-label-primary, #181818);
+    animation:qc-card-in .16s cubic-bezier(.2,.8,.3,1)}
+  @keyframes qc-card-in{
+    from{opacity:0;transform:translateY(4px) scale(.98)}
+    to{opacity:1;transform:translateY(0) scale(1)}}
+  /* The exit runs while the card is still mounted; the parent unmounts it after
+     CARD_EXIT_MS. Filled mode keeps the final keyframe's state, so the card does not
+     flash back to full opacity on the last frame. */
+  .qc-card-out{animation:qc-card-out .13s ease-in forwards}
+  @keyframes qc-card-out{
+    from{opacity:1;transform:translateY(0) scale(1)}
+    to{opacity:0;transform:translateY(3px) scale(.985)}}
+  .qc-card-comment{margin:0 0 7px;padding:6px 9px;border-radius:8px;
+    background:var(--dsw-alias-bg-layer-2, #f6f6f6);color:#4b4b4b;font-size:12px;line-height:1.55;
+    white-space:pre-wrap;word-break:break-word}
+  .qc-card-body{max-height:220px;overflow:auto;font-size:12.5px;line-height:1.6;
+    word-break:break-word;
+    /* The captured markup keeps the answer's own class names, but the stylesheet
+       those classes belong to lives in the transcript, not here — so nothing is
+       inherited automatically. These defaults make the fragment readable on its
+       own: headings, lists, quotes and code all get a local shape. */
+  }
+  .qc-card-body h1,.qc-card-body h2,.qc-card-body h3,.qc-card-body h4{
+    margin:.5em 0 .35em;font-size:1em;font-weight:700;line-height:1.4}
+  .qc-card-body p{margin:.35em 0}
+  .qc-card-body ul,.qc-card-body ol{margin:.35em 0;padding-left:1.35em}
+  .qc-card-body li{margin:.15em 0}
+  .qc-card-body blockquote{margin:.4em 0;padding-left:.7em;
+    border-left:2px solid var(--dsw-alias-border-l2, #e0e0e0);color:var(--dsw-alias-label-secondary, #555)}
+  .qc-card-body code{font-family:ui-monospace,monospace;font-size:.92em;
+    padding:.1em .3em;border-radius:4px;background:var(--dsw-alias-bg-layer-2, #f2f2f2)}
+  .qc-card-body pre{margin:.4em 0;padding:7px 9px;border-radius:8px;
+    background:var(--dsw-alias-bg-layer-2, #f6f6f6);overflow-x:auto}
+  .qc-card-body pre code{padding:0;background:none}
+  .qc-card-body a{color:#3b6fd4;text-decoration:underline}
+  .qc-card-body strong,.qc-card-body b{font-weight:700}
+  .qc-card-body em,.qc-card-body i{font-style:italic}
+  /* KaTeX ships its own layout rules with the transcript's stylesheet; pull in the
+     few that matter so a captured formula does not collapse into run-together
+     glyphs. The markup already carries the spans, so this only restores shape. */
+  .qc-card-body .katex{font-size:1.05em;line-height:1.2}
+  .qc-card-body .katex .base{position:relative;display:inline-block;white-space:nowrap}
+  .qc-card-body .katex .vlist-t{display:inline-table;table-layout:fixed;
+    border-collapse:collapse}
+  .qc-card-body .katex .vlist-r{display:table-row}
+  .qc-card-body .katex .vlist{display:table-cell;vertical-align:bottom;position:relative}
+  .qc-card-body .katex .vlist > span{display:block;height:0;position:relative}
+  .qc-card-body .katex .vlist > span > span{display:inline-block}
+  .qc-card-body .katex .msupsub{text-align:left}
+  .qc-card-body .katex .mfrac > span > span{text-align:center}
+  .qc-card-body .katex .mfrac .frac-line{border-bottom:1px solid currentColor;
+    display:inline-block;width:100%}
+  .qc-card-body .katex .mord,.qc-card-body .katex .mbin,.qc-card-body .katex .mrel,
+  .qc-card-body .katex .mopen,.qc-card-body .katex .mclose,.qc-card-body .katex .mpunct,
+  .qc-card-body .katex .minner{display:inline-block}
+  .qc-card-body .katex .mspace{display:inline-block}
+  .qc-card-body .katex .sqrt > .root{margin-left:.2em}
+  .qc-card-body .katex .hide-tail{overflow:hidden}
+  .qc-card-body .katex .sizing,.qc-card-body .katex .fontsize-ensurer{display:inline-block}
+  .qc-card-body table{border-collapse:collapse;width:100%;font-size:12.5px;margin:0}
+  .qc-card-body td,.qc-card-body th{border:1px solid #e6e6e6;padding:6px 10px;
+    text-align:left}
+  .qc-card-body th{background:#fafafa;font-weight:600}
+  .qc-card-md{margin:0;white-space:pre-wrap;font:inherit;font-size:12px;line-height:1.55}
 
-.qc-notice{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:70;
-  padding:6px 12px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);
-  background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-state-warn-primary);
-  font-size:12px;max-width:min(32em,90vw);text-align:center}
+  .qc-notice{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:70;
+    padding:6px 12px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);
+    background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-state-warn-primary);
+    font-size:12px;max-width:min(32em,90vw);text-align:center}
 
-.qc-side{display:flex;flex-direction:column;height:100%;min-height:0;font-size:13px;
-  color:var(--dsw-alias-label-primary);box-sizing:border-box}
-.qc-side-head{display:flex;align-items:center;gap:8px;padding:8px 12px;
-  border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
-.qc-side-head-title{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.qc-side-head button{appearance:none;border:1px solid var(--dsw-alias-border-l2);background:transparent;
-  color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;padding:3px 8px;border-radius:7px;cursor:pointer}
-.qc-side-head button:hover{background:var(--dsw-alias-bg-layer-2)}
-.qc-quote{flex:none;margin:10px 12px 0;padding:8px 10px;border-left:2px solid var(--dsw-alias-brand-primary);
-  border-radius:0 8px 8px 0;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);
-  font-size:12px;line-height:1.55}
-.qc-quote-label{font-size:11px;letter-spacing:.04em;text-transform:uppercase;opacity:.75;margin-bottom:3px;
-  display:flex;justify-content:space-between;gap:8px;align-items:baseline}
-.qc-quote-label button{appearance:none;border:0;background:transparent;color:var(--dsw-alias-brand-primary);
-  font:inherit;font-size:11px;letter-spacing:0;text-transform:none;cursor:pointer;padding:0;flex:none}
-.qc-quote-body{white-space:pre-wrap;word-break:break-word}
-.qc-quote-body.qc-clamped{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
-.qc-thread{flex:1;min-height:0;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:12px}
-.qc-empty{margin:auto;max-width:30em;text-align:center;color:var(--dsw-alias-label-secondary);
-  font-size:12.5px;line-height:1.65}
-.qc-msg{display:flex;flex-direction:column;gap:4px;max-width:100%}
-.qc-msg-role{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--dsw-alias-label-secondary);opacity:.75}
-.qc-msg-body{white-space:pre-wrap;word-break:break-word;line-height:1.7}
-.qc-msg-user .qc-msg-body{background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);
-  border-radius:9px;padding:7px 10px}
-.qc-msg-actions{display:flex;gap:10px}
-.qc-msg-actions button{appearance:none;border:0;background:transparent;color:var(--dsw-alias-brand-primary);
-  font:inherit;font-size:12px;cursor:pointer;padding:0}
-.qc-msg-actions button:hover{text-decoration:underline}
-.qc-msg-error{color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:1.6}
-.qc-dots::after{content:'';animation:qc-dots 1.2s steps(4,end) infinite}
-@keyframes qc-dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
-.qc-side-compose{flex:none;border-top:1px solid var(--dsw-alias-border-l1);padding:10px 12px;
-  display:flex;flex-direction:column;gap:8px}
-.qc-side-compose textarea{width:100%;box-sizing:border-box;resize:none;min-height:3.4em;max-height:12em;
-  font:inherit;line-height:1.5;padding:8px 10px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2);
-  background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);outline:none}
-.qc-side-compose textarea:focus{border-color:var(--dsw-alias-brand-primary)}
-.qc-side-compose-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.qc-side-compose-hint{flex:1;min-width:0;font-size:11px;color:var(--dsw-alias-label-secondary);opacity:.85}
-.qc-btn{appearance:none;border:0;border-radius:8px;font:inherit;font-size:12.5px;padding:6px 14px;
-  cursor:pointer;background:var(--dsw-alias-brand-primary);color:#fff;font-weight:500}
-.qc-btn:disabled{opacity:.45;cursor:default}
-.qc-btn-ghost{background:transparent;color:var(--dsw-alias-label-secondary);
-  border:1px solid var(--dsw-alias-border-l2);font-weight:400}
-.qc-btn-ghost:hover{background:var(--dsw-alias-bg-layer-2)}
-`;
+  .qc-side{display:flex;flex-direction:column;height:100%;min-height:0;font-size:13px;
+    color:var(--dsw-alias-label-primary);box-sizing:border-box}
+  .qc-side-head{display:flex;align-items:center;gap:8px;padding:8px 12px;
+    border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
+  .qc-side-head-title{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .qc-side-head button{appearance:none;border:1px solid var(--dsw-alias-border-l2);background:transparent;
+    color:var(--dsw-alias-label-secondary);font:inherit;font-size:12px;padding:3px 8px;border-radius:7px;cursor:pointer}
+  .qc-side-head button:hover{background:var(--dsw-alias-bg-layer-2)}
+  .qc-quote{flex:none;margin:10px 12px 0;padding:8px 10px;border-left:2px solid var(--dsw-alias-brand-primary);
+    border-radius:0 8px 8px 0;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);
+    font-size:12px;line-height:1.55}
+  .qc-quote-label{font-size:11px;letter-spacing:.04em;text-transform:uppercase;opacity:.75;margin-bottom:3px;
+    display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+  .qc-quote-label button{appearance:none;border:0;background:transparent;color:var(--dsw-alias-brand-primary);
+    font:inherit;font-size:11px;letter-spacing:0;text-transform:none;cursor:pointer;padding:0;flex:none}
+  .qc-quote-body{white-space:pre-wrap;word-break:break-word}
+  .qc-quote-body.qc-clamped{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+  .qc-thread{flex:1;min-height:0;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:12px}
+  .qc-empty{margin:auto;max-width:30em;text-align:center;color:var(--dsw-alias-label-secondary);
+    font-size:12.5px;line-height:1.65}
+  .qc-msg{display:flex;flex-direction:column;gap:4px;max-width:100%}
+  .qc-msg-role{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--dsw-alias-label-secondary);opacity:.75}
+  .qc-msg-body{white-space:pre-wrap;word-break:break-word;line-height:1.7}
+  .qc-msg-user .qc-msg-body{background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1);
+    border-radius:9px;padding:7px 10px}
+  .qc-msg-actions{display:flex;gap:10px}
+  .qc-msg-actions button{appearance:none;border:0;background:transparent;color:var(--dsw-alias-brand-primary);
+    font:inherit;font-size:12px;cursor:pointer;padding:0}
+  .qc-msg-actions button:hover{text-decoration:underline}
+  .qc-msg-error{color:var(--dsw-alias-state-error-primary);font-size:12px;line-height:1.6}
+  .qc-dots::after{content:'';animation:qc-dots 1.2s steps(4,end) infinite}
+  @keyframes qc-dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}}
+  .qc-side-compose{flex:none;border-top:1px solid var(--dsw-alias-border-l1);padding:10px 12px;
+    display:flex;flex-direction:column;gap:8px}
+  .qc-side-compose textarea{width:100%;box-sizing:border-box;resize:none;min-height:3.4em;max-height:12em;
+    font:inherit;line-height:1.5;padding:8px 10px;border-radius:9px;border:1px solid var(--dsw-alias-border-l2);
+    background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);outline:none}
+  .qc-side-compose textarea:focus{border-color:var(--dsw-alias-brand-primary)}
+  .qc-side-compose-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .qc-side-compose-hint{flex:1;min-width:0;font-size:11px;color:var(--dsw-alias-label-secondary);opacity:.85}
+  .qc-btn{appearance:none;border:0;border-radius:8px;font:inherit;font-size:12.5px;padding:6px 14px;
+    cursor:pointer;background:var(--dsw-alias-brand-primary);color:#fff;font-weight:500}
+  .qc-btn:disabled{opacity:.45;cursor:default}
+  .qc-btn-ghost{background:transparent;color:var(--dsw-alias-label-secondary);
+    border:1px solid var(--dsw-alias-border-l2);font-weight:400}
+  .qc-btn-ghost:hover{background:var(--dsw-alias-bg-layer-2)}
+  `;
   function installStyles(ctx) {
     ctx.effect(() => {
       if (typeof document === "undefined") return void 0;
@@ -779,7 +761,7 @@ var __dshQuoteChat = (() => {
     );
   }
   function useDraftOccurrences(useInput) {
-    const empty = React.useMemo(() => [], []);
+    const empty = import_react.default.useMemo(() => [], []);
     const inert = () => empty;
     const picked = (typeof useInput === "function" ? useInput : inert)(
       (state) => state.occurrences,
@@ -911,7 +893,7 @@ var __dshQuoteChat = (() => {
   var NO_ANNOTATIONS = Object.freeze([]);
   function useAnnotations(sessionId) {
     const store = sessionId === void 0 ? void 0 : storeFor(sessionId);
-    const subscribe = React.useCallback(
+    const subscribe = import_react.default.useCallback(
       (listener) => {
         if (store === void 0) return () => {
         };
@@ -922,11 +904,11 @@ var __dshQuoteChat = (() => {
       },
       [store]
     );
-    const snapshot = React.useCallback(
+    const snapshot = import_react.default.useCallback(
       () => store === void 0 ? NO_ANNOTATIONS : store.list,
       [store]
     );
-    return React.useSyncExternalStore(subscribe, snapshot, snapshot);
+    return import_react.default.useSyncExternalStore(subscribe, snapshot, snapshot);
   }
   var CHIP_SOURCE = "quote-chat";
   var CHIP_TRIGGER = "#";
@@ -936,11 +918,11 @@ var __dshQuoteChat = (() => {
   function serializeChipForModel(payload) {
     const head = `[${payload.label}]`;
     const note = payload.comment === "" ? "" : `
-${payload.comment}`;
+  ${payload.comment}`;
     return `
-${head}${note}
-${payload.text}
-`;
+  ${head}${note}
+  ${payload.text}
+  `;
   }
   function chipLabel(annotation, labels) {
     return labels.content.replace("{n}", String(annotation.number));
@@ -965,7 +947,7 @@ ${payload.text}
   }
   function withAppendedChip(draft, existing, addition, reference) {
     const base = draft === "" || draft.endsWith("\n") ? draft : `${draft}
-`;
+  `;
     return {
       text: `${base}${addition}`,
       references: [...existing, { ...reference, offset: base.length }]
@@ -1103,9 +1085,9 @@ ${payload.text}
   }
   function ActionPopup(props) {
     const { anchor, canAnnotate, canAsk, labels, onAnnotate, onAsk } = props;
-    const ref = React.useRef(null);
-    const [size, setSize] = React.useState({ width: 0, height: 0 });
-    React.useLayoutEffect(() => {
+    const ref = import_react.default.useRef(null);
+    const [size, setSize] = import_react.default.useState({ width: 0, height: 0 });
+    import_react.default.useLayoutEffect(() => {
       const element = ref.current;
       if (element === null) return;
       const rect = element.getBoundingClientRect();
@@ -1115,7 +1097,7 @@ ${payload.text}
     const measured = { width: size.width || 210, height: size.height || 34 };
     const anchored = flow === null ? null : anchorInTranscript(flow, anchor, measured, "below");
     const position = anchored === null ? placeNear(anchor, measured) : anchored.position;
-    return createPortal(
+    return (0, import_react_dom.createPortal)(
       h(
         "div",
         {
@@ -1149,18 +1131,18 @@ ${payload.text}
   }
   function ComposerPopover(props) {
     const { source, labels, onConfirm, onCancel } = props;
-    const ref = React.useRef(null);
-    const inputRef = React.useRef(null);
-    const [comment, setComment] = React.useState("");
-    const [size, setSize] = React.useState({ width: 0, height: 0 });
-    React.useLayoutEffect(() => {
+    const ref = import_react.default.useRef(null);
+    const inputRef = import_react.default.useRef(null);
+    const [comment, setComment] = import_react.default.useState("");
+    const [size, setSize] = import_react.default.useState({ width: 0, height: 0 });
+    import_react.default.useLayoutEffect(() => {
       const element = ref.current;
       if (element === null) return;
       const rect = element.getBoundingClientRect();
       setSize({ width: rect.width, height: rect.height });
       inputRef.current?.focus();
     }, []);
-    React.useEffect(() => {
+    import_react.default.useEffect(() => {
       const onDown = (event) => {
         if (ref.current !== null && event.target instanceof Node && ref.current.contains(event.target)) return;
         onCancel();
@@ -1180,7 +1162,7 @@ ${payload.text}
     const flow = findFlow();
     const anchored = flow === null ? null : anchorInTranscript(flow, source.rect, { width, height }, "below");
     const position = anchored === null ? placeNear(source.rect, { width, height }) : anchored.position;
-    return createPortal(
+    return (0, import_react_dom.createPortal)(
       h(
         "div",
         {
@@ -1241,12 +1223,12 @@ ${payload.text}
   }
   function ChipCards(props) {
     const { annotations, occurrences, labels, onJump, onRemove } = props;
-    const actionsRef = React.useRef({ onJump, onRemove });
+    const actionsRef = import_react.default.useRef({ onJump, onRemove });
     actionsRef.current = { onJump, onRemove };
-    const [hover, setHover] = React.useState(null);
-    const hoverRef = React.useRef(null);
+    const [hover, setHover] = import_react.default.useState(null);
+    const hoverRef = import_react.default.useRef(null);
     hoverRef.current = hover;
-    React.useEffect(() => {
+    import_react.default.useEffect(() => {
       if (typeof document === "undefined") return void 0;
       let frame = 0;
       let timer = 0;
@@ -1413,9 +1395,9 @@ ${payload.text}
     if (hover === null) return null;
     const GLYPH_CENTRE = 7 + 13 / 2;
     const REMOVE_SIZE = 15;
-    return createPortal(
+    return (0, import_react_dom.createPortal)(
       h(
-        React.Fragment,
+        import_react.default.Fragment,
         null,
         h(
           "button",
@@ -1457,9 +1439,9 @@ ${payload.text}
   }
   function AnnotationCard(props) {
     const { annotation, anchor, closing = false } = props;
-    const ref = React.useRef(null);
-    const [size, setSize] = React.useState({ width: 0, height: 0 });
-    React.useLayoutEffect(() => {
+    const ref = import_react.default.useRef(null);
+    const [size, setSize] = import_react.default.useState({ width: 0, height: 0 });
+    import_react.default.useLayoutEffect(() => {
       const element = ref.current;
       if (element === null) return;
       const box = element.getBoundingClientRect();
@@ -1666,19 +1648,19 @@ ${payload.text}
   }
   function BubblePanel(props) {
     const { annotation, anchor, labels, onSave, onDelete, onClose, inFlow = false, rel = null } = props;
-    const [text, setText] = React.useState(annotation.comment);
-    const [flash, setFlash] = React.useState("");
-    const ref = React.useRef(null);
-    const areaRef = React.useRef(null);
-    const [size, setSize] = React.useState({ width: 0, height: 0 });
-    React.useLayoutEffect(() => {
+    const [text, setText] = import_react.default.useState(annotation.comment);
+    const [flash, setFlash] = import_react.default.useState("");
+    const ref = import_react.default.useRef(null);
+    const areaRef = import_react.default.useRef(null);
+    const [size, setSize] = import_react.default.useState({ width: 0, height: 0 });
+    import_react.default.useLayoutEffect(() => {
       const element = ref.current;
       if (element === null) return;
       const box = element.getBoundingClientRect();
       setSize({ width: box.width, height: box.height });
       areaRef.current?.focus();
     }, []);
-    React.useEffect(() => {
+    import_react.default.useEffect(() => {
       const onDown = (event) => {
         if (ref.current !== null && event.target instanceof Node && ref.current.contains(event.target)) return;
         onClose();
@@ -1797,9 +1779,9 @@ ${payload.text}
   }
   function MarkerLayer(props) {
     const { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove } = props;
-    const [positions, setPositions] = React.useState([]);
-    const [editing, setEditing] = React.useState(null);
-    React.useEffect(() => {
+    const [positions, setPositions] = import_react.default.useState([]);
+    const [editing, setEditing] = import_react.default.useState(null);
+    import_react.default.useEffect(() => {
       if (typeof document === "undefined") return void 0;
       let frame = 0;
       let timer = 0;
@@ -1893,7 +1875,7 @@ ${payload.text}
         if (columnObserver !== null) columnObserver.disconnect();
       };
     }, [annotations, occurrences, labels]);
-    React.useEffect(() => {
+    import_react.default.useEffect(() => {
       if (typeof document === "undefined") return;
       for (const position of positions) {
         const row = position.row;
@@ -1910,7 +1892,7 @@ ${payload.text}
     for (const position of positions) {
       const row = position.row;
       if (row === void 0 || !row.isConnected) continue;
-      nodes.push(createPortal(h("button", {
+      nodes.push((0, import_react_dom.createPortal)(h("button", {
         key: position.id,
         type: "button",
         "data-qc-ignore": "1",
@@ -1948,7 +1930,7 @@ ${payload.text}
         // mounting, and the bottom-edge offset uses that measurement from then on.
         height: BUBBLE_PANEL_HEIGHT
       });
-      return createPortal(h(BubblePanel, {
+      return (0, import_react_dom.createPortal)(h(BubblePanel, {
         annotation,
         rel: anchored === null ? null : anchored.position,
         // Fallback geometry for the case where there is no transcript to anchor to.
@@ -1980,12 +1962,12 @@ ${payload.text}
         }
       }), anchored === null ? document.body : anchored.scroller);
     })();
-    return h(React.Fragment, null, ...nodes, editor);
+    return h(import_react.default.Fragment, null, ...nodes, editor);
   }
   function TableAddButton(props) {
     const { label, onAdd } = props;
-    const [target, setTarget] = React.useState(null);
-    React.useEffect(() => {
+    const [target, setTarget] = import_react.default.useState(null);
+    import_react.default.useEffect(() => {
       if (typeof document === "undefined") return void 0;
       let frame = 0;
       let pending = null;
@@ -2031,7 +2013,7 @@ ${payload.text}
       left: Math.max(VIEWPORT_MARGIN, target.rect.right - 116),
       top: Math.max(VIEWPORT_MARGIN, target.rect.top + 4)
     };
-    return createPortal(
+    return (0, import_react_dom.createPortal)(
       h("button", {
         type: "button",
         className: "qc-table-add",
@@ -2258,15 +2240,15 @@ ${payload.text}
   function SideChat(props) {
     const { quote, t, locale, inputActions, useInput } = props;
     const draft = useDraft(useInput);
-    const [messages, setMessages] = React.useState([]);
-    const [question, setQuestion] = React.useState("");
-    const [busy, setBusy] = React.useState(false);
-    const [error, setError] = React.useState("");
-    const [expanded, setExpanded] = React.useState(false);
-    const [added, setAdded] = React.useState(false);
-    const abortRef = React.useRef(null);
-    const threadRef = React.useRef(null);
-    React.useEffect(() => {
+    const [messages, setMessages] = import_react.default.useState([]);
+    const [question, setQuestion] = import_react.default.useState("");
+    const [busy, setBusy] = import_react.default.useState(false);
+    const [error, setError] = import_react.default.useState("");
+    const [expanded, setExpanded] = import_react.default.useState(false);
+    const [added, setAdded] = import_react.default.useState(false);
+    const abortRef = import_react.default.useRef(null);
+    const threadRef = import_react.default.useRef(null);
+    import_react.default.useEffect(() => {
       abortRef.current?.abort();
       abortRef.current = null;
       setMessages([]);
@@ -2275,15 +2257,15 @@ ${payload.text}
       setBusy(false);
       setAdded(false);
     }, [quote]);
-    React.useEffect(() => () => {
+    import_react.default.useEffect(() => () => {
       abortRef.current?.abort();
     }, []);
-    const scrollToEnd = React.useCallback(() => {
+    const scrollToEnd = import_react.default.useCallback(() => {
       const element = threadRef.current;
       if (element !== null) element.scrollTop = element.scrollHeight;
     }, []);
-    React.useEffect(scrollToEnd, [messages, scrollToEnd]);
-    const submit = React.useCallback(async () => {
+    import_react.default.useEffect(scrollToEnd, [messages, scrollToEnd]);
+    const submit = import_react.default.useCallback(async () => {
       const text = question.trim();
       if (text === "" || busy) return;
       const history = messages.filter((message) => message.text.trim() !== "").map((message) => ({ role: message.role, text: message.text }));
@@ -2328,19 +2310,19 @@ ${payload.text}
         setBusy(false);
       }
     }, [question, busy, messages, quote, locale]);
-    const stop = React.useCallback(() => {
+    const stop = import_react.default.useCallback(() => {
       abortRef.current?.abort();
       abortRef.current = null;
       setBusy(false);
     }, []);
-    const addToChat = React.useCallback((text) => {
+    const addToChat = import_react.default.useCallback((text) => {
       const payload = text.split(/\r?\n/).map((line) => line === "" ? ">" : `> ${line}`).join("\n");
       const current = typeof draft === "string" ? draft : "";
       if (typeof inputActions?.captureInsertion === "function" && typeof inputActions?.insertText === "function") {
         const span = inputActions.captureInsertion();
         if (inputActions.insertText(`${payload}
 
-`, span) === true) {
+  `, span) === true) {
           setAdded(true);
           return;
         }
@@ -2348,11 +2330,11 @@ ${payload.text}
       if (typeof inputActions?.setDraft === "function") {
         inputActions.setDraft(current.trim() === "" ? payload : `${current}
 
-${payload}`);
+  ${payload}`);
         setAdded(true);
       }
     }, [draft, inputActions]);
-    React.useEffect(() => {
+    import_react.default.useEffect(() => {
       if (!added) return void 0;
       const timer = setTimeout(() => setAdded(false), 2200);
       return () => clearTimeout(timer);
@@ -2444,7 +2426,7 @@ ${payload}`);
             onClick: () => addToChat(
               `> ${lastQuestion === void 0 ? "" : lastQuestion.text}
 
-${lastAssistant.text}`
+  ${lastAssistant.text}`
             )
           }, t("side.addToChat")) : null,
           busy ? h("button", { type: "button", className: "qc-btn qc-btn-ghost", onClick: stop }, t("side.stop")) : h("button", {
@@ -2469,17 +2451,17 @@ ${lastAssistant.text}`
     const info = typeof useTabInfo === "function" ? useTabInfo() : void 0;
     const quote = quoteForTab(info?.tab?.navigation?.params?.quote);
     const localeService = pluginCtx?.locale;
-    const locale = React.useSyncExternalStore(
-      React.useCallback(
+    const locale = import_react.default.useSyncExternalStore(
+      import_react.default.useCallback(
         (listener) => typeof localeService?.subscribe === "function" ? localeService.subscribe(listener) : () => {
         },
         [localeService]
       ),
-      React.useCallback(
+      import_react.default.useCallback(
         () => typeof localeService?.getLocale === "function" ? localeService.getLocale().active : "zh",
         [localeService]
       ),
-      React.useCallback(() => "zh", [])
+      import_react.default.useCallback(() => "zh", [])
     );
     if (quote === "") {
       return h(
@@ -2515,14 +2497,14 @@ ${lastAssistant.text}`
       const t = typeof props.t === "function" ? props.t : boundT;
       const draft = useDraft(useInput);
       const occurrences = useDraftOccurrences(useInput);
-      const inputStateRef = React.useRef(null);
+      const inputStateRef = import_react.default.useRef(null);
       inputStateRef.current = { draft, occurrences };
       const annotations = useAnnotations(sessionId);
-      const [overlay, setOverlay] = React.useState(null);
-      const [notice, setNotice] = React.useState("");
-      const overlayRef = React.useRef(null);
+      const [overlay, setOverlay] = import_react.default.useState(null);
+      const [notice, setNotice] = import_react.default.useState("");
+      const overlayRef = import_react.default.useRef(null);
       overlayRef.current = overlay;
-      const labels = React.useMemo(() => ({
+      const labels = import_react.default.useMemo(() => ({
         annotate: t("popup.annotate"),
         askInSide: t("popup.askInSide"),
         tooLong: t("popup.tooLong"),
@@ -2553,7 +2535,7 @@ ${lastAssistant.text}`
         save: t("bubble.save"),
         delete: t("bubble.delete")
       }), [t]);
-      React.useEffect(() => {
+      import_react.default.useEffect(() => {
         if (overlay === null) return void 0;
         const onPointerDown = (event) => {
           const surface = document.querySelector(".qc-popup, .qc-compose");
@@ -2570,7 +2552,7 @@ ${lastAssistant.text}`
           document.removeEventListener("keydown", onKeyDown, true);
         };
       }, [overlay === null]);
-      React.useEffect(() => {
+      import_react.default.useEffect(() => {
         if (typeof document === "undefined") return void 0;
         let frame = 0;
         let pointerDown = false;
@@ -2624,13 +2606,13 @@ ${lastAssistant.text}`
           document.removeEventListener("selectionchange", schedule);
         };
       }, [labels]);
-      React.useEffect(() => {
+      import_react.default.useEffect(() => {
         if (notice === "") return void 0;
         const timer = setTimeout(() => setNotice(""), 3200);
         return () => clearTimeout(timer);
       }, [notice]);
-      React.useEffect(() => () => clearFlashRange(), []);
-      const writeChip = React.useCallback((annotation) => {
+      import_react.default.useEffect(() => () => clearFlashRange(), []);
+      const writeChip = import_react.default.useCallback((annotation) => {
         if (typeof inputActions?.setDraft !== "function") return false;
         const current = typeof draft === "string" ? draft : "";
         const existing = Array.isArray(inputStateRef.current?.occurrences) ? inputStateRef.current.occurrences : [];
@@ -2643,11 +2625,11 @@ ${lastAssistant.text}`
           return false;
         }
       }, [draft, inputActions, labels]);
-      const cancelCompose = React.useCallback(() => {
+      const cancelCompose = import_react.default.useCallback(() => {
         clearFlashRange();
         setOverlay(null);
       }, []);
-      const commit = React.useCallback((source, comment) => {
+      const commit = import_react.default.useCallback((source, comment) => {
         if (sessionId === void 0) return;
         const text = typeof comment === "string" ? comment.trim() : "";
         const stored = addAnnotation(sessionId, {
@@ -2674,7 +2656,7 @@ ${lastAssistant.text}`
         const range = flow === null ? null : resolveAnchor(flow, stored.anchor);
         if (range !== null) flashRange(range);
       }, [sessionId, labels, writeChip]);
-      const annotateTable = React.useCallback((table) => {
+      const annotateTable = import_react.default.useCallback((table) => {
         const markdown = tableToMarkdown(table);
         if (markdown === "") return;
         const flow = findFlow();
@@ -2692,7 +2674,7 @@ ${lastAssistant.text}`
         });
         clearSelection();
       }, []);
-      const onHighlight = React.useCallback((annotation, on) => {
+      const onHighlight = import_react.default.useCallback((annotation, on) => {
         const flow = findFlow();
         if (flow === null) return;
         if (!on) {
@@ -2706,7 +2688,7 @@ ${lastAssistant.text}`
           return live === null ? null : resolveAnchor(live, annotation.anchor);
         });
       }, []);
-      const onJump = React.useCallback((annotation) => {
+      const onJump = import_react.default.useCallback((annotation) => {
         const flow = findFlow();
         if (flow === null) {
           setNotice(diagnoseMiss(null, annotation));
@@ -2727,7 +2709,7 @@ ${lastAssistant.text}`
           setNotice(diagnoseMiss(findFlow(), annotation));
         });
       }, []);
-      React.useEffect(() => {
+      import_react.default.useEffect(() => {
         chipJumpHandler.current = (ref) => {
           const match = annotations.find((item) => item.id === ref);
           if (match === void 0) return false;
@@ -2738,7 +2720,7 @@ ${lastAssistant.text}`
           if (chipJumpHandler.current !== null) chipJumpHandler.current = null;
         };
       }, [annotations, onJump]);
-      const onRemove = React.useCallback((annotation) => {
+      const onRemove = import_react.default.useCallback((annotation) => {
         if (sessionId === void 0) return;
         const snapshot = withoutChip(
           typeof draft === "string" ? draft : "",
@@ -2750,7 +2732,7 @@ ${lastAssistant.text}`
         }
         removeAnnotation(sessionId, annotation.id);
       }, [draft, inputActions, sessionId]);
-      const onUpdate = React.useCallback((annotation, comment) => {
+      const onUpdate = import_react.default.useCallback((annotation, comment) => {
         if (sessionId === void 0) return;
         const payload = chipPayloads.get(annotation.id);
         if (payload !== void 0) {
@@ -2761,7 +2743,7 @@ ${lastAssistant.text}`
         }
         updateAnnotation(sessionId, annotation.id, comment);
       }, [sessionId]);
-      const onAsk = React.useCallback((source) => {
+      const onAsk = import_react.default.useCallback((source) => {
         const opener = ctx.get("sidebarRight");
         if (typeof opener?.openTab !== "function") return;
         pendingQuote.text = source.text;
@@ -2782,7 +2764,7 @@ ${lastAssistant.text}`
       const canAnnotate = typeof inputActions?.setDraft === "function" || typeof inputActions?.captureInsertion === "function" && typeof inputActions?.insertText === "function";
       const canAsk = typeof ctx.get("sidebarRight")?.openTab === "function";
       return h(
-        React.Fragment,
+        import_react.default.Fragment,
         null,
         overlay === null ? null : overlay.kind === "actions" ? h(ActionPopup, {
           anchor: overlay.source.rect,
@@ -2903,14 +2885,20 @@ ${lastAssistant.text}`
   function apply(ctx) {
     applyImpl(ctx);
   }
-  return __toCommonJS(index_exports);
-})();
+
+  return module.exports
+}
+
 // The Host reads this envelope: a fixed id and a synchronous factory.
+//
+// `__dshQuoteChatFactory` evaluates the whole module graph when called, so building the
+// plugin happens inside `factory`, not at script load. Each factory call therefore gets
+// its own instance of every module-scope value, which is the semantics the original
+// concatenated build had.
 window.__ModuleLoader__.load({
   id: 'dsh-quote-chat',
   factory(hostRequire) {
-    // Bind the platform first: everything below reads React through this seam.
-    __dshQuoteChat.bindPlatform(hostRequire)
-    return { inject: __dshQuoteChat.inject, apply: __dshQuoteChat.apply }
+    const bundle = __dshQuoteChatFactory(hostRequire)
+    return { inject: bundle.inject, apply: bundle.apply }
   },
 })
