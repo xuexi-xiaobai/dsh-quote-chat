@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:15048b7e8980f75a
+ * Artifact: sha256:d12fcf1b3143d649
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -2641,34 +2641,41 @@ function __dshQuoteChatFactory(hostRequire) {
   function annotationDock(deps) {
     const {
       ctx,
+      annotations,
+      chips,
+      highlights,
       navigation: navigation2,
-      chipRegistry: chipRegistry2,
-      chipBridge: chipBridge2,
-      chipJumpHandler: chipJumpHandler2,
+      quoteHandoff: quoteHandoff2,
+      surfaces,
+      selection,
+      limits,
+      t: boundT
+    } = deps;
+    const {
       addAnnotation: addAnnotation2,
       removeAnnotation: removeAnnotation2,
       updateAnnotation: updateAnnotation2,
       useAnnotations: useAnnotations2,
-      flashRange: flashRange2,
-      clearFlashRange: clearFlashRange2,
-      holdRange: holdRange2,
-      quoteHandoff: quoteHandoff2,
+      store: annotationStore2
+    } = annotations;
+    const { registry: chipRegistry2, bridge: chipBridge2, jumpHandler: chipJumpHandler2 } = chips;
+    const { flashRange: flashRange2, clearFlashRange: clearFlashRange2, holdRange: holdRange2 } = highlights;
+    const {
       ActionPopup: ActionPopup2,
       ComposerPopover: ComposerPopover2,
       ChipCards: ChipCards2,
       MarkerLayer: MarkerLayer2,
-      TableAddButton: TableAddButton2,
-      diagnoseMiss: diagnoseMiss2,
-      tableAnchor: tableAnchor2,
+      TableAddButton: TableAddButton2
+    } = surfaces;
+    const {
       readSelection: readSelection2,
       clearSelection: clearSelection2,
       tableToMarkdown: tableToMarkdown2,
-      findFlow,
-      MAX_QUOTE_CHARS: MAX_QUOTE_CHARS2,
-      MAX_ANNOTATIONS: MAX_ANNOTATIONS2,
-      TAB_KIND: TAB_KIND2,
-      t: boundT
-    } = deps;
+      tableAnchor: tableAnchor2,
+      diagnoseMiss: diagnoseMiss2,
+      findFlow
+    } = selection;
+    const { MAX_QUOTE_CHARS: MAX_QUOTE_CHARS2, MAX_ANNOTATIONS: MAX_ANNOTATIONS2, TAB_KIND: TAB_KIND2 } = limits;
     return function AnnotationDock(props) {
       const { inputActions, useInput, sessionId } = props;
       const t = typeof props.t === "function" ? props.t : boundT;
@@ -2676,7 +2683,7 @@ function __dshQuoteChatFactory(hostRequire) {
       const occurrences = useDraftOccurrences(useInput);
       const inputStateRef = import_react7.default.useRef(null);
       inputStateRef.current = { draft, occurrences };
-      const annotations = useAnnotations2(sessionId);
+      const annotations2 = useAnnotations2(sessionId);
       const [overlay, setOverlay] = import_react7.default.useState(null);
       const [notice, setNotice] = import_react7.default.useState("");
       const overlayRef = import_react7.default.useRef(null);
@@ -2881,7 +2888,7 @@ function __dshQuoteChatFactory(hostRequire) {
       }, []);
       import_react7.default.useEffect(() => {
         chipJumpHandler2.current = (ref) => {
-          const match = annotations.find((item) => item.id === ref);
+          const match = annotations2.find((item) => item.id === ref);
           if (match === void 0) return false;
           onJump(match);
           return true;
@@ -2889,7 +2896,7 @@ function __dshQuoteChatFactory(hostRequire) {
         return () => {
           if (chipJumpHandler2.current !== null) chipJumpHandler2.current = null;
         };
-      }, [annotations, onJump]);
+      }, [annotations2, onJump]);
       const onRemove = import_react7.default.useCallback((annotation) => {
         if (sessionId === void 0) return;
         chipBridge2.release(
@@ -2952,8 +2959,8 @@ function __dshQuoteChatFactory(hostRequire) {
           onConfirm: (comment) => commit(overlay.source, comment),
           onCancel: cancelCompose
         }),
-        h6(ChipCards2, { annotations, occurrences, labels, onJump, onRemove }),
-        h6(MarkerLayer2, { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
+        h6(ChipCards2, { annotations: annotations2, occurrences, labels, onJump, onRemove }),
+        h6(MarkerLayer2, { annotations: annotations2, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
         h6(TableAddButton2, { label: labels.tableAdd, onAdd: annotateTable }),
         typeof notice === "string" && notice !== "" ? h6("div", { className: "qc-notice" }, notice) : null
       );
@@ -3279,32 +3286,35 @@ function __dshQuoteChatFactory(hostRequire) {
         locale: NS
       }, annotationDock({
         ctx,
+        // The annotation lifecycle: one store, plus the React binding over it.
+        annotations: {
+          store: annotationStore,
+          addAnnotation,
+          removeAnnotation,
+          updateAnnotation,
+          useAnnotations
+        },
+        // Chip identity and the draft seam.
+        chips: { registry: chipRegistry, bridge: chipBridge, jumpHandler: chipJumpHandler },
+        // Painting: the transient glow and the held editor highlight.
+        highlights: { flashRange, clearFlashRange, holdRange },
+        // Restoring a stored passage into view.
         navigation,
-        chipRegistry,
-        chipBridge,
-        chipJumpHandler,
-        addAnnotation,
-        removeAnnotation,
-        updateAnnotation,
-        useAnnotations,
-        flashRange,
-        clearFlashRange,
-        holdRange,
+        // The passage a freshly opened side chat should show.
         quoteHandoff,
-        ActionPopup,
-        ComposerPopover,
-        ChipCards,
-        MarkerLayer,
-        TableAddButton,
-        diagnoseMiss,
-        tableAnchor,
-        readSelection,
-        clearSelection,
-        tableToMarkdown,
-        findFlow: layout.findFlow,
-        MAX_QUOTE_CHARS,
-        MAX_ANNOTATIONS,
-        TAB_KIND,
+        // Component types, created once at wiring.
+        surfaces: { ActionPopup, ComposerPopover, ChipCards, MarkerLayer, TableAddButton },
+        // Reading what the user selected, and explaining a jump that missed.
+        selection: {
+          readSelection,
+          clearSelection,
+          tableToMarkdown,
+          tableAnchor,
+          diagnoseMiss,
+          findFlow: layout.findFlow
+        },
+        // Declared limits and protocol ids.
+        limits: { MAX_QUOTE_CHARS, MAX_ANNOTATIONS, TAB_KIND },
         t
       })));
       return () => {

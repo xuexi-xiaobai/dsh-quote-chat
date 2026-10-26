@@ -1,49 +1,46 @@
 /**
- * Fast acceptance for the annotation lifecycle, using real input.
+ * Annotation lifecycle acceptance.
  *
- * ## What makes this a test rather than a rehearsal
+ * Two entry points, one body:
  *
- * Three properties, and the suite is only worth running because of them.
+ *   - `run({ browser, check, url })` — used by tools/accept-all.mjs, which drives every suite
+ *     through a SINGLE browser. Launching chromium costs ~3.4s, and paying that once per campaign
+ *     instead of once per suite is most of the wall-clock difference on a full pass.
+ *   - `node accept-lifecycle.mjs <url>` — standalone, opening its own browser, for debugging this
+ *     area alone.
  *
- * **1. Input is real.** Every action goes through Playwright's CDP input: a genuine triple-click
- * selects the passage, a genuine pointer hover reaches the hover card, real key events fill the
- * Lexical composer. Nothing is mutated through `page.evaluate`, because a synthetic `element.click()`
- * skips hit testing, emits no `pointerup`, and moves no mouse — and this plugin's popover anchors to
- * the `pointerup` coordinate while its card listens for pointer entry. An earlier attempt proved the
- * point by failing: no synthetic event could open the hover card.
+ * A thrown error is reported as one failed assertion rather than crashing the campaign, so the
+ * remaining suites still run.
  *
- * **2. Liveness is proven first.** A plugin that never loaded produces no markers, no cards and no
- * errors, so "there are no markers" is satisfied by failure. `the plugin is live` asserts something
- * only a loaded plugin can produce, and every later assertion is meaningless without it.
- *
- * **3. Assertions read specific values.** Not "a marker exists" but "exactly one marker, numbered 1,
- * whose `data-qc-for` looks like an annotation id". Not "a chip exists" but "one chip whose label is
- * the comment just typed". Count assertions record the before value, so a leftover from a previous
- * run cannot satisfy them.
- *
- * Usage: node tools/accept-real.mjs <url>
+ * Real input throughout: clicks, hovers and typing go through CDP. A synthetic `element.click()`
+ * skips hit testing and emits no `pointerup`, which this plugin's popover anchors to — and the
+ * hover card is unreachable with a synthetic event entirely.
  */
 import { openBrowser } from './harness.mjs'
+import { pathToFileURL } from 'node:url'
 
-const URL_ARG = process.argv[2]
-if (URL_ARG === undefined) {
-  console.error('usage: node tools/accept-real.mjs <url>')
-  process.exit(2)
-}
-
-const startedAt = Date.now()
-const results = []
-const check = (step, ok, detail = '') => {
-  results.push({ step, ok })
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${step}${ok || detail === '' ? '' : `  ->  ${detail}`}`)
-}
-
+/** The comment text this suite types, asserted back by value. */
 const COMMENT = '快速验收注释'
-const browser = await openBrowser()
-const { goto, waitFor, read, count, click, hover, type, press, moveAway, pluginErrors } = browser
 
-try {
-  await goto(URL_ARG)
+/**
+ * Run this suite against an open browser.
+ *
+ * @param options - `{ browser, check, url }`.
+ * @returns `{ passed, total }`.
+ */
+export async function run({ browser, check: report, url }) {
+  // The tally lives here and every assertion is forwarded to the caller's reporter, so the count and
+  // what the runner printed can never disagree.
+  const results = []
+  /** Record one assertion, then let the caller print it. */
+  const check = (step, ok, detail = '') => {
+    results.push({ step, ok })
+    report(step, ok, detail)
+  }
+  const { goto, waitFor, read, count, click, hover, type, press, moveAway, pluginErrors } = browser
+
+  try {
+  await goto(url)
   const shell = await waitFor("document.querySelectorAll('[role=\"treeitem\"]').length > 0", { timeoutMs: 20000 })
   check('the app shell renders', shell !== null)
 
@@ -261,11 +258,44 @@ try {
 
   check('no errors originate in this plugin', pluginErrors().length === 0,
     pluginErrors().slice(0, 2).join(' | '))
-} finally {
-  await browser.close()
+  } catch (error) {
+    check('the lifecycle run completed without throwing', false,
+      `${error?.message ?? error}`.slice(0, 300))
+  }
+
+  return { passed: results.filter((item) => item.ok === true).length, total: results.length }
 }
 
-const failed = results.filter((item) => item.ok !== true).length
-console.log(`\n${results.length - failed}/${results.length} checks passed`)
-console.log(`elapsed: ${((Date.now() - startedAt) / 1000).toFixed(1)}s`)
-process.exit(failed === 0 ? 0 : 1)
+// ── standalone entry ──────────────────────────────────────────────────────────
+
+/**
+ * Open a browser, run the suite, report, close.
+ * @returns the process exit code.
+ */
+async function main() {
+  const url = process.argv[2]
+  if (url === undefined) {
+    console.error('usage: node tools/accept-lifecycle.mjs <url>')
+    return 2
+  }
+  const startedAt = Date.now()
+  const results = []
+  const check = (step, ok, detail = '') => {
+    results.push({ step, ok })
+    console.log(`${ok ? 'PASS' : 'FAIL'}  ${step}${ok || detail === '' ? '' : `  ->  ${detail}`}`)
+  }
+  const browser = await openBrowser()
+  try {
+    await run({ browser, check, url })
+  } finally {
+    await browser.close()
+  }
+  const failed = results.filter((item) => item.ok !== true).length
+  console.log(`\n${results.length - failed}/${results.length} checks passed`)
+  console.log(`elapsed: ${((Date.now() - startedAt) / 1000).toFixed(1)}s`)
+  return failed === 0 ? 0 : 1
+}
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exit(await main())
+}

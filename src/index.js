@@ -374,16 +374,30 @@ function applyImpl(ctx) {
       order: 15,
       locale: NS
     }, annotationDock({
-        ctx, navigation, chipRegistry, chipBridge, chipJumpHandler,
-        addAnnotation, removeAnnotation, updateAnnotation, useAnnotations,
-        flashRange, clearFlashRange, holdRange, quoteHandoff,
-        ActionPopup, ComposerPopover, ChipCards, MarkerLayer, TableAddButton,
-        diagnoseMiss, tableAnchor, readSelection, clearSelection, tableToMarkdown,
-        findFlow: layout.findFlow,
-        MAX_QUOTE_CHARS,
-        MAX_ANNOTATIONS,
-        TAB_KIND,
-        t
+        ctx,
+        // The annotation lifecycle: one store, plus the React binding over it.
+        annotations: {
+          store: annotationStore,
+          addAnnotation, removeAnnotation, updateAnnotation, useAnnotations,
+        },
+        // Chip identity and the draft seam.
+        chips: { registry: chipRegistry, bridge: chipBridge, jumpHandler: chipJumpHandler },
+        // Painting: the transient glow and the held editor highlight.
+        highlights: { flashRange, clearFlashRange, holdRange },
+        // Restoring a stored passage into view.
+        navigation,
+        // The passage a freshly opened side chat should show.
+        quoteHandoff,
+        // Component types, created once at wiring.
+        surfaces: { ActionPopup, ComposerPopover, ChipCards, MarkerLayer, TableAddButton },
+        // Reading what the user selected, and explaining a jump that missed.
+        selection: {
+          readSelection, clearSelection, tableToMarkdown, tableAnchor, diagnoseMiss,
+          findFlow: layout.findFlow,
+        },
+        // Declared limits and protocol ids.
+        limits: { MAX_QUOTE_CHARS, MAX_ANNOTATIONS, TAB_KIND },
+        t,
       })))
     return () => { if (typeof release === 'function') release() }
   }, 'quote-chat: annotation dock')

@@ -1,51 +1,24 @@
 /**
- * Acceptance for the side chat, with real input.
+ * Side chat acceptance.
  *
- * ## What makes this the hardest suite
+ * Two entry points, one body:
  *
- * It is the only one that waits on a model. Everything else settles in milliseconds; an answer
- * takes seconds and arrives in pieces. So the waits here are for *content* conditions — a second
- * message body exists, the streaming indicator is gone — rather than fixed sleeps. That is both
- * faster when the model is quick and correct when it is slow, which a `sleep(2500)` was neither.
+ *   - `run({ browser, check, url })` — used by tools/accept-all.mjs, which drives every suite
+ *     through a SINGLE browser. Launching chromium costs ~3.4s, and paying that once per campaign
+ *     instead of once per suite is most of the wall-clock difference on a full pass.
+ *   - `node accept-side-chat.mjs <url>` — standalone, opening its own browser, for debugging this area alone.
  *
- * ## The two things most likely to break silently
+ * A thrown error is reported as one failed assertion rather than crashing the campaign, so the
+ * remaining suites still run.
  *
- * **The quote handoff.** The tab must open on the passage that was selected, not on whatever was
- * carried over. A second open with a *different* passage is the only way to tell a working handoff
- * from one that always returns the first quote, so that check exists and asserts the new text.
- *
- * **Thread isolation.** A new tab is a new conversation. The previous question must not appear. If
- * it does, answers become unattributable — they were about a different passage.
- *
- * ## Real input
- *
- * The question is typed with CDP key events rather than assigned through a setter and a synthetic
- * `input` event. The controlled textarea then sees exactly what a user's typing produces, including
- * the `input` events React needs to enable the send button — which is precisely what the "send
- * control enables" check measures.
- *
- * Usage: node tools/accept-side-chat.mjs <url>
+ * Real input throughout: clicks and typing go through CDP. A synthetic `element.click()` skips hit
+ * testing and emits no `pointerup`, which this plugin's popover anchors to.
  */
 import { openBrowser } from './harness.mjs'
-
-const URL_ARG = process.argv[2]
-if (URL_ARG === undefined) {
-  console.error('usage: node tools/accept-side-chat.mjs <url>')
-  process.exit(2)
-}
+import { pathToFileURL } from 'node:url'
 
 /** A question with a fixed prefix, so a carried-over thread is unambiguous to detect. */
 const QUESTION = '用一句话回答：这段在说什么？'
-
-const startedAt = Date.now()
-const results = []
-const check = (step, ok, detail = '') => {
-  results.push({ step, ok })
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${step}${ok || detail === '' ? '' : `  ->  ${detail}`}`)
-}
-
-const browser = await openBrowser()
-const { goto, waitFor, read, count, click, press, pluginErrors } = browser
 
 /** The tab's own state: what is rendered, and whether it is still streaming. */
 const TAB_STATE = () => {
@@ -58,8 +31,25 @@ const TAB_STATE = () => {
   }
 }
 
+/**
+ * Run this suite against an open browser.
+ *
+ * @param options - `{ browser, check, url }`.
+ * @returns `{ passed, total }`.
+ */
+export async function run({ browser, check: report, url }) {
+  // The tally lives here and every assertion is forwarded to the caller's reporter, so the count and
+  // what the runner printed can never disagree.
+  const results = []
+  /** Record one assertion, then let the caller print it. */
+  const check = (step, ok, detail = '') => {
+    results.push({ step, ok })
+    report(step, ok, detail)
+  }
+  const { goto, waitFor, read, count, click, press, pluginErrors } = browser
+
 try {
-  await goto(URL_ARG)
+  await goto(url)
   await waitFor("document.querySelectorAll('[role=\"treeitem\"]').length > 0", { timeoutMs: 20000 })
 
   await read(() => {
@@ -262,11 +252,41 @@ try {
 } catch (error) {
   check('the side-chat run completed without throwing', false,
     `${error?.message ?? error}`.slice(0, 300))
-} finally {
-  await browser.close()
 }
 
-const failed = results.filter((item) => item.ok !== true).length
-console.log(`\n${results.length - failed}/${results.length} checks passed`)
-console.log(`elapsed: ${((Date.now() - startedAt) / 1000).toFixed(1)}s`)
-process.exit(failed === 0 ? 0 : 1)
+  return { passed: results.filter((item) => item.ok === true).length, total: results.length }
+}
+
+// ── standalone entry ──────────────────────────────────────────────────────────
+
+/**
+ * Open a browser, run the suite, report, close.
+ * @returns the process exit code.
+ */
+async function main() {
+  const url = process.argv[2]
+  if (url === undefined) {
+    console.error('usage: node tools/accept-side-chat.mjs <url>')
+    return 2
+  }
+  const startedAt = Date.now()
+  const results = []
+  const check = (step, ok, detail = '') => {
+    results.push({ step, ok })
+    console.log(`${ok ? 'PASS' : 'FAIL'}  ${step}${ok || detail === '' ? '' : `  ->  ${detail}`}`)
+  }
+  const browser = await openBrowser()
+  try {
+    await run({ browser, check, url })
+  } finally {
+    await browser.close()
+  }
+  const failed = results.filter((item) => item.ok !== true).length
+  console.log(`\n${results.length - failed}/${results.length} checks passed`)
+  console.log(`elapsed: ${((Date.now() - startedAt) / 1000).toFixed(1)}s`)
+  return failed === 0 ? 0 : 1
+}
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.exit(await main())
+}

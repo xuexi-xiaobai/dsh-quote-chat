@@ -55,12 +55,16 @@ const { chromium } = require(PLAYWRIGHT)
  */
 export async function openBrowser(options = {}) {
   const viewport = options.viewport ?? { width: 1280, height: 800 }
-  mkdirSync(PROFILE, { recursive: true })
-  const context = await chromium.launchPersistentContext(PROFILE, {
-    headless: false,
-    executablePath: CHROME,
-    viewport,
-  })
+  // Attach to an existing context when one is supplied. Launching is the single most expensive
+  // step (~3.4s), and a campaign of several suites pays it once instead of once per suite.
+  const context = options.context ?? await (async () => {
+    mkdirSync(PROFILE, { recursive: true })
+    return chromium.launchPersistentContext(PROFILE, {
+      headless: false,
+      executablePath: CHROME,
+      viewport,
+    })
+  })()
   const page = context.pages()[0] ?? await context.newPage()
 
   /** Console errors the page emitted, for the "no errors from this plugin" assertions. */
@@ -187,8 +191,10 @@ export async function openBrowser(options = {}) {
   /** Console errors logged by this plugin itself. */
   const pluginErrors = () => errors.filter((line) => line.includes('[dsh-quote-chat]'))
 
-  /** Close the browser. */
-  const close = async () => { await context.close() }
+  /** Close the browser, unless it was borrowed from a caller that owns it. */
+  const close = async () => {
+    if (options.context === undefined) await context.close()
+  }
 
   return {
     page, context, goto, waitFor, read, count, click, tripleClick, hover, type, press,

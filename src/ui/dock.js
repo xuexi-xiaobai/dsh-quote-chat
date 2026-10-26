@@ -52,34 +52,31 @@ const UNSAFE_IN_CARD = 'script, style, iframe, object, embed, link, meta'
 export function annotationDock(deps) {
   const {
     ctx,
+    annotations,
+    chips,
+    highlights,
     navigation,
-    chipRegistry,
-    chipBridge,
-    chipJumpHandler,
-    addAnnotation,
-    removeAnnotation,
-    updateAnnotation,
-    useAnnotations,
-    flashRange,
-    clearFlashRange,
-    holdRange,
     quoteHandoff,
-    ActionPopup,
-    ComposerPopover,
-    ChipCards,
-    MarkerLayer,
-    TableAddButton,
-    diagnoseMiss,
-    tableAnchor,
-    readSelection,
-    clearSelection,
-    tableToMarkdown,
-    findFlow,
-    MAX_QUOTE_CHARS,
-    MAX_ANNOTATIONS,
-    TAB_KIND,
+    surfaces,
+    selection,
+    limits,
     t: boundT,
   } = deps
+
+  // Flattened back to the names the body reads. Keeping the original names means the component
+  // body needed no edit at all, which is what makes this change verifiable by the suites alone.
+  const {
+    addAnnotation, removeAnnotation, updateAnnotation, useAnnotations, store: annotationStore,
+  } = annotations
+  const { registry: chipRegistry, bridge: chipBridge, jumpHandler: chipJumpHandler } = chips
+  const { flashRange, clearFlashRange, holdRange } = highlights
+  const {
+    ActionPopup, ComposerPopover, ChipCards, MarkerLayer, TableAddButton,
+  } = surfaces
+  const {
+    readSelection, clearSelection, tableToMarkdown, tableAnchor, diagnoseMiss, findFlow,
+  } = selection
+  const { MAX_QUOTE_CHARS, MAX_ANNOTATIONS, TAB_KIND } = limits
   return function AnnotationDock(props) {
     const { inputActions, useInput, sessionId } = props
     const t = typeof props.t === 'function' ? props.t : boundT
