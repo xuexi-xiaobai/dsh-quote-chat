@@ -243,6 +243,39 @@ export async function run({ browser, check: report, url }) {
   })
   check('opening the editor lights the passage', held.held === true, JSON.stringify(held))
 
+  // ── Delete via the chip's own × ────────────────────────────────────────
+  // A second, independent path. `.qc-chip-remove` is rendered only while the chip is hovered, and
+  // it is a fixed overlay pinned to the chip's rectangle rather than a child of it — the chip's
+  // contents belong to the editor and must not be written into. Closing the editor first is
+  // required: its panel sits over the chip and would intercept the pointer.
+  await press('Escape')
+  await waitFor("document.querySelector('.qc-bubble-panel') === null", { timeoutMs: 4000 })
+  await hover('[data-composer-chip="quote-chat"]')
+  const removeShown = await waitFor("document.querySelector('.qc-chip-remove') !== null", { timeoutMs: 4000 })
+  check('hovering the chip reveals its remove control', removeShown !== null)
+
+  const beforeChipDelete = await count('.qc-marker')
+  await click('.qc-chip-remove')
+  const goneByChip = await waitFor(
+    `document.querySelectorAll('.qc-marker').length === ` + (beforeChipDelete - 1), { timeoutMs: 6000 })
+  check('the chip remove control deletes the annotation', goneByChip !== null,
+    `markers ${beforeChipDelete} -> ${await count('.qc-marker')}`)
+  check('the chip remove control removes the chip itself',
+    (await count('[data-composer-chip="quote-chat"]')) === beforeChips,
+    `chips=${await count('[data-composer-chip="quote-chat"]')}`)
+
+  // The bubble panel path must stay covered too, so recreate one annotation and delete it there.
+  await browser.tripleClick('[data-qc-probe="1"]')
+  await waitFor("document.querySelectorAll('.qc-popup button').length === 2", { timeoutMs: 6000 })
+  await click('.qc-popup button:first-child')
+  await waitFor("document.querySelector('.qc-compose textarea') !== null", { timeoutMs: 6000 })
+  await click('.qc-compose textarea')
+  await type(COMMENT)
+  await click('.qc-compose .qc-compose-confirm')
+  await waitFor("document.querySelectorAll('.qc-marker').length === 1", { timeoutMs: 6000 })
+  await click('.qc-marker')
+  await waitFor("document.querySelector('.qc-bubble-panel .qc-bp-delete') !== null", { timeoutMs: 6000 })
+
   // ── Delete, and prove the counts return ────────────────────────────────
   await click('.qc-bubble-panel .qc-bp-delete')
   const gone = await waitFor(`document.querySelectorAll('.qc-marker').length === ${beforeMarkers}`,

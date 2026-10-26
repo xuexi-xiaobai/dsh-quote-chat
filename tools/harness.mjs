@@ -114,6 +114,7 @@ export async function openBrowser(options = {}) {
       },
       { expression, timeoutMs, intervalMs },
     )
+    return result
   }
 
   /**
