@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:20d200ecf2a31dea
+ * Artifact: sha256:9736709628cacf28
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -143,7 +143,10 @@ function __dshQuoteChatFactory(hostRequire) {
   };
 
   // src/annotation-store.js
-  function createAnnotationStore({ maxAnnotations = 12 } = {}) {
+  function createAnnotationStore({ maxAnnotations } = {}) {
+    if (!Number.isInteger(maxAnnotations) || maxAnnotations <= 0) {
+      throw new Error("dsh-quote-chat: createAnnotationStore requires a positive maxAnnotations");
+    }
     const sessions = /* @__PURE__ */ new Map();
     const EMPTY = Object.freeze([]);
     function stateFor(sessionId) {
@@ -276,6 +279,47 @@ function __dshQuoteChatFactory(hostRequire) {
         if (state.list.length > 0) publish(state, EMPTY);
       }
     };
+  }
+
+  // src/chip-draft.js
+  function serializeChipForModel(payload) {
+    const head = `[${payload.label}]`;
+    const note = payload.comment === "" ? "" : `
+  ${payload.comment}`;
+    return `
+  ${head}${note}
+  ${payload.text}
+  `;
+  }
+  function chipLabel(annotation, labels) {
+    return labels.content.replace("{n}", String(annotation.number));
+  }
+  function withAppendedChip(draft, existing, addition, reference) {
+    const base = draft === "" || draft.endsWith("\n") ? draft : `${draft}
+  `;
+    return {
+      text: `${base}${addition}`,
+      references: [...existing, { ...reference, offset: base.length }]
+    };
+  }
+  function withoutChip(draft, references, source, ref) {
+    const index = references.findIndex((item) => item.source === source && item.ref === ref);
+    if (index < 0) return null;
+    const target = references[index];
+    let start = target.offset;
+    let stop = target.offset + target.length;
+    const brokenBefore = start > 0 && draft[start - 1] === "\n";
+    const brokenAfter = stop < draft.length && draft[stop] === "\n";
+    const ownsLine = (start === 0 || brokenBefore) && (stop === draft.length || brokenAfter);
+    if (ownsLine) {
+      if (brokenBefore) start -= 1;
+      else if (brokenAfter) stop += 1;
+    }
+    const removed = draft.slice(start, stop);
+    const nextText = `${draft.slice(0, start)}${draft.slice(stop)}`;
+    const shift = removed.length;
+    const kept = references.filter((_, position) => position !== index).map((item) => item.offset >= stop ? { ...item, offset: item.offset - shift } : item);
+    return { text: nextText, references: kept };
   }
 
   // src/dom.js
@@ -1008,18 +1052,6 @@ function __dshQuoteChatFactory(hostRequire) {
   var CHIP_PLACEHOLDER = "￼";
   var chipPayloads = /* @__PURE__ */ new Map();
   var chipJumpHandler = { current: null };
-  function serializeChipForModel(payload) {
-    const head = `[${payload.label}]`;
-    const note = payload.comment === "" ? "" : `
-  ${payload.comment}`;
-    return `
-  ${head}${note}
-  ${payload.text}
-  `;
-  }
-  function chipLabel(annotation, labels) {
-    return labels.content.replace("{n}", String(annotation.number));
-  }
   function chipReference(annotation, labels) {
     const label = chipLabel(annotation, labels);
     chipPayloads.set(annotation.id, {
@@ -1037,33 +1069,6 @@ function __dshQuoteChatFactory(hostRequire) {
       label,
       clipboardText: CHIP_PLACEHOLDER
     };
-  }
-  function withAppendedChip(draft, existing, addition, reference) {
-    const base = draft === "" || draft.endsWith("\n") ? draft : `${draft}
-  `;
-    return {
-      text: `${base}${addition}`,
-      references: [...existing, { ...reference, offset: base.length }]
-    };
-  }
-  function withoutChip(draft, references, ref) {
-    const index = references.findIndex((item) => item.source === CHIP_SOURCE && item.ref === ref);
-    if (index < 0) return null;
-    const target = references[index];
-    let start = target.offset;
-    let stop = target.offset + target.length;
-    const brokenBefore = start > 0 && draft[start - 1] === "\n";
-    const brokenAfter = stop < draft.length && draft[stop] === "\n";
-    const ownsLine = (start === 0 || brokenBefore) && (stop === draft.length || brokenAfter);
-    if (ownsLine) {
-      if (brokenBefore) start -= 1;
-      else if (brokenAfter) stop += 1;
-    }
-    const removed = draft.slice(start, stop);
-    const nextText = `${draft.slice(0, start)}${draft.slice(stop)}`;
-    const shift = removed.length;
-    const kept = references.filter((_, position) => position !== index).map((item) => item.offset >= stop ? { ...item, offset: item.offset - shift } : item);
-    return { text: nextText, references: kept };
   }
   function IconAnnotate() {
     return h(
@@ -2818,6 +2823,7 @@ function __dshQuoteChatFactory(hostRequire) {
         const snapshot = withoutChip(
           typeof draft === "string" ? draft : "",
           Array.isArray(inputStateRef.current?.occurrences) ? inputStateRef.current.occurrences : [],
+          CHIP_SOURCE,
           annotation.id
         );
         if (snapshot !== null && typeof inputActions?.setDraft === "function") {

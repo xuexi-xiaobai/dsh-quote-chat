@@ -34,13 +34,18 @@
 /**
  * Create one annotation store.
  *
- * The comment limit is passed in rather than imported, so the constant keeps a single home in
- * the plugin's entry module and this module stays a self-contained unit.
+ * `maxAnnotations` is required. The limit is a product rule, not a storage detail, so it has
+ * exactly one declaration — in the plugin's entry module — and is passed in here. Defaulting
+ * it would create a second source of truth that could drift silently.
  *
- * @param options - `{ maxAnnotations }`. Defaults match the plugin's own limit.
+ * @param options - `{ maxAnnotations }`, a positive integer.
  * @returns the store's public operations.
  */
-export function createAnnotationStore({ maxAnnotations = 12 } = {}) {
+export function createAnnotationStore({ maxAnnotations } = {}) {
+  if (!Number.isInteger(maxAnnotations) || maxAnnotations <= 0) {
+    throw new Error('dsh-quote-chat: createAnnotationStore requires a positive maxAnnotations')
+  }
+
   /** Per-session state. Private: never returned, never iterated by callers. */
   const sessions = new Map()
 

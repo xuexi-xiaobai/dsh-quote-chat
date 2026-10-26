@@ -81,6 +81,9 @@ const h = React.createElement
 
 import { zh, en } from './locales.js'
 import { createAnnotationStore } from './annotation-store.js'
+import {
+  serializeChipForModel, chipLabel, withAppendedChip, withoutChip,
+} from './chip-draft.js'
 import { elementOf, cssEscape } from './dom.js'
 import {
   rangeAt, captureAnchor, resolveAnchor, locateText, textOf, nodePath, nodeAtPath,
@@ -841,43 +844,6 @@ import {
     const chipJumpHandler = { current: null }
 
     /**
-     * The text one chip contributes to the message the model receives.
-     *
-     * This is the whole point of the codec: the chip stays a token in the draft,
-     * and the passage plus its comment are unfolded here, at submit time.
-     *
-     * The block is fenced with newlines because a chip can sit mid-sentence: the
-     * expansion is spliced into the draft text, so without the fence the passage
-     * would run straight into the words around it ("…如下和这里"), and the model
-     * could not tell the user's prose from the quoted passage. The leading and
-     * trailing breaks collapse harmlessly when the chip is at either end because
-     * the assembled message is trimmed.
-     * @param payload - the recorded annotation content.
-     * @returns the model-facing text.
-     */
-    function serializeChipForModel(payload) {
-      const head = `[${payload.label}]`
-      const note = payload.comment === '' ? '' : `\n${payload.comment}`
-      return `\n${head}${note}\n${payload.text}\n`
-    }
-
-    /**
-     * The label a chip shows in the composer: `内容 i` (`内容 1`, `内容 2`, …).
-     *
-     * This is the requirement verbatim — "在聊天框的呈现文字为内容 i，内容 i+1…".
-     * The chip is a named block, not a preview of the passage: the passage itself
-     * lives in the hover card, and the model receives it through the codec. An
-     * earlier revision put the truncated passage here after reading a screenshot
-     * too literally; the numbered block is what was asked for.
-     * @param annotation - the annotation being placed.
-     * @param labels - the active locale's card labels.
-     * @returns the inline label.
-     */
-    function chipLabel(annotation, labels) {
-      return labels.content.replace('{n}', String(annotation.number))
-    }
-
-    /**
      * A short plain-text preview of the passage, used for card headers and the
      * jump hint.
      * @param annotation - the annotation.
@@ -919,72 +885,6 @@ import {
         label,
         clipboardText: CHIP_PLACEHOLDER,
       }
-    }
-
-    /**
-     * Rebuild the whole draft with one more chip appended.
-     *
-     * A chip's `offset` is measured in the final draft text, so every insertion
-     * rebuilds the text and re-computes the existing references from the same
-     * string the composer will parse.
-     *
-     * No separator is inserted: an empty draft becomes just the chip, and a draft
-     * the user already ended with a newline keeps that newline as the only break.
-     * Adding `\n\n` here used to leave a blank paragraph above the first chip,
-     * which is where the stray empty line in the composer came from.
-     * @param draft - current draft text.
-     * @param existing - references already in that draft.
-     * @param addition - the placeholder text (and trailing comment) to append.
-     * @param reference - the new reference without its offset filled in.
-     * @returns the complete snapshot for `setDraft`.
-     */
-    function withAppendedChip(draft, existing, addition, reference) {
-      const base = draft === '' || draft.endsWith('\n') ? draft : `${draft}\n`
-      return {
-        text: `${base}${addition}`,
-        references: [...existing, { ...reference, offset: base.length }],
-      }
-    }
-
-    /**
-     * Remove one chip occurrence from a draft and reference list.
-     *
-     * Only the chip and its placeholder go: the comment now lives inside the
-     * chip's payload rather than as loose prose after it, so there is no trailing
-     * text to sweep up. One adjacent line break is removed as well when it would
-     * otherwise leave an empty paragraph, and every later reference shifts left
-     * by exactly what was removed.
-     * @param draft - current draft text.
-     * @param references - the references in that draft.
-     * @param ref - the annotation id the chip carries.
-     * @returns the snapshot with the chip gone, or null when the chip is no
-     * longer in the draft.
-     */
-    function withoutChip(draft, references, ref) {
-      const index = references.findIndex((item) => item.source === CHIP_SOURCE && item.ref === ref)
-      if (index < 0) return null
-      const target = references[index]
-      let start = target.offset
-      let stop = target.offset + target.length
-      // When the chip occupies a line by itself, removing it would leave that
-      // line empty. "Occupies a line" means it is bounded by a break or the draft
-      // edge on both sides; exactly one break then goes with it, preferring the
-      // one before when both exist.
-      const brokenBefore = start > 0 && draft[start - 1] === '\n'
-      const brokenAfter = stop < draft.length && draft[stop] === '\n'
-      const ownsLine = (start === 0 || brokenBefore) && (stop === draft.length || brokenAfter)
-      if (ownsLine) {
-        if (brokenBefore) start -= 1
-        else if (brokenAfter) stop += 1
-      }
-      const removed = draft.slice(start, stop)
-      const nextText = `${draft.slice(0, start)}${draft.slice(stop)}`
-      // Everything after the cut moves left by the removed length.
-      const shift = removed.length
-      const kept = references
-        .filter((_, position) => position !== index)
-        .map((item) => (item.offset >= stop ? { ...item, offset: item.offset - shift } : item))
-      return { text: nextText, references: kept }
     }
 
     // #endregion
@@ -3739,6 +3639,7 @@ function escapeHtml(text) {
           const snapshot = withoutChip(
             typeof draft === 'string' ? draft : '',
             Array.isArray(inputStateRef.current?.occurrences) ? inputStateRef.current.occurrences : [],
+            CHIP_SOURCE,
             annotation.id,
           )
           if (snapshot !== null && typeof inputActions?.setDraft === 'function') {

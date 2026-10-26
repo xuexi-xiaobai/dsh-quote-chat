@@ -31,7 +31,7 @@ const ids = (list) => list.map((item) => item.id).join(',')
 
 // ── Numbering is a position ────────────────────────────────────────────────
 {
-  const store = createAnnotationStore()
+  const store = createAnnotationStore({ maxAnnotations: 12 })
   const session = 'session-a'
   store.add(session, { text: 'A' })
   store.add(session, { text: 'B' })
@@ -40,6 +40,10 @@ const ids = (list) => list.map((item) => item.id).join(',')
     numbers(store.snapshot(session)))
 
   const middleId = store.snapshot(session)[1].id
+  /** Ids captured before any deletion, keyed by the annotation's text. */
+  const survivingIdsByText = new Map(
+    store.snapshot(session).map((item) => [item.text, item.id]),
+  )
   store.remove(session, middleId)
   check('deleting the middle renumbers to 1,2', numbers(store.snapshot(session)) === '1,2',
     numbers(store.snapshot(session)))
@@ -48,15 +52,24 @@ const ids = (list) => list.map((item) => item.id).join(',')
   check('the next addition is 3, not 4', numbers(store.snapshot(session)) === '1,2,3',
     numbers(store.snapshot(session)))
 
-  // Ids are what chips and occurrences reference; renumbering must not disturb them.
+  // Ids are what chips and occurrences reference, so renumbering must not disturb them. The
+  // only way to show that is to remember each surviving annotation's id from BEFORE the
+  // deletion and compare it item by item: type checks and uniqueness would pass even if the
+  // store had rebuilt every id.
   const remaining = store.snapshot(session)
+  // B was deleted, so only A and C can be compared against the pre-deletion ids; D was
+  // added afterwards and is checked by the "next addition is 3" case above.
+  const expectedIds = ['A', 'C']
+    .map((text) => survivingIdsByText.get(text))
+    .filter((id) => id !== undefined)
   check('the deleted id is gone and no id was reused',
     !remaining.some((item) => item.id === middleId)
       && new Set(remaining.map((item) => item.id)).size === remaining.length,
     ids(remaining))
-  check('ids are unique and stable across renumbering',
-    remaining.every((item, index) => item.number === index + 1 && typeof item.id === 'string'),
-    ids(remaining))
+  check('every surviving annotation kept the id it had before the deletion',
+    expectedIds.length === 2
+      && remaining.slice(0, expectedIds.length).every((item, index) => item.id === expectedIds[index]),
+    `expected=[${expectedIds.join(',')}] actual=[${remaining.map((i) => i.id).join(',')}]`)
 
   store.remove(session, remaining[0].id)
   check('deleting the first renumbers to 1,2', numbers(store.snapshot(session)) === '1,2',
@@ -65,7 +78,7 @@ const ids = (list) => list.map((item) => item.id).join(',')
 
 // ── A fresh list starts at 1 ───────────────────────────────────────────────
 {
-  const store = createAnnotationStore()
+  const store = createAnnotationStore({ maxAnnotations: 12 })
   const session = 'session-b'
   // A session that never had annotations must not inherit anyone else's counter.
   store.add('other-session', { text: 'X' })
@@ -76,7 +89,7 @@ const ids = (list) => list.map((item) => item.id).join(',')
 
 // ── Clearing resets numbering ──────────────────────────────────────────────
 {
-  const store = createAnnotationStore()
+  const store = createAnnotationStore({ maxAnnotations: 12 })
   const session = 'session-c'
   store.add(session, { text: 'A' })
   store.add(session, { text: 'B' })
@@ -90,7 +103,7 @@ const ids = (list) => list.map((item) => item.id).join(',')
 
 // ── Update keeps identity ──────────────────────────────────────────────────
 {
-  const store = createAnnotationStore()
+  const store = createAnnotationStore({ maxAnnotations: 12 })
   const session = 'session-d'
   const first = store.add(session, { text: 'A', comment: 'old' })
   store.add(session, { text: 'B' })
@@ -125,7 +138,7 @@ const ids = (list) => list.map((item) => item.id).join(',')
 
 // ── Session isolation inside one store ─────────────────────────────────────
 {
-  const store = createAnnotationStore()
+  const store = createAnnotationStore({ maxAnnotations: 12 })
   store.add('s1', { text: 'A' })
   store.add('s2', { text: 'B' })
   store.add('s2', { text: 'C' })
@@ -148,7 +161,7 @@ const ids = (list) => list.map((item) => item.id).join(',')
 
 // ── Snapshot stability ─────────────────────────────────────────────────────
 {
-  const store = createAnnotationStore()
+  const store = createAnnotationStore({ maxAnnotations: 12 })
   const session = 'session-f'
   const beforeAnyAdd = store.snapshot(session)
   check('an untouched session returns a stable empty list',
@@ -171,7 +184,7 @@ const ids = (list) => list.map((item) => item.id).join(',')
 
 // ── Subscription lifecycle ─────────────────────────────────────────────────
 {
-  const store = createAnnotationStore()
+  const store = createAnnotationStore({ maxAnnotations: 12 })
   const session = 'session-g'
   let calls = 0
   const unsubscribe = store.subscribe(session, () => { calls += 1 })
@@ -209,8 +222,8 @@ const ids = (list) => list.map((item) => item.id).join(',')
 // Two Host factory calls produce two stores. They must not share annotations even when they
 // use the SAME sessionId, because each plugin instance owns its state.
 {
-  const a = createAnnotationStore()
-  const b = createAnnotationStore()
+  const a = createAnnotationStore({ maxAnnotations: 12 })
+  const b = createAnnotationStore({ maxAnnotations: 12 })
   const session = 'shared-session-id'
 
   a.add(session, { text: 'only in A' })
