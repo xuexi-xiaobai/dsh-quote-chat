@@ -174,6 +174,55 @@ export async function openBrowser(options = {}) {
   const press = async (key) => { await page.keyboard.press(key) }
 
   /**
+   * Drag across text with the primary button, which is how a reader selects a passage.
+   *
+   * Emits the whole chain — `pointerdown`, intermediate moves, `pointerup` — because the plugin
+   * gates on the button of both ends and positions the toolbar from the release point. A synthetic
+   * `Selection` would exercise neither.
+   *
+   * @param from - `{ x, y }` where the drag starts.
+   * @param to - `{ x, y }` where it ends.
+   */
+  const dragSelect = async (from, to) => {
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down()
+    // Several steps: one jump can produce a selection the browser has not committed yet.
+    const steps = 6
+    for (let index = 1; index <= steps; index += 1) {
+      await page.mouse.move(
+        from.x + ((to.x - from.x) * index) / steps,
+        from.y + ((to.y - from.y) * index) / steps,
+      )
+    }
+    await page.mouse.up()
+  }
+
+  /**
+   * Real right-click at page coordinates.
+   *
+   * Position is explicit because the target is an existing selection: the assertion is about what
+   * a secondary-button press does to a selection that is already there, so the press has to land
+   * inside it rather than on whatever element a selector resolves to.
+   *
+   * @param position - `{ x, y }` in CSS pixels.
+   */
+  const rightClickAt = async ({ x, y }) => {
+    await page.mouse.move(x, y)
+    await page.mouse.down({ button: 'right' })
+    await page.mouse.up({ button: 'right' })
+  }
+
+  /**
+   * Real left-click at page coordinates, for the same reason as `rightClickAt`.
+   * @param position - `{ x, y }` in CSS pixels.
+   */
+  const clickAt = async ({ x, y }) => {
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.up()
+  }
+
+  /**
    * Move the real pointer away, which is how a hover card is expected to clear.
    * @param position - `{ x, y }`, defaulting to the top-left corner.
    */
@@ -199,7 +248,7 @@ export async function openBrowser(options = {}) {
 
   return {
     page, context, goto, waitFor, read, count, click, tripleClick, hover, type, press,
-    moveAway, textOf, pluginErrors, errors, close,
+    moveAway, rightClickAt, clickAt, dragSelect, textOf, pluginErrors, errors, close,
   }
 }
 

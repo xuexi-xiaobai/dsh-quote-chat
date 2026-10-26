@@ -335,6 +335,110 @@ export async function run({ browser, check: report, url }) {
   })
   check('opening the editor lights the passage', held.held === true, JSON.stringify(held))
 
+  // ── A secondary click must not open the toolbar ────────────────────────
+  // Selecting text and then right-clicking is how a reader copies a passage. A secondary click
+  // does not clear the selection, so a listener that treats "a button was released" as "the
+  // selection is finished" paints the toolbar underneath the browser's own copy menu.
+  //
+  // The editor is closed first: it is a floating surface over the text, and both the click
+  // coordinates and the "selection still exists" precondition are meaningless while it is open.
+  await press('Escape')
+  await waitFor("document.querySelector('.qc-bubble-panel') === null", { timeoutMs: 4000 })
+
+  // A fresh selection, made the way a reader makes one.
+  await browser.tripleClick('[data-qc-probe="1"]')
+  const toolbarUp = await waitFor("document.querySelectorAll('.qc-popup button').length === 2",
+    { timeoutMs: 6000 })
+  check('selecting a passage raises the toolbar', toolbarUp !== null)
+
+  const selectionBox = await read(() => {
+    const selection = window.getSelection()
+    const range = selection === null || selection.rangeCount === 0 ? null : selection.getRangeAt(0)
+    if (range === null) return null
+    const box = range.getBoundingClientRect()
+    return {
+      chars: (selection.toString() ?? '').trim().length,
+      x: Math.round(box.left + box.width / 2),
+      y: Math.round(box.top + box.height / 2),
+      // Verified to be over the passage, not over a floating surface.
+      overPassage: (() => {
+        const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+        return hit !== null
+          && hit.closest('.qc-popup, .qc-bubble-panel, .qc-compose, .qc-card') === null
+      })(),
+    }
+  })
+  check('the click point is over the passage and not a floating surface',
+    selectionBox !== null && selectionBox.chars > 0 && selectionBox.overPassage === true,
+    JSON.stringify(selectionBox))
+
+  await browser.rightClickAt({ x: selectionBox.x, y: selectionBox.y })
+  await browser.page.waitForTimeout(260)
+
+  const afterRight = await read(() => {
+    const selection = window.getSelection()
+    return {
+      toolbarButtons: document.querySelectorAll('.qc-popup button').length,
+      selectionChars: (selection?.toString() ?? '').trim().length,
+    }
+  })
+  check('the selection survives a secondary click',
+    afterRight.selectionChars > 0,
+    JSON.stringify(afterRight))
+  check('a secondary click does not open the action toolbar',
+    afterRight.toolbarButtons === 0,
+    JSON.stringify(afterRight))
+
+  // The counterpart that keeps the fix honest: a primary-button DRAG must still open the toolbar.
+  //
+  // The native context menu has to be dismissed first. While it is open the page receives the press
+  // but never the release — the probe recorded a drag consisting of `pointerdown` alone — so no
+  // selection is finished and the plugin rightly does nothing. That is the environment, not the
+  // plugin.
+  await press('Escape')
+  await browser.page.waitForTimeout(120)
+
+  // Clear the selection first, so the assertion below cannot be satisfied by the selection that is
+  // already there. Without this, "selection exists" would be true before the drag even started.
+  await read(() => window.getSelection()?.removeAllRanges())
+  const clearedBeforeDrag = await read(
+    () => (window.getSelection()?.toString() ?? '').trim().length === 0,
+  )
+  check('the selection is cleared before the drag', clearedBeforeDrag === true)
+
+  const dragBox = await read(() => {
+    const probe = document.querySelector('[data-qc-probe="1"]')
+    if (probe === null) return null
+    const box = probe.getBoundingClientRect()
+    return {
+      from: { x: Math.round(box.left + 12), y: Math.round(box.top + box.height / 2) },
+      to: { x: Math.round(box.right - 12), y: Math.round(box.top + box.height / 2) },
+    }
+  })
+  check('a draggable passage is available', dragBox !== null, JSON.stringify(dragBox))
+
+  await browser.dragSelect(dragBox.from, dragBox.to)
+  const afterDrag = await waitFor("document.querySelectorAll('.qc-popup button').length === 2",
+    { timeoutMs: 4000 })
+  const dragState = await read(() => ({
+    selected: (window.getSelection()?.toString() ?? '').trim().length,
+    buttons: document.querySelectorAll('.qc-popup button').length,
+  }))
+  // Both halves are asserted: the drag must select something (or the plugin was never given a
+  // chance) AND the toolbar must appear.
+  check('the drag selects text', dragState.selected > 0, JSON.stringify(dragState))
+  check('a primary-button drag still opens the toolbar',
+    afterDrag !== null,
+    JSON.stringify({ dragBox, after: dragState }))
+
+  // Leave no overlay behind for the placement checks that follow.
+  await press('Escape')
+  await waitFor("document.querySelector('.qc-popup') === null", { timeoutMs: 4000 })
+
+  // Reopen the editor: the placement section asserts against it.
+  await click('.qc-marker')
+  await waitFor("document.querySelector('.qc-bubble-panel .qc-bp-delete') !== null", { timeoutMs: 6000 })
+
   // ── Placement: the editor panel against its bubble ─────────────────────
   // Measured on the live page: the panel sits 4-8px above its bubble and its right edge lands
   // within 8px of the bubble's. It does NOT sit BUBBLE_CLEARANCE (30px) above, because that

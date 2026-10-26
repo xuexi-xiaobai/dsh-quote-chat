@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:c00668ace8f3a28d
+ * Artifact: sha256:e0760f292ebd6e9c
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -2779,12 +2779,18 @@ function __dshQuoteChatFactory(hostRequire) {
           if (frame !== 0) return;
           frame = requestAnimationFrame(evaluate);
         };
-        const onDown = () => {
+        const isPrimary = (event) => {
+          const button = event?.button;
+          return typeof button !== "number" || button === 0;
+        };
+        const onDown = (event) => {
+          if (!isPrimary(event)) return;
           pointerDown = true;
           releasePoint = null;
         };
         const onUp = (event) => {
           pointerDown = false;
+          if (!isPrimary(event)) return;
           if (typeof event?.clientX === "number" && typeof event?.clientY === "number") {
             releasePoint = { x: event.clientX, y: event.clientY };
           } else {

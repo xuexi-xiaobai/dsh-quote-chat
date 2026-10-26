@@ -185,13 +185,32 @@ export function annotationDock(deps) {
         if (frame !== 0) return
         frame = requestAnimationFrame(evaluate)
       }
-      const onDown = () => {
+      /**
+       * Only the primary button ends a selection.
+       *
+       * A right-click on a selection is the reader asking to copy it, not asking to annotate. The
+       * selection survives that click, so without this guard the popup opens underneath the
+       * browser's own copy menu. Non-numeric `button` keeps the previous behaviour.
+       *
+       * @param event - the pointer or mouse event.
+       * @returns whether this event belongs to a primary gesture.
+       */
+      const isPrimary = (event) => {
+        const button = event?.button
+        return typeof button !== 'number' || button === 0
+      }
+      const onDown = (event) => {
+        if (!isPrimary(event)) return
         pointerDown = true
         // A new gesture: the previous release point must not leak into this one.
         releasePoint = null
       }
       const onUp = (event) => {
+        // Cleared for EVERY button: this flag means "a gesture is in progress", and whatever ended
+        // it ends it. Gating this line on the primary button left it stuck at true after a
+        // right-click, which suppressed every later evaluation and made the toolbar never appear.
         pointerDown = false
+        if (!isPrimary(event)) return
         if (typeof event?.clientX === 'number' && typeof event?.clientY === 'number') {
           releasePoint = { x: event.clientX, y: event.clientY }
         } else {
