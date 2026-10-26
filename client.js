@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:3757c41d52766606
+ * Artifact: sha256:8222181674b4ee00
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -49,8 +49,8 @@ function __dshQuoteChatFactory(hostRequire) {
     inject: () => inject
   });
   module.exports = __toCommonJS(index_exports);
-  var import_react2 = __toESM(require("react"), 1);
-  var import_react_dom = require("react-dom");
+  var import_react3 = __toESM(require("react"), 1);
+  var import_react_dom2 = require("react-dom");
 
   // src/locales.js
   var zh = {
@@ -793,7 +793,7 @@ function __dshQuoteChatFactory(hostRequire) {
         scroller.dataset.qcPositioned = "1";
       }
     }
-    function anchorInTranscript2(flow, box, size, prefer) {
+    function anchorInTranscript(flow, box, size, prefer) {
       const scroller = containerFor(flow);
       if (scroller === null || scroller === void 0 || box === null) return null;
       prepareContainer(scroller);
@@ -895,7 +895,7 @@ function __dshQuoteChatFactory(hostRequire) {
       containerFor,
       findComposerDock,
       visibleChatArea,
-      anchorInTranscript: anchorInTranscript2,
+      anchorInTranscript,
       anchorAboveBubble: anchorAboveBubble2,
       flowColumnBox,
       flowColumn,
@@ -1570,17 +1570,175 @@ function __dshQuoteChatFactory(hostRequire) {
     return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
+  // src/ui/popovers.js
+  var import_react2 = __toESM(require("react"), 1);
+  var import_react_dom = require("react-dom");
+  var h2 = import_react2.default.createElement;
+  var VIEWPORT_MARGIN = 8;
+  var ANCHOR_GAP = 8;
+  function placeNear(rect, size) {
+    const width = size.width;
+    const height = size.height;
+    let left = rect.left + rect.width / 2 - width / 2;
+    left = Math.max(VIEWPORT_MARGIN, Math.min(left, window.innerWidth - width - VIEWPORT_MARGIN));
+    let top = rect.top - height - ANCHOR_GAP;
+    if (top < VIEWPORT_MARGIN) {
+      top = Math.min(rect.bottom + ANCHOR_GAP, window.innerHeight - height - VIEWPORT_MARGIN);
+    }
+    return { left: Math.max(VIEWPORT_MARGIN, left), top: Math.max(VIEWPORT_MARGIN, top) };
+  }
+  function createPopovers({ findFlow: findFlow2, anchorInTranscript }) {
+    function ActionPopup2(props) {
+      const { anchor, canAnnotate, canAsk, labels, onAnnotate, onAsk } = props;
+      const ref = import_react2.default.useRef(null);
+      const [size, setSize] = import_react2.default.useState({ width: 0, height: 0 });
+      import_react2.default.useLayoutEffect(() => {
+        const element = ref.current;
+        if (element === null) return;
+        const rect = element.getBoundingClientRect();
+        setSize({ width: rect.width, height: rect.height });
+      }, []);
+      const flow = findFlow2();
+      const measured = { width: size.width || 210, height: size.height || 34 };
+      const anchored = flow === null ? null : anchorInTranscript(flow, anchor, measured, "below");
+      const position = anchored === null ? placeNear(anchor, measured) : anchored.position;
+      return (0, import_react_dom.createPortal)(
+        h2(
+          "div",
+          {
+            ref,
+            className: "qc-popup",
+            role: "toolbar",
+            style: {
+              left: `${position.left}px`,
+              top: `${position.top}px`,
+              position: anchored === null ? "fixed" : "absolute",
+              visibility: size.width === 0 ? "hidden" : "visible"
+            },
+            // The selection must survive the click that chooses an action.
+            onMouseDown: (event) => event.preventDefault()
+          },
+          h2(
+            "button",
+            { type: "button", disabled: !canAnnotate, onClick: onAnnotate },
+            h2(IconAnnotate, null),
+            labels.annotate
+          ),
+          h2(
+            "button",
+            { type: "button", disabled: !canAsk, onClick: onAsk },
+            h2(IconSideChat, null),
+            labels.askInSide
+          )
+        ),
+        anchored === null ? document.body : anchored.scroller
+      );
+    }
+    function ComposerPopover2(props) {
+      const { source, labels, onConfirm, onCancel } = props;
+      const ref = import_react2.default.useRef(null);
+      const inputRef = import_react2.default.useRef(null);
+      const [comment, setComment] = import_react2.default.useState("");
+      const [size, setSize] = import_react2.default.useState({ width: 0, height: 0 });
+      import_react2.default.useLayoutEffect(() => {
+        const element = ref.current;
+        if (element === null) return;
+        const rect = element.getBoundingClientRect();
+        setSize({ width: rect.width, height: rect.height });
+        inputRef.current?.focus();
+      }, []);
+      import_react2.default.useEffect(() => {
+        const onDown = (event) => {
+          if (ref.current !== null && event.target instanceof Node && ref.current.contains(event.target)) return;
+          onCancel();
+        };
+        const onKey = (event) => {
+          if (event.key === "Escape") onCancel();
+        };
+        document.addEventListener("mousedown", onDown, true);
+        document.addEventListener("keydown", onKey, true);
+        return () => {
+          document.removeEventListener("mousedown", onDown, true);
+          document.removeEventListener("keydown", onKey, true);
+        };
+      }, [onCancel]);
+      const width = size.width || 420;
+      const height = size.height || 170;
+      const flow = findFlow2();
+      const anchored = flow === null ? null : anchorInTranscript(flow, source.rect, { width, height }, "below");
+      const position = anchored === null ? placeNear(source.rect, { width, height }) : anchored.position;
+      return (0, import_react_dom.createPortal)(
+        h2(
+          "div",
+          {
+            ref,
+            className: "qc-compose",
+            role: "dialog",
+            "aria-label": labels.title,
+            style: {
+              left: `${position.left}px`,
+              top: `${position.top}px`,
+              position: anchored === null ? "fixed" : "absolute"
+            },
+            onMouseDown: (event) => event.stopPropagation(),
+            onKeyDown: (event) => {
+              if (event.key === "Escape") {
+                event.stopPropagation();
+                onCancel();
+              }
+            }
+          },
+          source.previewHtml !== "" ? h2("div", {
+            className: "qc-compose-preview",
+            dangerouslySetInnerHTML: { __html: source.previewHtml }
+          }) : h2("div", { className: "qc-compose-preview" }, source.previewText),
+          source.kind === "table" ? null : h2("textarea", {
+            ref: inputRef,
+            value: comment,
+            rows: 2,
+            placeholder: labels.placeholder,
+            onChange: (event) => setComment(event.target.value),
+            onKeyDown: (event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent?.isComposing) {
+                event.preventDefault();
+                onConfirm(comment);
+              }
+            }
+          }),
+          h2(
+            "div",
+            { className: "qc-compose-row" },
+            h2(
+              "span",
+              { className: "qc-compose-hint" },
+              source.kind === "table" ? labels.table.replace("{rows}", String(source.rows ?? 0)) : `${labels.selected.replace("{count}", String(source.previewText.length))} · ${labels.hint}`
+            ),
+            h2("button", { type: "button", className: "qc-compose-cancel", onClick: onCancel }, labels.cancel),
+            h2("button", {
+              type: "button",
+              className: "qc-compose-confirm",
+              title: labels.confirm,
+              "aria-label": labels.confirm,
+              onClick: () => onConfirm(source.kind === "table" ? "" : comment)
+            }, h2(IconCheck, null), h2("span", { className: "qc-compose-confirm-text" }, labels.confirm))
+          )
+        ),
+        anchored === null ? document.body : anchored.scroller
+      );
+    }
+    return { ActionPopup: ActionPopup2, ComposerPopover: ComposerPopover2 };
+  }
+
   // src/index.js
   var MAX_QUOTE_CHARS = 8e3;
   var MAX_ANNOTATIONS = 12;
-  var VIEWPORT_MARGIN = 8;
-  var ANCHOR_GAP = 8;
+  var VIEWPORT_MARGIN2 = 8;
   var BUBBLE_PANEL_WIDTH = 320;
   var BUBBLE_PANEL_HEIGHT = 200;
   var BUBBLE_CLEARANCE = 30;
   var HOVER_LINGER_MS = 260;
   var CARD_EXIT_MS = 130;
-  var h2 = import_react2.default.createElement;
+  var h3 = import_react3.default.createElement;
   var NS = "quoteChat";
   var TAB_ID = "dsh-quote-chat:side";
   var TAB_KIND = "dsh-quote-chat";
@@ -1606,7 +1764,7 @@ function __dshQuoteChatFactory(hostRequire) {
     );
   }
   function useDraftOccurrences(useInput) {
-    const empty = import_react2.default.useMemo(() => [], []);
+    const empty = import_react3.default.useMemo(() => [], []);
     const inert = () => empty;
     const picked = (typeof useInput === "function" ? useInput : inert)(
       (state) => state.occurrences,
@@ -1699,9 +1857,12 @@ function __dshQuoteChatFactory(hostRequire) {
   }
   var layout = createLayout();
   var navigation = createNavigation({ layout });
+  var { ActionPopup, ComposerPopover } = createPopovers({
+    findFlow: layout.findFlow,
+    anchorInTranscript: (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer)
+  });
   var revealWithSearch = (flow, annotation) => navigation.reveal(flow, annotation);
   var findFlow = () => layout.findFlow();
-  var anchorInTranscript = (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer);
   var anchorAboveBubble = (flow, bubble, size) => layout.anchorAboveBubble(flow, bubble, size);
   var columnElement = (flow) => layout.columnElement(flow);
   var highlighter = createHighlighter();
@@ -1713,176 +1874,27 @@ function __dshQuoteChatFactory(hostRequire) {
   var removeAnnotation = (sessionId, id) => annotationStore.remove(sessionId, id);
   var updateAnnotation = (sessionId, id, comment) => annotationStore.update(sessionId, id, comment);
   function useAnnotations(sessionId) {
-    const subscribe = import_react2.default.useCallback(
+    const subscribe = import_react3.default.useCallback(
       (listener) => annotationStore.subscribe(sessionId, listener),
       [sessionId]
     );
-    const snapshot = import_react2.default.useCallback(
+    const snapshot = import_react3.default.useCallback(
       () => annotationStore.snapshot(sessionId),
       [sessionId]
     );
-    return import_react2.default.useSyncExternalStore(subscribe, snapshot, snapshot);
+    return import_react3.default.useSyncExternalStore(subscribe, snapshot, snapshot);
   }
   var chipRegistry = createChipRegistry();
   var chipBridge = createDraftBridge({ registry: chipRegistry, source: CHIP_SOURCE });
   var chipJumpHandler = { current: null };
-  function placeNear(rect, size) {
-    const width = size.width;
-    const height = size.height;
-    let left = rect.left + rect.width / 2 - width / 2;
-    left = Math.max(VIEWPORT_MARGIN, Math.min(left, window.innerWidth - width - VIEWPORT_MARGIN));
-    let top = rect.top - height - ANCHOR_GAP;
-    if (top < VIEWPORT_MARGIN) {
-      top = Math.min(rect.bottom + ANCHOR_GAP, window.innerHeight - height - VIEWPORT_MARGIN);
-    }
-    return { left: Math.max(VIEWPORT_MARGIN, left), top: Math.max(VIEWPORT_MARGIN, top) };
-  }
-  function ActionPopup(props) {
-    const { anchor, canAnnotate, canAsk, labels, onAnnotate, onAsk } = props;
-    const ref = import_react2.default.useRef(null);
-    const [size, setSize] = import_react2.default.useState({ width: 0, height: 0 });
-    import_react2.default.useLayoutEffect(() => {
-      const element = ref.current;
-      if (element === null) return;
-      const rect = element.getBoundingClientRect();
-      setSize({ width: rect.width, height: rect.height });
-    }, []);
-    const flow = findFlow();
-    const measured = { width: size.width || 210, height: size.height || 34 };
-    const anchored = flow === null ? null : anchorInTranscript(flow, anchor, measured, "below");
-    const position = anchored === null ? placeNear(anchor, measured) : anchored.position;
-    return (0, import_react_dom.createPortal)(
-      h2(
-        "div",
-        {
-          ref,
-          className: "qc-popup",
-          role: "toolbar",
-          style: {
-            left: `${position.left}px`,
-            top: `${position.top}px`,
-            position: anchored === null ? "fixed" : "absolute",
-            visibility: size.width === 0 ? "hidden" : "visible"
-          },
-          // The selection must survive the click that chooses an action.
-          onMouseDown: (event) => event.preventDefault()
-        },
-        h2(
-          "button",
-          { type: "button", disabled: !canAnnotate, onClick: onAnnotate },
-          h2(IconAnnotate, null),
-          labels.annotate
-        ),
-        h2(
-          "button",
-          { type: "button", disabled: !canAsk, onClick: onAsk },
-          h2(IconSideChat, null),
-          labels.askInSide
-        )
-      ),
-      anchored === null ? document.body : anchored.scroller
-    );
-  }
-  function ComposerPopover(props) {
-    const { source, labels, onConfirm, onCancel } = props;
-    const ref = import_react2.default.useRef(null);
-    const inputRef = import_react2.default.useRef(null);
-    const [comment, setComment] = import_react2.default.useState("");
-    const [size, setSize] = import_react2.default.useState({ width: 0, height: 0 });
-    import_react2.default.useLayoutEffect(() => {
-      const element = ref.current;
-      if (element === null) return;
-      const rect = element.getBoundingClientRect();
-      setSize({ width: rect.width, height: rect.height });
-      inputRef.current?.focus();
-    }, []);
-    import_react2.default.useEffect(() => {
-      const onDown = (event) => {
-        if (ref.current !== null && event.target instanceof Node && ref.current.contains(event.target)) return;
-        onCancel();
-      };
-      const onKey = (event) => {
-        if (event.key === "Escape") onCancel();
-      };
-      document.addEventListener("mousedown", onDown, true);
-      document.addEventListener("keydown", onKey, true);
-      return () => {
-        document.removeEventListener("mousedown", onDown, true);
-        document.removeEventListener("keydown", onKey, true);
-      };
-    }, [onCancel]);
-    const width = size.width || 420;
-    const height = size.height || 170;
-    const flow = findFlow();
-    const anchored = flow === null ? null : anchorInTranscript(flow, source.rect, { width, height }, "below");
-    const position = anchored === null ? placeNear(source.rect, { width, height }) : anchored.position;
-    return (0, import_react_dom.createPortal)(
-      h2(
-        "div",
-        {
-          ref,
-          className: "qc-compose",
-          role: "dialog",
-          "aria-label": labels.title,
-          style: {
-            left: `${position.left}px`,
-            top: `${position.top}px`,
-            position: anchored === null ? "fixed" : "absolute"
-          },
-          onMouseDown: (event) => event.stopPropagation(),
-          onKeyDown: (event) => {
-            if (event.key === "Escape") {
-              event.stopPropagation();
-              onCancel();
-            }
-          }
-        },
-        source.previewHtml !== "" ? h2("div", {
-          className: "qc-compose-preview",
-          dangerouslySetInnerHTML: { __html: source.previewHtml }
-        }) : h2("div", { className: "qc-compose-preview" }, source.previewText),
-        source.kind === "table" ? null : h2("textarea", {
-          ref: inputRef,
-          value: comment,
-          rows: 2,
-          placeholder: labels.placeholder,
-          onChange: (event) => setComment(event.target.value),
-          onKeyDown: (event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent?.isComposing) {
-              event.preventDefault();
-              onConfirm(comment);
-            }
-          }
-        }),
-        h2(
-          "div",
-          { className: "qc-compose-row" },
-          h2(
-            "span",
-            { className: "qc-compose-hint" },
-            source.kind === "table" ? labels.table.replace("{rows}", String(source.rows ?? 0)) : `${labels.selected.replace("{count}", String(source.previewText.length))} · ${labels.hint}`
-          ),
-          h2("button", { type: "button", className: "qc-compose-cancel", onClick: onCancel }, labels.cancel),
-          h2("button", {
-            type: "button",
-            className: "qc-compose-confirm",
-            title: labels.confirm,
-            "aria-label": labels.confirm,
-            onClick: () => onConfirm(source.kind === "table" ? "" : comment)
-          }, h2(IconCheck, null), h2("span", { className: "qc-compose-confirm-text" }, labels.confirm))
-        )
-      ),
-      anchored === null ? document.body : anchored.scroller
-    );
-  }
   function ChipCards(props) {
     const { annotations, occurrences, labels, onJump, onRemove } = props;
-    const actionsRef = import_react2.default.useRef({ onJump, onRemove });
+    const actionsRef = import_react3.default.useRef({ onJump, onRemove });
     actionsRef.current = { onJump, onRemove };
-    const [hover, setHover] = import_react2.default.useState(null);
-    const hoverRef = import_react2.default.useRef(null);
+    const [hover, setHover] = import_react3.default.useState(null);
+    const hoverRef = import_react3.default.useRef(null);
     hoverRef.current = hover;
-    import_react2.default.useEffect(() => {
+    import_react3.default.useEffect(() => {
       if (typeof document === "undefined") return void 0;
       let frame = 0;
       let timer = 0;
@@ -2049,11 +2061,11 @@ function __dshQuoteChatFactory(hostRequire) {
     if (hover === null) return null;
     const GLYPH_CENTRE = 7 + 13 / 2;
     const REMOVE_SIZE = 15;
-    return (0, import_react_dom.createPortal)(
-      h2(
-        import_react2.default.Fragment,
+    return (0, import_react_dom2.createPortal)(
+      h3(
+        import_react3.default.Fragment,
         null,
-        h2(
+        h3(
           "button",
           {
             type: "button",
@@ -2076,13 +2088,13 @@ function __dshQuoteChatFactory(hostRequire) {
           },
           // Two diagonal strokes on a 10×10 grid, meeting at the exact centre (5,5).
           // Drawn rather than typed so it is centred by construction.
-          h2(
+          h3(
             "svg",
             { viewBox: "0 0 10 10", "aria-hidden": "true", focusable: "false" },
-            h2("path", { d: "M2.6 2.6 L7.4 7.4 M7.4 2.6 L2.6 7.4" })
+            h3("path", { d: "M2.6 2.6 L7.4 7.4 M7.4 2.6 L2.6 7.4" })
           )
         ),
-        h2(AnnotationCard, {
+        h3(AnnotationCard, {
           annotation: hover.annotation,
           anchor: hover.anchor,
           closing: hover.closing === true
@@ -2093,9 +2105,9 @@ function __dshQuoteChatFactory(hostRequire) {
   }
   function AnnotationCard(props) {
     const { annotation, anchor, closing = false } = props;
-    const ref = import_react2.default.useRef(null);
-    const [size, setSize] = import_react2.default.useState({ width: 0, height: 0 });
-    import_react2.default.useLayoutEffect(() => {
+    const ref = import_react3.default.useRef(null);
+    const [size, setSize] = import_react3.default.useState({ width: 0, height: 0 });
+    import_react3.default.useLayoutEffect(() => {
       const element = ref.current;
       if (element === null) return;
       const box = element.getBoundingClientRect();
@@ -2104,12 +2116,12 @@ function __dshQuoteChatFactory(hostRequire) {
     const width = size.width || 280;
     const height = size.height || 140;
     const above = anchor.top - height - 8;
-    const top = above >= VIEWPORT_MARGIN ? above : anchor.top + anchor.height + 8;
+    const top = above >= VIEWPORT_MARGIN2 ? above : anchor.top + anchor.height + 8;
     const left = Math.min(
-      Math.max(VIEWPORT_MARGIN, anchor.left),
-      Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN)
+      Math.max(VIEWPORT_MARGIN2, anchor.left),
+      Math.max(VIEWPORT_MARGIN2, window.innerWidth - width - VIEWPORT_MARGIN2)
     );
-    return h2(
+    return h3(
       "div",
       {
         ref,
@@ -2122,11 +2134,11 @@ function __dshQuoteChatFactory(hostRequire) {
           visibility: size.width === 0 ? "hidden" : "visible"
         }
       },
-      annotation.comment === "" ? null : h2("div", { className: "qc-card-comment" }, annotation.comment),
-      h2(
+      annotation.comment === "" ? null : h3("div", { className: "qc-card-comment" }, annotation.comment),
+      h3(
         "div",
         { className: "qc-card-body" },
-        annotation.kind === "table" ? h2("div", { dangerouslySetInnerHTML: { __html: tableHtml(annotation.text) } }) : h2("div", { dangerouslySetInnerHTML: { __html: annotation.previewHtml ?? "" } })
+        annotation.kind === "table" ? h3("div", { dangerouslySetInnerHTML: { __html: tableHtml(annotation.text) } }) : h3("div", { dangerouslySetInnerHTML: { __html: annotation.previewHtml ?? "" } })
       )
     );
   }
@@ -2160,19 +2172,19 @@ function __dshQuoteChatFactory(hostRequire) {
   }
   function BubblePanel(props) {
     const { annotation, anchor, labels, onSave, onDelete, onClose, inFlow = false, rel = null } = props;
-    const [text, setText] = import_react2.default.useState(annotation.comment);
-    const [flash, setFlash] = import_react2.default.useState("");
-    const ref = import_react2.default.useRef(null);
-    const areaRef = import_react2.default.useRef(null);
-    const [size, setSize] = import_react2.default.useState({ width: 0, height: 0 });
-    import_react2.default.useLayoutEffect(() => {
+    const [text, setText] = import_react3.default.useState(annotation.comment);
+    const [flash, setFlash] = import_react3.default.useState("");
+    const ref = import_react3.default.useRef(null);
+    const areaRef = import_react3.default.useRef(null);
+    const [size, setSize] = import_react3.default.useState({ width: 0, height: 0 });
+    import_react3.default.useLayoutEffect(() => {
       const element = ref.current;
       if (element === null) return;
       const box = element.getBoundingClientRect();
       setSize({ width: box.width, height: box.height });
       areaRef.current?.focus();
     }, []);
-    import_react2.default.useEffect(() => {
+    import_react3.default.useEffect(() => {
       const onDown = (event) => {
         if (ref.current !== null && event.target instanceof Node && ref.current.contains(event.target)) return;
         onClose();
@@ -2191,22 +2203,22 @@ function __dshQuoteChatFactory(hostRequire) {
     const height = size.height || 200;
     const rightEdge = rel !== null && rel.right !== void 0 ? rel.right : null;
     const left = rel !== null ? rel.left : inFlow ? Math.max(0, anchor.width - width) : Math.min(
-      Math.max(VIEWPORT_MARGIN, anchor.left),
-      Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN)
+      Math.max(VIEWPORT_MARGIN2, anchor.left),
+      Math.max(VIEWPORT_MARGIN2, window.innerWidth - width - VIEWPORT_MARGIN2)
     );
     const measured = height > 0 ? height : 0;
     const top = rel !== null ? rel.bubbleTop === void 0 ? rel.top : Math.min(
       Math.max(rel.bandTop, rel.bubbleTop - rel.gap - (measured || rel.gap)),
       Math.max(rel.bandTop, rel.bandBottom - (measured || rel.gap))
     ) : inFlow ? -(height + BUBBLE_CLEARANCE) : Math.min(
-      Math.max(VIEWPORT_MARGIN, anchor.top),
-      Math.max(VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN)
+      Math.max(VIEWPORT_MARGIN2, anchor.top),
+      Math.max(VIEWPORT_MARGIN2, window.innerHeight - height - VIEWPORT_MARGIN2)
     );
     const commit = () => {
       setFlash(labels.saved);
       setTimeout(() => onSave(text), 160);
     };
-    return h2(
+    return h3(
       "div",
       {
         ref,
@@ -2229,8 +2241,8 @@ function __dshQuoteChatFactory(hostRequire) {
       // No passage preview and no jump button: the passage is already lit in the
       // transcript behind this panel, which is a better answer than a truncated
       // copy of it, and jumping is folded into opening the panel.
-      h2("div", { className: "qc-bp-label" }, labels.comment),
-      h2("textarea", {
+      h3("div", { className: "qc-bp-label" }, labels.comment),
+      h3("textarea", {
         ref: areaRef,
         value: text,
         placeholder: labels.bubblePlaceholder,
@@ -2243,10 +2255,10 @@ function __dshQuoteChatFactory(hostRequire) {
           }
         }
       }),
-      h2(
+      h3(
         "div",
         { className: "qc-bp-actions" },
-        h2("button", {
+        h3("button", {
           type: "button",
           className: "qc-bp-delete",
           onClick: () => {
@@ -2254,13 +2266,13 @@ function __dshQuoteChatFactory(hostRequire) {
             onDelete();
           }
         }, labels.delete),
-        h2("button", {
+        h3("button", {
           type: "button",
           className: "qc-bp-save",
           onClick: commit
         }, labels.save)
       ),
-      flash === "" ? null : h2("span", {
+      flash === "" ? null : h3("span", {
         className: "qc-bp-done",
         style: { left: `${left}px`, top: `${top + height + 6}px` }
       }, flash)
@@ -2291,9 +2303,9 @@ function __dshQuoteChatFactory(hostRequire) {
   }
   function MarkerLayer(props) {
     const { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove } = props;
-    const [positions, setPositions] = import_react2.default.useState([]);
-    const [editing, setEditing] = import_react2.default.useState(null);
-    import_react2.default.useEffect(() => {
+    const [positions, setPositions] = import_react3.default.useState([]);
+    const [editing, setEditing] = import_react3.default.useState(null);
+    import_react3.default.useEffect(() => {
       if (typeof document === "undefined") return void 0;
       let frame = 0;
       let timer = 0;
@@ -2387,7 +2399,7 @@ function __dshQuoteChatFactory(hostRequire) {
         if (columnObserver !== null) columnObserver.disconnect();
       };
     }, [annotations, occurrences, labels]);
-    import_react2.default.useEffect(() => {
+    import_react3.default.useEffect(() => {
       if (typeof document === "undefined") return;
       for (const position of positions) {
         const row = position.row;
@@ -2404,7 +2416,7 @@ function __dshQuoteChatFactory(hostRequire) {
     for (const position of positions) {
       const row = position.row;
       if (row === void 0 || !row.isConnected) continue;
-      nodes.push((0, import_react_dom.createPortal)(h2("button", {
+      nodes.push((0, import_react_dom2.createPortal)(h3("button", {
         key: position.id,
         type: "button",
         "data-qc-ignore": "1",
@@ -2442,7 +2454,7 @@ function __dshQuoteChatFactory(hostRequire) {
         // mounting, and the bottom-edge offset uses that measurement from then on.
         height: BUBBLE_PANEL_HEIGHT
       });
-      return (0, import_react_dom.createPortal)(h2(BubblePanel, {
+      return (0, import_react_dom2.createPortal)(h3(BubblePanel, {
         annotation,
         rel: anchored === null ? null : anchored.position,
         // Fallback geometry for the case where there is no transcript to anchor to.
@@ -2474,12 +2486,12 @@ function __dshQuoteChatFactory(hostRequire) {
         }
       }), anchored === null ? document.body : anchored.scroller);
     })();
-    return h2(import_react2.default.Fragment, null, ...nodes, editor);
+    return h3(import_react3.default.Fragment, null, ...nodes, editor);
   }
   function TableAddButton(props) {
     const { label, onAdd } = props;
-    const [target, setTarget] = import_react2.default.useState(null);
-    import_react2.default.useEffect(() => {
+    const [target, setTarget] = import_react3.default.useState(null);
+    import_react3.default.useEffect(() => {
       if (typeof document === "undefined") return void 0;
       let frame = 0;
       let pending = null;
@@ -2522,17 +2534,17 @@ function __dshQuoteChatFactory(hostRequire) {
     }, []);
     if (target === null || typeof document === "undefined") return null;
     const position = {
-      left: Math.max(VIEWPORT_MARGIN, target.rect.right - 116),
-      top: Math.max(VIEWPORT_MARGIN, target.rect.top + 4)
+      left: Math.max(VIEWPORT_MARGIN2, target.rect.right - 116),
+      top: Math.max(VIEWPORT_MARGIN2, target.rect.top + 4)
     };
-    return (0, import_react_dom.createPortal)(
-      h2("button", {
+    return (0, import_react_dom2.createPortal)(
+      h3("button", {
         type: "button",
         className: "qc-table-add",
         style: { left: `${position.left}px`, top: `${position.top}px` },
         onMouseDown: (event) => event.preventDefault(),
         onClick: () => onAdd(target.element)
-      }, h2(IconAnnotate, null), label),
+      }, h3(IconAnnotate, null), label),
       document.body
     );
   }
@@ -2551,15 +2563,15 @@ function __dshQuoteChatFactory(hostRequire) {
   function SideChat(props) {
     const { quote, t, locale, inputActions, useInput } = props;
     const draft = useDraft(useInput);
-    const [messages, setMessages] = import_react2.default.useState([]);
-    const [question, setQuestion] = import_react2.default.useState("");
-    const [busy, setBusy] = import_react2.default.useState(false);
-    const [error, setError] = import_react2.default.useState("");
-    const [expanded, setExpanded] = import_react2.default.useState(false);
-    const [added, setAdded] = import_react2.default.useState(false);
-    const abortRef = import_react2.default.useRef(null);
-    const threadRef = import_react2.default.useRef(null);
-    import_react2.default.useEffect(() => {
+    const [messages, setMessages] = import_react3.default.useState([]);
+    const [question, setQuestion] = import_react3.default.useState("");
+    const [busy, setBusy] = import_react3.default.useState(false);
+    const [error, setError] = import_react3.default.useState("");
+    const [expanded, setExpanded] = import_react3.default.useState(false);
+    const [added, setAdded] = import_react3.default.useState(false);
+    const abortRef = import_react3.default.useRef(null);
+    const threadRef = import_react3.default.useRef(null);
+    import_react3.default.useEffect(() => {
       abortRef.current?.abort();
       abortRef.current = null;
       setMessages([]);
@@ -2568,15 +2580,15 @@ function __dshQuoteChatFactory(hostRequire) {
       setBusy(false);
       setAdded(false);
     }, [quote]);
-    import_react2.default.useEffect(() => () => {
+    import_react3.default.useEffect(() => () => {
       abortRef.current?.abort();
     }, []);
-    const scrollToEnd = import_react2.default.useCallback(() => {
+    const scrollToEnd = import_react3.default.useCallback(() => {
       const element = threadRef.current;
       if (element !== null) element.scrollTop = element.scrollHeight;
     }, []);
-    import_react2.default.useEffect(scrollToEnd, [messages, scrollToEnd]);
-    const submit = import_react2.default.useCallback(async () => {
+    import_react3.default.useEffect(scrollToEnd, [messages, scrollToEnd]);
+    const submit = import_react3.default.useCallback(async () => {
       const text = question.trim();
       if (text === "" || busy) return;
       const history = messages.filter((message) => message.text.trim() !== "").map((message) => ({ role: message.role, text: message.text }));
@@ -2621,12 +2633,12 @@ function __dshQuoteChatFactory(hostRequire) {
         setBusy(false);
       }
     }, [question, busy, messages, quote, locale]);
-    const stop = import_react2.default.useCallback(() => {
+    const stop = import_react3.default.useCallback(() => {
       abortRef.current?.abort();
       abortRef.current = null;
       setBusy(false);
     }, []);
-    const addToChat = import_react2.default.useCallback((text) => {
+    const addToChat = import_react3.default.useCallback((text) => {
       const payload = text.split(/\r?\n/).map((line) => line === "" ? ">" : `> ${line}`).join("\n");
       const current = typeof draft === "string" ? draft : "";
       if (typeof inputActions?.captureInsertion === "function" && typeof inputActions?.insertText === "function") {
@@ -2645,21 +2657,21 @@ function __dshQuoteChatFactory(hostRequire) {
         setAdded(true);
       }
     }, [draft, inputActions]);
-    import_react2.default.useEffect(() => {
+    import_react3.default.useEffect(() => {
       if (!added) return void 0;
       const timer = setTimeout(() => setAdded(false), 2200);
       return () => clearTimeout(timer);
     }, [added]);
     const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant" && message.text !== "");
     const lastQuestion = [...messages].reverse().find((message) => message.role === "user");
-    return h2(
+    return h3(
       "div",
       { className: "qc-side" },
-      h2(
+      h3(
         "div",
         { className: "qc-side-head" },
-        h2("span", { className: "qc-side-head-title" }, t("side.title")),
-        messages.length > 0 ? h2("button", {
+        h3("span", { className: "qc-side-head-title" }, t("side.title")),
+        messages.length > 0 ? h3("button", {
           type: "button",
           onClick: () => {
             setMessages([]);
@@ -2668,54 +2680,54 @@ function __dshQuoteChatFactory(hostRequire) {
           }
         }, t("side.clear")) : null
       ),
-      h2(
+      h3(
         "div",
         { className: "qc-quote" },
-        h2(
+        h3(
           "div",
           { className: "qc-quote-label" },
-          h2("span", null, t("side.quote")),
-          quote.length > 260 ? h2("button", {
+          h3("span", null, t("side.quote")),
+          quote.length > 260 ? h3("button", {
             type: "button",
             onClick: () => setExpanded((value) => !value)
           }, expanded ? t("side.collapseQuote") : t("side.expandQuote")) : null
         ),
-        h2("div", { className: `qc-quote-body${expanded ? "" : " qc-clamped"}` }, quote)
+        h3("div", { className: `qc-quote-body${expanded ? "" : " qc-clamped"}` }, quote)
       ),
-      h2(
+      h3(
         "div",
         { ref: threadRef, className: "qc-thread" },
-        messages.length === 0 ? h2("div", { className: "qc-empty" }, t("side.empty")) : messages.map((message, index) => h2(
+        messages.length === 0 ? h3("div", { className: "qc-empty" }, t("side.empty")) : messages.map((message, index) => h3(
           "div",
           {
             key: `${index}-${message.role}`,
             className: `qc-msg qc-msg-${message.role}`
           },
-          h2(
+          h3(
             "div",
             { className: "qc-msg-role" },
             message.role === "user" ? t("side.you") : t("side.assistant")
           ),
-          h2(
+          h3(
             "div",
             { className: "qc-msg-body" },
-            message.text === "" && busy && index === messages.length - 1 ? h2("span", { className: "qc-dots" }) : message.text
+            message.text === "" && busy && index === messages.length - 1 ? h3("span", { className: "qc-dots" }) : message.text
           ),
-          message.role === "assistant" && message.text !== "" ? h2(
+          message.role === "assistant" && message.text !== "" ? h3(
             "div",
             { className: "qc-msg-actions" },
-            h2("button", {
+            h3("button", {
               type: "button",
               onClick: () => addToChat(message.text)
             }, t("side.addToChat"))
           ) : null
         )),
-        error === "" ? null : h2("div", { className: "qc-msg-error" }, `${t("side.errorPrefix")}${error}`)
+        error === "" ? null : h3("div", { className: "qc-msg-error" }, `${t("side.errorPrefix")}${error}`)
       ),
-      h2(
+      h3(
         "div",
         { className: "qc-side-compose" },
-        h2("textarea", {
+        h3("textarea", {
           value: question,
           placeholder: t("side.placeholder"),
           rows: 2,
@@ -2727,11 +2739,11 @@ function __dshQuoteChatFactory(hostRequire) {
             }
           }
         }),
-        h2(
+        h3(
           "div",
           { className: "qc-side-compose-row" },
-          h2("span", { className: "qc-side-compose-hint" }, added ? t("side.added") : ""),
-          lastAssistant !== void 0 ? h2("button", {
+          h3("span", { className: "qc-side-compose-hint" }, added ? t("side.added") : ""),
+          lastAssistant !== void 0 ? h3("button", {
             type: "button",
             className: "qc-btn qc-btn-ghost",
             onClick: () => addToChat(
@@ -2740,7 +2752,7 @@ function __dshQuoteChatFactory(hostRequire) {
   ${lastAssistant.text}`
             )
           }, t("side.addToChat")) : null,
-          busy ? h2("button", { type: "button", className: "qc-btn qc-btn-ghost", onClick: stop }, t("side.stop")) : h2("button", {
+          busy ? h3("button", { type: "button", className: "qc-btn qc-btn-ghost", onClick: stop }, t("side.stop")) : h3("button", {
             type: "button",
             className: "qc-btn",
             disabled: question.trim() === "",
@@ -2759,30 +2771,30 @@ function __dshQuoteChatFactory(hostRequire) {
     const info = typeof useTabInfo === "function" ? useTabInfo() : void 0;
     const quote = quoteForTab(info?.tab?.navigation?.params?.quote);
     const localeService = pluginCtx?.locale;
-    const locale = import_react2.default.useSyncExternalStore(
-      import_react2.default.useCallback(
+    const locale = import_react3.default.useSyncExternalStore(
+      import_react3.default.useCallback(
         (listener) => typeof localeService?.subscribe === "function" ? localeService.subscribe(listener) : () => {
         },
         [localeService]
       ),
-      import_react2.default.useCallback(
+      import_react3.default.useCallback(
         () => typeof localeService?.getLocale === "function" ? localeService.getLocale().active : "zh",
         [localeService]
       ),
-      import_react2.default.useCallback(() => "zh", [])
+      import_react3.default.useCallback(() => "zh", [])
     );
     if (quote === "") {
-      return h2(
+      return h3(
         "div",
         { className: "qc-side" },
-        h2(
+        h3(
           "div",
           { className: "qc-quote" },
-          h2("div", { className: "qc-quote-body" }, t("side.noQuote"))
+          h3("div", { className: "qc-quote-body" }, t("side.noQuote"))
         )
       );
     }
-    return h2(SideChat, { quote, t, locale: locale === "en" ? "en" : "zh", inputActions, useInput });
+    return h3(SideChat, { quote, t, locale: locale === "en" ? "en" : "zh", inputActions, useInput });
   }
   function tableAnchor(flow, table) {
     const row = table.closest("[data-chat-node-key]") ?? null;
@@ -2805,14 +2817,14 @@ function __dshQuoteChatFactory(hostRequire) {
       const t = typeof props.t === "function" ? props.t : boundT;
       const draft = useDraft(useInput);
       const occurrences = useDraftOccurrences(useInput);
-      const inputStateRef = import_react2.default.useRef(null);
+      const inputStateRef = import_react3.default.useRef(null);
       inputStateRef.current = { draft, occurrences };
       const annotations = useAnnotations(sessionId);
-      const [overlay, setOverlay] = import_react2.default.useState(null);
-      const [notice, setNotice] = import_react2.default.useState("");
-      const overlayRef = import_react2.default.useRef(null);
+      const [overlay, setOverlay] = import_react3.default.useState(null);
+      const [notice, setNotice] = import_react3.default.useState("");
+      const overlayRef = import_react3.default.useRef(null);
       overlayRef.current = overlay;
-      const labels = import_react2.default.useMemo(() => ({
+      const labels = import_react3.default.useMemo(() => ({
         annotate: t("popup.annotate"),
         askInSide: t("popup.askInSide"),
         tooLong: t("popup.tooLong"),
@@ -2843,7 +2855,7 @@ function __dshQuoteChatFactory(hostRequire) {
         save: t("bubble.save"),
         delete: t("bubble.delete")
       }), [t]);
-      import_react2.default.useEffect(() => {
+      import_react3.default.useEffect(() => {
         if (overlay === null) return void 0;
         const onPointerDown = (event) => {
           const surface = document.querySelector(".qc-popup, .qc-compose");
@@ -2860,7 +2872,7 @@ function __dshQuoteChatFactory(hostRequire) {
           document.removeEventListener("keydown", onKeyDown, true);
         };
       }, [overlay === null]);
-      import_react2.default.useEffect(() => {
+      import_react3.default.useEffect(() => {
         if (typeof document === "undefined") return void 0;
         let frame = 0;
         let pointerDown = false;
@@ -2914,23 +2926,23 @@ function __dshQuoteChatFactory(hostRequire) {
           document.removeEventListener("selectionchange", schedule);
         };
       }, [labels]);
-      import_react2.default.useEffect(() => {
+      import_react3.default.useEffect(() => {
         if (notice === "") return void 0;
         const timer = setTimeout(() => setNotice(""), 3200);
         return () => clearTimeout(timer);
       }, [notice]);
-      import_react2.default.useEffect(() => () => clearFlashRange(), []);
-      const writeChip = import_react2.default.useCallback((annotation) => chipBridge.place(
+      import_react3.default.useEffect(() => () => clearFlashRange(), []);
+      const writeChip = import_react3.default.useCallback((annotation) => chipBridge.place(
         inputActions,
         () => ({ draft, occurrences: inputStateRef.current?.occurrences }),
         annotation,
         labels
       ), [draft, inputActions, labels]);
-      const cancelCompose = import_react2.default.useCallback(() => {
+      const cancelCompose = import_react3.default.useCallback(() => {
         clearFlashRange();
         setOverlay(null);
       }, []);
-      const commit = import_react2.default.useCallback((source, comment) => {
+      const commit = import_react3.default.useCallback((source, comment) => {
         if (sessionId === void 0) return;
         const text = typeof comment === "string" ? comment.trim() : "";
         const stored = addAnnotation(sessionId, {
@@ -2957,7 +2969,7 @@ function __dshQuoteChatFactory(hostRequire) {
         const range = flow === null ? null : resolveAnchor(flow, stored.anchor);
         if (range !== null) flashRange(range);
       }, [sessionId, labels, writeChip]);
-      const annotateTable = import_react2.default.useCallback((table) => {
+      const annotateTable = import_react3.default.useCallback((table) => {
         const markdown = tableToMarkdown(table);
         if (markdown === "") return;
         const flow = findFlow();
@@ -2975,7 +2987,7 @@ function __dshQuoteChatFactory(hostRequire) {
         });
         clearSelection();
       }, []);
-      const onHighlight = import_react2.default.useCallback((annotation, on) => {
+      const onHighlight = import_react3.default.useCallback((annotation, on) => {
         const flow = findFlow();
         if (flow === null) return;
         if (!on) {
@@ -2989,7 +3001,7 @@ function __dshQuoteChatFactory(hostRequire) {
           return live === null ? null : resolveAnchor(live, annotation.anchor);
         });
       }, []);
-      const onJump = import_react2.default.useCallback((annotation) => {
+      const onJump = import_react3.default.useCallback((annotation) => {
         const flow = findFlow();
         if (flow === null) {
           setNotice(diagnoseMiss(null, annotation));
@@ -3010,7 +3022,7 @@ function __dshQuoteChatFactory(hostRequire) {
           setNotice(diagnoseMiss(findFlow(), annotation));
         });
       }, []);
-      import_react2.default.useEffect(() => {
+      import_react3.default.useEffect(() => {
         chipJumpHandler.current = (ref) => {
           const match = annotations.find((item) => item.id === ref);
           if (match === void 0) return false;
@@ -3021,7 +3033,7 @@ function __dshQuoteChatFactory(hostRequire) {
           if (chipJumpHandler.current !== null) chipJumpHandler.current = null;
         };
       }, [annotations, onJump]);
-      const onRemove = import_react2.default.useCallback((annotation) => {
+      const onRemove = import_react3.default.useCallback((annotation) => {
         if (sessionId === void 0) return;
         chipBridge.release(
           inputActions,
@@ -3030,12 +3042,12 @@ function __dshQuoteChatFactory(hostRequire) {
         );
         removeAnnotation(sessionId, annotation.id);
       }, [draft, inputActions, sessionId]);
-      const onUpdate = import_react2.default.useCallback((annotation, comment) => {
+      const onUpdate = import_react3.default.useCallback((annotation, comment) => {
         if (sessionId === void 0) return;
         chipRegistry.updateComment(annotation.id, comment);
         updateAnnotation(sessionId, annotation.id, comment);
       }, [sessionId]);
-      const onAsk = import_react2.default.useCallback((source) => {
+      const onAsk = import_react3.default.useCallback((source) => {
         const opener = ctx.get("sidebarRight");
         if (typeof opener?.openTab !== "function") return;
         quoteHandoff.remember(source.text);
@@ -3054,10 +3066,10 @@ function __dshQuoteChatFactory(hostRequire) {
       }, [ctx, labels, t]);
       const canAnnotate = typeof inputActions?.setDraft === "function" || typeof inputActions?.captureInsertion === "function" && typeof inputActions?.insertText === "function";
       const canAsk = typeof ctx.get("sidebarRight")?.openTab === "function";
-      return h2(
-        import_react2.default.Fragment,
+      return h3(
+        import_react3.default.Fragment,
         null,
-        overlay === null ? null : overlay.kind === "actions" ? h2(ActionPopup, {
+        overlay === null ? null : overlay.kind === "actions" ? h3(ActionPopup, {
           anchor: overlay.source.rect,
           canAnnotate,
           canAsk,
@@ -3077,16 +3089,16 @@ function __dshQuoteChatFactory(hostRequire) {
             setOverlay({ kind: "compose", source });
           },
           onAsk: () => onAsk(overlay.source)
-        }) : h2(ComposerPopover, {
+        }) : h3(ComposerPopover, {
           source: overlay.source,
           labels,
           onConfirm: (comment) => commit(overlay.source, comment),
           onCancel: cancelCompose
         }),
-        h2(ChipCards, { annotations, occurrences, labels, onJump, onRemove }),
-        h2(MarkerLayer, { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
-        h2(TableAddButton, { label: labels.tableAdd, onAdd: annotateTable }),
-        typeof notice === "string" && notice !== "" ? h2("div", { className: "qc-notice" }, notice) : null
+        h3(ChipCards, { annotations, occurrences, labels, onJump, onRemove }),
+        h3(MarkerLayer, { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
+        h3(TableAddButton, { label: labels.tableAdd, onAdd: annotateTable }),
+        typeof notice === "string" && notice !== "" ? h3("div", { className: "qc-notice" }, notice) : null
       );
     };
   }

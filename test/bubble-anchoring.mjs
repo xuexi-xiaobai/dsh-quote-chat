@@ -1,4 +1,4 @@
-﻿import { readSourceBundle } from './source.mjs'
+import { readSourceBundle } from './source.mjs'
 /**
  * Guard how the bubble is positioned.
  *
@@ -28,7 +28,59 @@ const cases = []
 const check = (name, ok, detail) => cases.push({ name, ok, detail })
 
 const markerRule = /\.qc-marker\{([\s\S]*?)\}/.exec(css)?.[1] ?? ''
-const markerLayer = /function MarkerLayer\(props\) \{([\s\S]*?)\n    \}\n/.exec(source)?.[1] ?? ''
+// Extract the WHOLE component, by bracket matching.
+//
+// The previous form was /function MarkerLayer\(props\) \{([\s\S]*?)\n    \}\n/, which stops at the
+// first line consisting of exactly four spaces and a brace. That matched an inner block after
+// about 3021 characters, while the component is roughly 15095 — so everything past the first
+// nested block went unchecked, and the "no stored coordinate" assertions below were only ever
+// looking at the top of the function.
+//
+// It also failed silently: no match produced an empty string, and every negative assertion then
+// passed vacuously. This version THROWS when it cannot extract, so a future move cannot quietly
+// turn these checks into no-ops.
+const markerLayer = (() => {
+  const at = source.indexOf('function MarkerLayer(props)')
+  if (at < 0) throw new Error('bubble-anchoring: MarkerLayer not found in src/')
+  const open = source.indexOf('{', source.indexOf(')', at))
+  let depth = 0
+  let inString = null
+  let inTemplate = false
+  let inLineComment = false
+  let inBlockComment = false
+  for (let index = open; index < source.length; index += 1) {
+    const character = source[index]
+    const next = source[index + 1]
+    if (inLineComment) {
+      if (character === '\n') inLineComment = false
+      continue
+    }
+    if (inBlockComment) {
+      if (character === '*' && next === '/') { inBlockComment = false; index += 1 }
+      continue
+    }
+    if (inTemplate) {
+      if (character === '\\') { index += 1; continue }
+      if (character === '`') inTemplate = false
+      continue
+    }
+    if (inString !== null) {
+      if (character === '\\') { index += 1; continue }
+      if (character === inString) inString = null
+      continue
+    }
+    if (character === '/' && next === '/') { inLineComment = true; index += 1; continue }
+    if (character === '/' && next === '*') { inBlockComment = true; index += 1; continue }
+    if (character === '`') { inTemplate = true; continue }
+    if (character === "'" || character === '"') { inString = character; continue }
+    if (character === '{') depth += 1
+    else if (character === '}') {
+      depth -= 1
+      if (depth === 0) return source.slice(open, index + 1)
+    }
+  }
+  throw new Error('bubble-anchoring: MarkerLayer body is unterminated')
+})()
 
 // ── 1. Anchored by layout, not by arithmetic ──────────────────────────────
 check('the bubble is positioned horizontally by CSS',

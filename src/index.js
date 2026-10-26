@@ -92,6 +92,7 @@ import { createNavigation } from './navigation.js'
 import { STYLESHEET } from './stylesheet.js'
 import { IconAnnotate, IconSideChat, IconCheck } from './icons.js'
 import { tableHtml, escapeHtml } from './html.js'
+import { createPopovers } from './ui/popovers.js'
 import { elementOf, cssEscape } from './dom.js'
 import {
   rangeAt, captureAnchor, resolveAnchor, locateText, textOf, nodePath, nodeAtPath,
@@ -325,6 +326,17 @@ const layout = createLayout()
  */
 const navigation = createNavigation({ layout })
 
+/**
+ * The floating surfaces over a selection.
+ *
+ * Created ONCE here, not inside a render: a factory call per render would mint new component
+ * types and React would unmount and remount them, losing the editor's focus and measured size.
+ */
+const { ActionPopup, ComposerPopover } = createPopovers({
+  findFlow: layout.findFlow,
+  anchorInTranscript: (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer),
+})
+
 /** Resolve a passage into view through the virtualized transcript. */
 const revealWithSearch = (flow, annotation) => navigation.reveal(flow, annotation)
 
@@ -498,195 +510,6 @@ function previewOf(annotation) {
 // side-chat-transport.js; this module is imported above.
 
 // #region floating surfaces
-
-/**
- * Place a floating surface near an anchor, inside the viewport.
- * @param rect - the anchor rectangle.
- * @param size - the surface size.
- * @returns fixed-position coordinates.
- */
-function placeNear(rect, size) {
-  const width = size.width
-  const height = size.height
-  let left = rect.left + rect.width / 2 - width / 2
-  left = Math.max(VIEWPORT_MARGIN, Math.min(left, window.innerWidth - width - VIEWPORT_MARGIN))
-  let top = rect.top - height - ANCHOR_GAP
-  if (top < VIEWPORT_MARGIN) {
-    top = Math.min(rect.bottom + ANCHOR_GAP, window.innerHeight - height - VIEWPORT_MARGIN)
-  }
-  return { left: Math.max(VIEWPORT_MARGIN, left), top: Math.max(VIEWPORT_MARGIN, top) }
-}
-
-/**
- * The floating action pair shown over a selected passage.
- * @param props - anchor rect, capability flags, labels, and handlers.
- */
-function ActionPopup(props) {
-  const { anchor, canAnnotate, canAsk, labels, onAnnotate, onAsk } = props
-  const ref = React.useRef(null)
-  const [size, setSize] = React.useState({ width: 0, height: 0 })
-
-  React.useLayoutEffect(() => {
-    const element = ref.current
-    if (element === null) return
-    const rect = element.getBoundingClientRect()
-    setSize({ width: rect.width, height: rect.height })
-  }, [])
-
-  // Inside the transcript (so the container clips it against the chat chrome) and
-  // clamped to the visible band (so it is never cut off at an edge).
-  const flow = findFlow()
-  const measured = { width: size.width || 210, height: size.height || 34 }
-  const anchored = flow === null ? null : anchorInTranscript(flow, anchor, measured, 'below')
-  const position = anchored === null
-    ? placeNear(anchor, measured)
-    : anchored.position
-  return createPortal(
-    h('div', {
-      ref,
-      className: 'qc-popup',
-      role: 'toolbar',
-      style: {
-        left: `${position.left}px`,
-        top: `${position.top}px`,
-        position: anchored === null ? 'fixed' : 'absolute',
-        visibility: size.width === 0 ? 'hidden' : 'visible',
-      },
-      // The selection must survive the click that chooses an action.
-      onMouseDown: (event) => event.preventDefault(),
-    },
-    h('button', { type: 'button', disabled: !canAnnotate, onClick: onAnnotate },
-      h(IconAnnotate, null), labels.annotate),
-    h('button', { type: 'button', disabled: !canAsk, onClick: onAsk },
-      h(IconSideChat, null), labels.askInSide),
-    ),
-    anchored === null ? document.body : anchored.scroller,
-  )
-}
-
-/**
- * The annotation editor: a preview of what will be attached, an optional
- * comment, and the confirm pair.
- * @param props - the source, labels, and handlers.
- */
-function ComposerPopover(props) {
-  const { source, labels, onConfirm, onCancel } = props
-  const ref = React.useRef(null)
-  const inputRef = React.useRef(null)
-  const [comment, setComment] = React.useState('')
-  const [size, setSize] = React.useState({ width: 0, height: 0 })
-
-  React.useLayoutEffect(() => {
-    const element = ref.current
-    if (element === null) return
-    const rect = element.getBoundingClientRect()
-    setSize({ width: rect.width, height: rect.height })
-    inputRef.current?.focus()
-  }, [])
-
-  // Only Enter and the confirm button commit; EVERY other dismissal cancels.
-  //
-  // Clicking elsewhere in the transcript, or on the composer, used to leave the box
-  // open with the passage still lit, which read as "my comment is being kept". An
-  // outside click is a dismissal like any other, so it cancels - and cancelling
-  // clears the highlight.
-  React.useEffect(() => {
-    const onDown = (event) => {
-      if (ref.current !== null && event.target instanceof Node
-        && ref.current.contains(event.target)) return
-      onCancel()
-    }
-    const onKey = (event) => {
-      if (event.key === 'Escape') onCancel()
-    }
-    document.addEventListener('mousedown', onDown, true)
-    document.addEventListener('keydown', onKey, true)
-    return () => {
-      document.removeEventListener('mousedown', onDown, true)
-      document.removeEventListener('keydown', onKey, true)
-    }
-  }, [onCancel])
-
-  // Pinned to the annotated block, not to the viewport.
-  //
-  // The popover used to be position:fixed at a viewport coordinate, so scrolling the
-  // page left it hovering over unrelated text. It now mounts as a SIBLING of the
-  // annotated block and is positioned from that block's own offset, so it travels
-  // with the passage. Being a sibling also keeps it outside the paragraph, and
-  // therefore outside any passage highlight.
-  const width = size.width || 420
-  const height = size.height || 170
-  // Same placement rule as the action toolbar: inside the transcript so the container
-  // clips it against the chat chrome, clamped to the visible band so it is never cut
-  // off at an edge.
-  const flow = findFlow()
-  const anchored = flow === null
-    ? null
-    : anchorInTranscript(flow, source.rect, { width, height }, 'below')
-  const position = anchored === null
-    ? placeNear(source.rect, { width, height })
-    : anchored.position
-
-  return createPortal(
-    h('div', {
-      ref,
-      className: 'qc-compose',
-      role: 'dialog',
-      'aria-label': labels.title,
-      style: {
-        left: `${position.left}px`,
-        top: `${position.top}px`,
-        position: anchored === null ? 'fixed' : 'absolute',
-      },
-      onMouseDown: (event) => event.stopPropagation(),
-      onKeyDown: (event) => {
-        if (event.key === 'Escape') {
-          event.stopPropagation()
-          onCancel()
-        }
-      },
-    },
-    source.previewHtml !== ''
-      // The model's own markup, replayed: the preview shows the passage the
-      // way the answer showed it, emphasis and math included.
-      ? h('div', {
-        className: 'qc-compose-preview',
-        dangerouslySetInnerHTML: { __html: source.previewHtml },
-      })
-      : h('div', { className: 'qc-compose-preview' }, source.previewText),
-    source.kind === 'table'
-      ? null
-      : h('textarea', {
-        ref: inputRef,
-        value: comment,
-        rows: 2,
-        placeholder: labels.placeholder,
-        onChange: (event) => setComment(event.target.value),
-        onKeyDown: (event) => {
-          if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent?.isComposing) {
-            event.preventDefault()
-            onConfirm(comment)
-          }
-        },
-      }),
-    h('div', { className: 'qc-compose-row' },
-      h('span', { className: 'qc-compose-hint' },
-        source.kind === 'table'
-          ? labels.table.replace('{rows}', String(source.rows ?? 0))
-          : `${labels.selected.replace('{count}', String(source.previewText.length))} · ${labels.hint}`),
-      h('button', { type: 'button', className: 'qc-compose-cancel', onClick: onCancel }, labels.cancel),
-      h('button', {
-        type: 'button',
-        className: 'qc-compose-confirm',
-        title: labels.confirm,
-        'aria-label': labels.confirm,
-        onClick: () => onConfirm(source.kind === 'table' ? '' : comment),
-      }, h(IconCheck, null), h('span', { className: 'qc-compose-confirm-text' }, labels.confirm)),
-    ),
-    ),
-    anchored === null ? document.body : anchored.scroller,
-  )
-}
 
 // #endregion
 

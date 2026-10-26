@@ -5,10 +5,18 @@
  * saw — a rendered table, not pipes and header rules. These two helpers do that and nothing else:
  * no React, no DOM lookup, no state, which is why they can be tested on their own.
  *
- * Known limitation, recorded not fixed: the separator-row test is /^:?-{2,}:?$/, so a GFM
- * alignment row written with one hyphen per side (:--, :-:, --:) is not recognised and renders as
- * a data row. A plain |---|---| row is dropped correctly, which is what most captured tables use.
- * Widening the pattern is a behaviour change and belongs to its own decision.
+ * Known limitation, recorded not fixed. The separator test is /^:?-{2,}:?$/, applied per cell and
+ * accepted only when EVERY cell in the row matches. Precisely:
+ *
+ *   - `---`  matches — two or more hyphens, no inner colon
+ *   - `:--`  matches — leading colon, then two hyphens
+ *   - `--:`  matches — two hyphens, then a trailing colon
+ *   - `:-:`  does NOT match — the pattern allows a colon at the start or the end, never both
+ *
+ * A row is dropped only if all its cells match. So `| :-- | --: |` is dropped, while
+ * `| :-- | :-: | --: |` is kept in full: `:-:` fails, and `cells.every(...)` is refuted by that one
+ * cell, so the entire row renders as data. Widening the pattern would be a behaviour change and
+ * belongs to its own decision.
  */
 
 export function tableHtml(markdown) {

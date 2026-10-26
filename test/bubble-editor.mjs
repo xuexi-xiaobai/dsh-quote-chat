@@ -23,6 +23,8 @@ const css = /export const STYLESHEET = `([\s\S]*?)`\n/.exec(stylesheetSource)?.[
 // Layout rules moved to their own module: assert against it where the claim is about layout.
 const layoutSource = await readFile(join(here, '..', 'src', 'layout.js'), 'utf8')
 const navigationSource = await readFile(join(here, '..', 'src', 'navigation.js'), 'utf8')
+// The two floating surfaces moved to their own module.
+const popoversSource = await readFile(join(here, '..', 'src', 'ui', 'popovers.js'), 'utf8')
 
 const cases = []
 const check = (name, ok, detail) => cases.push({ name, ok, detail })
@@ -299,13 +301,13 @@ check('a shared anchoring helper exists',
   /function anchorInTranscript\(flow, box, size, prefer\)/.test(layoutSource),
   'the surfaces anchor independently and can drift apart')
 check('the selection toolbar is anchored inside the transcript',
-  /anchorInTranscript\(flow, anchor, measured, 'below'\)/.test(source),
+  /anchorInTranscript\(flow, anchor, measured, 'below'\)/.test(popoversSource),
   'the toolbar is placed against the viewport and follows the screen')
 check('the compose popover is anchored inside the transcript',
-  /anchorInTranscript\(flow, source\.rect, \{ width, height \}, 'below'\)/.test(source),
+  /anchorInTranscript\(flow, source\.rect, \{ width, height \}, 'below'\)/.test(popoversSource),
   'the popover is placed against the viewport and follows the screen')
 check('both surfaces mount into the transcript when anchored',
-  /anchored === null \? document\.body : anchored\.scroller/.test(source),
+  /anchored === null \? document\.body : anchored\.scroller/.test(popoversSource),
   'a surface is mounted at body, where nothing clips it against the composer')
 check('the anchor is clamped into the scroll band',
   /bandBottom - height - ANCHOR_INSET/.test(layoutSource)
