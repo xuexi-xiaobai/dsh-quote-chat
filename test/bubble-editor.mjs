@@ -344,8 +344,8 @@ check('the compose popover sits above the selection',
   // anchorInTranscript call remains for the ACTION TOOLBAR, which is still a small anchored popup.
   // The passage box, not the pointer rect: for a mouse drag `source.rect` is the release point,
   // which can sit anywhere inside the passage and caused the panel to cover the text.
-  /anchorAboveSelection\(passageBox, \{ width, height \}\)/.test(popoversSource)
-    && /source\.rect\?\.passage \?\? source\.rect/.test(popoversSource)
+  /anchorAboveSelection\(blockBox, \{ width, height \}\)/.test(popoversSource)
+    && /source\.blockRect \?\? source\.rect\?\.passage/.test(popoversSource)
     && !/anchorInTranscript\(flow, source\.rect/.test(popoversSource),
   'the compose panel is not placed above the selection')
 check('the compose popover docks once the user types',

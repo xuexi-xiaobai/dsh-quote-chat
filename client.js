@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:9d335179719d1868
+ * Artifact: sha256:f341900dc807c91e
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -867,23 +867,27 @@ function __dshQuoteChatFactory(hostRequire) {
       }
       return { top, bottom, height: Math.max(1, bottom - top) };
     }
-    function anchorAboveSelection(selectionBox, size, options = {}) {
+    function anchorAboveSelection(blockBox, size, options = {}) {
       const gap = options.gap ?? 10;
       const margin = options.margin ?? 8;
       const viewportWidth = typeof window === "undefined" ? 0 : window.innerWidth;
       const band = readableBand();
       const left = Math.max(margin, Math.round((viewportWidth - size.width) / 2));
-      const spaceAbove = selectionBox.top - band.top;
-      const spaceBelow = band.bottom - selectionBox.bottom;
+      const spaceAbove = blockBox.top - band.top;
+      const spaceBelow = band.bottom - blockBox.bottom;
       const needed = size.height + gap + margin;
-      const above = selectionBox.top - gap - size.height;
-      const below = selectionBox.bottom + gap;
-      if (spaceAbove >= needed) return { left, top: above };
-      if (spaceBelow >= needed) return { left, top: below };
+      const above = blockBox.top - gap - size.height;
+      const below = blockBox.bottom + gap;
+      if (spaceAbove >= needed) return { left, top: above, edge: "above" };
+      if (spaceBelow >= needed) return { left, top: below, edge: "below" };
       const preferred = spaceAbove >= spaceBelow ? above : below;
       const highest = band.top + margin;
       const lowest = Math.max(highest, band.bottom - size.height - margin);
-      return { left, top: Math.min(Math.max(highest, preferred), lowest) };
+      return {
+        left,
+        top: Math.min(Math.max(highest, preferred), lowest),
+        edge: spaceAbove >= spaceBelow ? "above-clamped" : "below-clamped"
+      };
     }
     function snapPosition(restingTop, size, options = {}) {
       const gap = options.gap ?? 8;
@@ -1749,7 +1753,7 @@ function __dshQuoteChatFactory(hostRequire) {
         }
       });
       import_react3.default.useEffect(() => {
-        inputRef.current?.focus();
+        inputRef.current?.focus({ preventScroll: true });
       }, []);
       import_react3.default.useEffect(() => {
         const onDown = (event) => {
@@ -1768,8 +1772,8 @@ function __dshQuoteChatFactory(hostRequire) {
       }, [onCancel]);
       const width = size.width || 420;
       const height = size.height || 170;
-      const passageBox = source.rect?.passage ?? source.rect;
-      const resting = anchorAboveSelection ? anchorAboveSelection(passageBox, { width, height }) : placeNear(passageBox, { width, height });
+      const blockBox = source.blockRect ?? source.rect?.passage ?? source.rect;
+      const resting = anchorAboveSelection ? anchorAboveSelection(blockBox, { width, height }) : placeNear(passageBox, { width, height });
       const hasInput = comment.trim() !== "";
       const docked = hasInput && snapPosition ? snapPosition(resting.top, { width, height }) : null;
       const target = docked ?? { left: resting.left, top: resting.top };
@@ -3316,24 +3320,31 @@ function __dshQuoteChatFactory(hostRequire) {
     if (rect === void 0 || rect.width === 0 && rect.height === 0) return null;
     const table = startElement.closest("table") ?? endElement.closest("table");
     if (table !== null && flow.contains(table)) {
+      const tableBox = table.getBoundingClientRect();
       return {
         kind: "table",
         text: tableToMarkdown(table),
         previewHtml: "",
         previewText: table.innerText.trim(),
-        rect: table.getBoundingClientRect(),
+        rect: tableBox,
+        block: table,
+        blockRect: tableBox,
         anchor: tableAnchor(flow, table)
       };
     }
+    const block = startElement.closest(BLOCK_SELECTOR) ?? flow;
     return {
       kind: "text",
       text: text.trim(),
       previewHtml: fragmentHtml(range.cloneContents()),
       previewText: text.trim(),
       rect,
-      // The block that holds the selection. The popover mounts beside it (not against the viewport),
-      // so it stays pinned to the passage while the page scrolls.
-      block: startElement.closest(BLOCK_SELECTOR) ?? flow,
+      // The block that holds the selection, kept both as an element and as a snapshot of its box at
+      // this moment. Placement must use the snapshot: a live `getBoundingClientRect()` at render time
+      // reports wherever the block has moved to since, which put the panel 182–207px off in scenarios
+      // where the transcript scrolled in between.
+      block,
+      blockRect: block.getBoundingClientRect(),
       anchor: captureAnchor(range, flow)
     };
   }

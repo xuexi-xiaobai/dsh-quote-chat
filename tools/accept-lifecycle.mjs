@@ -421,6 +421,114 @@ export async function run({ browser, check: report, url }) {
   }
 
   const coveting = scenarioResults.filter((entry) => entry.measured?.overlap === true)
+  // ── The panel must sit just above the BLOCK, not just above the selection ──
+  // The user watched a recording and asked whether the panel's bottom edge is really close to the top
+  // edge of the whole block being annotated. It was not: placement aligned to the selection range, so a
+  // drag selecting the tail of a paragraph put the panel over that paragraph's earlier lines.
+  //
+  // Only blocks already visible are used. Scrolling during setup produced measurements that disagreed
+  // with reality — the container animates and the app scrolls on its own — so nothing scrolls here.
+  const blockGap = await read(() => {
+    const flow = document.querySelector('[data-slot="conversation.chat.flow"]')
+    if (flow === null) return { candidates: [] }
+    const header = document.querySelector('header')
+    const bandTop = header === null ? 0 : Math.round(header.getBoundingClientRect().bottom)
+    const editors = [...document.querySelectorAll('[contenteditable="true"]')]
+      .filter((element) => element.getBoundingClientRect().height > 0)
+    const bandBottom = editors.length === 0
+      ? window.innerHeight : Math.round(editors[editors.length - 1].getBoundingClientRect().top)
+
+    for (const element of document.querySelectorAll('[data-qc-candidate]')) {
+      element.removeAttribute('data-qc-candidate')
+    }
+    const candidates = []
+    for (const element of flow.querySelectorAll('p, li')) {
+      const box = element.getBoundingClientRect()
+      if ((element.innerText ?? '').trim().length < 40) continue
+      if (box.height < 30) continue
+      if (box.top < bandTop + 140 || box.bottom > bandBottom - 4) continue
+      const ordinal = candidates.length
+      element.setAttribute('data-qc-candidate', String(ordinal))
+      candidates.push({ ordinal, top: Math.round(box.top) })
+    }
+    return { candidates }
+  })
+
+  const blockGapRows = []
+  for (const candidate of blockGap.candidates.slice(0, 3)) {
+    for (const place of ['first-line', 'last-line']) {
+      await press('Escape')
+      await browser.page.waitForTimeout(90)
+
+      const points = await read(({ ordinal, where }) => {
+        const block = document.querySelector(`[data-qc-candidate="${ordinal}"]`)
+        if (block === null) return null
+        for (const element of document.querySelectorAll('[data-qc-probe="1"]')) {
+          element.removeAttribute('data-qc-probe')
+        }
+        block.setAttribute('data-qc-probe', '1')
+        const box = block.getBoundingClientRect()
+        const line = Math.max(18, box.height / 3)
+        const y = where === 'first-line' ? Math.round(box.top + line / 2)
+          : Math.round(box.bottom - line / 2)
+        const startX = Math.round(box.left + 14)
+        const hit = document.elementFromPoint(startX, y)
+        if (hit === null || !block.contains(hit)) return null
+        return { from: { x: startX, y }, to: { x: Math.round(box.left + 110), y } }
+      }, { ordinal: candidate.ordinal, where: place })
+
+      if (points === null) continue
+      await browser.dragSelect(points.from, points.to)
+
+      // Only count a row whose selection really came from the marked block.
+      const valid = await read(() => {
+        const block = document.querySelector('[data-qc-probe="1"]')
+        const selection = window.getSelection()
+        const range = selection === null || selection.rangeCount === 0 ? null : selection.getRangeAt(0)
+        if (range === null || block === null) return false
+        const box = range.getBoundingClientRect()
+        const blockBox = block.getBoundingClientRect()
+        return box.top >= blockBox.top - 2 && box.bottom <= blockBox.bottom + 2
+      })
+      if (!valid) continue
+
+      const popupUp = await waitFor("document.querySelectorAll('.qc-popup button').length === 2",
+        { timeoutMs: 4000 })
+      if (popupUp === null) continue
+      await click('.qc-popup button:first-child')
+      const opened = await waitFor("document.querySelector('.qc-compose') !== null", { timeoutMs: 4000 })
+      if (opened === null) continue
+      await browser.page.waitForTimeout(180)
+
+      const measured = await read(() => {
+        const panel = document.querySelector('.qc-compose')
+        const block = document.querySelector('[data-qc-probe="1"]')
+        const box = panel.getBoundingClientRect()
+        const blockBox = block.getBoundingClientRect()
+        return {
+          gapToBlock: Math.round(blockBox.top - box.bottom),
+          overlaps: box.top < blockBox.bottom && box.bottom > blockBox.top
+            && box.left < blockBox.right && box.right > blockBox.left,
+          blockTop: Math.round(blockBox.top),
+          panelBottom: Math.round(box.bottom),
+        }
+      })
+      blockGapRows.push({ ordinal: candidate.ordinal, place, ...measured })
+    }
+  }
+
+  check('the compose panel sits just above the whole block, not just the selection',
+    blockGapRows.length > 0
+      && blockGapRows.every((row) => row.gapToBlock >= 4 && row.gapToBlock <= 24),
+    JSON.stringify(blockGapRows))
+  check('the compose panel clears the whole block it annotates',
+    blockGapRows.length > 0 && blockGapRows.every((row) => row.overlaps === false),
+    JSON.stringify(blockGapRows.filter((row) => row.overlaps === true)))
+
+  // Leave a clean state for what follows.
+  await press('Escape')
+  await waitFor("document.querySelector('.qc-compose') === null", { timeoutMs: 4000 })
+
   check('the compose panel never covers the selected text',
     scenarioResults.length > 0 && coveting.length === 0,
     JSON.stringify({

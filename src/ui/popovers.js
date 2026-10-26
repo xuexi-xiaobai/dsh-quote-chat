@@ -143,8 +143,14 @@ export function createPopovers({
     })
 
     // Focus once, not on every measurement.
+    //
+    // `preventScroll` is essential: a plain focus() scrolls the nearest scrollable ancestor so the
+    // element is visible, and opening the panel scrolled the transcript by a measured 184px. The panel
+    // is fixed-positioned from a snapshot of the block's box, so that scroll left it drawn at the old
+    // coordinates while the passage moved underneath — the panel then covered the very text it was
+    // describing.
     React.useEffect(() => {
-      inputRef.current?.focus()
+      inputRef.current?.focus({ preventScroll: true })
     }, [])
 
     // Only Enter and the confirm button commit; EVERY other dismissal cancels.
@@ -193,9 +199,13 @@ export function createPopovers({
     // The passage box lives INSIDE rect (selection.js sets rect.passage), not on the source itself.
     // Reading source.passage silently fell back to the pointer rect, which is why three attempts at
     // this fix changed nothing at all.
-    const passageBox = source.rect?.passage ?? source.rect
+    // The BLOCK, not the selection range: a drag usually selects part of a paragraph, and aligning to
+    // the range put the panel over that paragraph's earlier lines. `source.block` is the element the
+    // selection started in, resolved with `closest(BLOCK_SELECTOR)`.
+    // The snapshot taken when the selection was read, not a live measurement at render time.
+    const blockBox = source.blockRect ?? source.rect?.passage ?? source.rect
     const resting = anchorAboveSelection
-      ? anchorAboveSelection(passageBox, { width, height })
+      ? anchorAboveSelection(blockBox, { width, height })
       : placeNear(passageBox, { width, height })
 
     // Once the user has typed something, the panel glides to the nearer edge of the band. The

@@ -331,18 +331,21 @@ export function createLayout() {
   }
 
   /**
-   * The resting place for the compose panel: centred horizontally, sitting just above the selection.
+   * The resting place for the compose panel: centred, with its bottom edge just above the BLOCK.
    *
-   * Above the selection, never over it — that is the requirement, and it also means the panel cannot
-   * cover the passage it is describing. When there is not enough room above (a selection near the top
-   * of the window) the panel is pushed down to the band's top edge instead, so it stays visible.
+   * Anchor is the block's top edge, not the selection range's. A drag usually selects part of a
+   * paragraph; aligning to the range put the panel over the earlier lines of that same paragraph
+   * (measured: -17px and -42px gaps, i.e. overlapping), or hundreds of pixels above it.
    *
-   * @param selectionBox - the selection's viewport box.
-   * @param size - `{ width, height }` of the panel.
-   * @param options - `{ gap, margin }`; `gap` is the clearance kept from the selection.
-   * @returns `{ left, top }` in viewport pixels.
+   * When there is no room above the block, the panel goes BELOW the block, so it still never covers the
+   * text it describes.
+   *
+   * @param blockBox - the block element's viewport box, from `source.block`.
+   * @param size - the panel's width and height.
+   * @param options - gap and margin; gap is the clearance kept from the block.
+   * @returns the left and top, in viewport pixels.
    */
-  function anchorAboveSelection(selectionBox, size, options = {}) {
+  function anchorAboveSelection(blockBox, size, options = {}) {
     const gap = options.gap ?? 10
     const margin = options.margin ?? 8
     const viewportWidth = typeof window === 'undefined' ? 0 : window.innerWidth
@@ -350,26 +353,28 @@ export function createLayout() {
 
     const left = Math.max(margin, Math.round((viewportWidth - size.width) / 2))
 
-    // Room available on each side of the passage.
-    const spaceAbove = selectionBox.top - band.top
-    const spaceBelow = band.bottom - selectionBox.bottom
+    const spaceAbove = blockBox.top - band.top
+    const spaceBelow = band.bottom - blockBox.bottom
     const needed = size.height + gap + margin
 
-    /** Above the selection: bottom edge one gap above the passage's top. */
-    const above = selectionBox.top - gap - size.height
-    /** Below the selection: top edge one gap under the passage's bottom. */
-    const below = selectionBox.bottom + gap
+    // Above the block: the panel's bottom edge sits one gap above the block's top edge.
+    const above = blockBox.top - gap - size.height
+    // Below the block: its top edge one gap under the block's bottom edge.
+    const below = blockBox.bottom + gap
 
-    if (spaceAbove >= needed) return { left, top: above }
-    if (spaceBelow >= needed) return { left, top: below }
+    if (spaceAbove >= needed) return { left, top: above, edge: 'above' }
+    if (spaceBelow >= needed) return { left, top: below, edge: 'below' }
 
-    // Neither side has room. Pick the side with more space and clamp into the band, which keeps the
-    // overlap as small as the geometry allows. Keeping the panel fully visible matters more than which
-    // side it lands on.
+    // Neither side fits. Prefer the side with more room and clamp inside the band; a partly visible
+    // panel beats one pushed off-screen.
     const preferred = spaceAbove >= spaceBelow ? above : below
     const highest = band.top + margin
     const lowest = Math.max(highest, band.bottom - size.height - margin)
-    return { left, top: Math.min(Math.max(highest, preferred), lowest) }
+    return {
+      left,
+      top: Math.min(Math.max(highest, preferred), lowest),
+      edge: spaceAbove >= spaceBelow ? 'above-clamped' : 'below-clamped',
+    }
   }
 
   /**

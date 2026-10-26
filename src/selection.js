@@ -134,24 +134,31 @@ export function readSelection(pointer) {
   if (rect === undefined || (rect.width === 0 && rect.height === 0)) return null
   const table = startElement.closest('table') ?? endElement.closest('table')
   if (table !== null && flow.contains(table)) {
+    const tableBox = table.getBoundingClientRect()
     return {
       kind: 'table',
       text: tableToMarkdown(table),
       previewHtml: '',
       previewText: table.innerText.trim(),
-      rect: table.getBoundingClientRect(),
+      rect: tableBox,
+      block: table,
+      blockRect: tableBox,
       anchor: tableAnchor(flow, table),
     }
   }
+  const block = startElement.closest(BLOCK_SELECTOR) ?? flow
   return {
     kind: 'text',
     text: text.trim(),
     previewHtml: fragmentHtml(range.cloneContents()),
     previewText: text.trim(),
     rect,
-    // The block that holds the selection. The popover mounts beside it (not against the viewport),
-    // so it stays pinned to the passage while the page scrolls.
-    block: startElement.closest(BLOCK_SELECTOR) ?? flow,
+    // The block that holds the selection, kept both as an element and as a snapshot of its box at
+    // this moment. Placement must use the snapshot: a live `getBoundingClientRect()` at render time
+    // reports wherever the block has moved to since, which put the panel 182–207px off in scenarios
+    // where the transcript scrolled in between.
+    block,
+    blockRect: block.getBoundingClientRect(),
     anchor: captureAnchor(range, flow),
   }
 }
