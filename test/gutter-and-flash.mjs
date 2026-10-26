@@ -17,6 +17,8 @@ import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const source = await readSourceBundle()
+// The dock owns the jump path now, so its assertions read that module.
+const dockSource = await readFile(new URL('../src/ui/dock.js', import.meta.url), 'utf8')
 // The stylesheet is its own module now.
 const stylesheetSource = await readFile(join(here, '..', 'src', 'stylesheet.js'), 'utf8')
 const highlightSource = await readFile(join(here, '..', 'src', 'highlight.js'), 'utf8')
@@ -158,7 +160,7 @@ check('clicking a bubble still lights the passage',
   /holdRange\(range/.test(onHighlightBody),
   'the passage is no longer highlighted on bubble click')
 check('the chip still jumps',
-  /revealWithSearch\(flow, annotation\)/.test(source),
+  /navigation\.reveal\(flow, annotation\)/.test(dockSource),
   'the composer chip lost its jump behaviour')
 
 let failed = 0

@@ -14,6 +14,8 @@ import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const source = await readFile(join(here, '..', 'src', 'index.js'), 'utf8')
+// The dock moved to its own module.
+const dockSource = await readFile(new URL('../src/ui/dock.js', import.meta.url), 'utf8')
 // The annotation strip moved to its own module.
 const cardsSource = await readFile(new URL('../src/ui/cards.js', import.meta.url), 'utf8')
 // The painter moved to its own module.
@@ -82,7 +84,7 @@ check('card renders captured markup',
   /dangerouslySetInnerHTML: \{ __html: annotation\.previewHtml/.test(cardsSource),
   'the card no longer renders previewHtml')
 check('stored field matches what the card reads',
-  /previewHtml: source\.kind === 'table' \? '' : source\.previewHtml/.test(source),
+  /previewHtml: source\.kind === 'table' \? '' : source\.previewHtml/.test(dockSource),
   'annotation is stored under a field name the card does not read')
 
 let failed = 0

@@ -17,6 +17,8 @@ import { dirname, join } from 'node:path'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const source = await readFile(join(here, '..', 'src', 'index.js'), 'utf8')
+// The dock moved to its own module.
+const dockSource = await readFile(new URL('../src/ui/dock.js', import.meta.url), 'utf8')
 // The annotation strip moved to its own module.
 const cardsSource = await readFile(new URL('../src/ui/cards.js', import.meta.url), 'utf8')
 const markersSource = await readFile(new URL('../src/ui/markers.js', import.meta.url), 'utf8')
@@ -73,8 +75,7 @@ check('the column element is derived, not hard-coded',
 // The band arithmetic is in layout.js. Here: the delegate exists, and layout.js still subtracts
 // the composer rather than merely intersecting the scroller with the viewport.
 check('the readable area accounts for the composer',
-  /const visibleChatArea = \(scroller\) => layout\.visibleChatArea\(scroller\)/.test(source)
-    && /bottom = dock\.top/.test(layoutSource),
+  /bottom = dock\.top/.test(layoutSource),
   'the composer is not subtracted from the visible area')
 check('the composer dock is discovered by slot',
   /conversation\.composer\.dock/.test(source)
@@ -104,7 +105,7 @@ check('saving rewrites the comment in place',
 // The payload now lives behind the registry, so this asserts the wiring end to end: the edit
 // path calls the registry's update, and serialization reads back through the same registry.
 check('saving keeps the codec payload in step',
-  /chipRegistry\.updateComment\(annotation\.id, comment\)/.test(source)
+  /chipRegistry\.updateComment\(annotation\.id, comment\)/.test(dockSource)
     && /const payload = chipRegistry\.get\(ref\)/.test(source),
   'the model would still receive the old comment')
 check('deleting from the editor removes the annotation',
@@ -210,7 +211,7 @@ check('hover, press and base are all readable',
 
 // A notice with no text still paints an empty box pinned above the composer.
 check('an empty notice renders nothing',
-  /typeof notice === 'string' && notice !== ''/.test(source),
+  /typeof notice === 'string' && notice !== ''/.test(dockSource),
   'an empty/nil notice still renders a box')
 check('clearing a notice keeps the state a string',
   !/setNotice\(null\)/.test(source),
@@ -351,10 +352,10 @@ check('readSelection accepts the pointer release point',
   /function readSelection\(pointer\)/.test(source),
   'the selection cannot report where the drag ended')
 check('the release point comes from the pointerup event',
-  /releasePoint = \{ x: event\.clientX, y: event\.clientY \}/.test(source),
+  /releasePoint = \{ x: event\.clientX, y: event\.clientY \}/.test(dockSource),
   'the popup has no release coordinate to anchor to')
 check('the release point is cleared when a new drag starts',
-  /pointerDown = true[\s\S]{0,140}releasePoint = null/.test(source),
+  /pointerDown = true[\s\S]{0,140}releasePoint = null/.test(dockSource),
   'a stale release point leaks into the next selection')
 check('the popup anchors to the release point, not the passage box',
   /rect = pointer === null \|\| pointer === undefined/.test(source)

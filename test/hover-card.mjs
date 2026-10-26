@@ -27,7 +27,7 @@ const check = (name, ok, detail) => cases.push({ name, ok, detail })
 
 // ── 1 & 2. The grace period ────────────────────────────────────────────────
 check('a linger delay is defined',
-  /const HOVER_LINGER_MS = \d+/.test(source), 'no HOVER_LINGER_MS constant')
+  /const HOVER_LINGER_MS = \d+/.test(cardsSource), 'no HOVER_LINGER_MS constant')
 check('leaving schedules a close instead of closing',
   /closeTimer = setTimeout\(\(\) => \{[\s\S]{0,120}setHover\(null\)/.test(cardsSource),
   'the pointer-out path closes immediately')

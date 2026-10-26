@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:f32c7d4bd75e740e
+ * Artifact: sha256:8db39b018bcefbc2
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -49,8 +49,8 @@ function __dshQuoteChatFactory(hostRequire) {
     inject: () => inject
   });
   module.exports = __toCommonJS(index_exports);
-  var import_react7 = __toESM(require("react"), 1);
-  var import_react_dom4 = require("react-dom");
+  var import_react8 = __toESM(require("react"), 1);
+  var import_react_dom5 = require("react-dom");
 
   // src/locales.js
   var zh = {
@@ -2634,11 +2634,337 @@ function __dshQuoteChatFactory(hostRequire) {
     return { SideChat: SideChat2, SideChatTab: SideChatTab2 };
   }
 
+  // src/ui/dock.js
+  var import_react7 = __toESM(require("react"), 1);
+  var import_react_dom4 = require("react-dom");
+  var h6 = import_react7.default.createElement;
+  function annotationDock(deps) {
+    const {
+      ctx,
+      navigation: navigation2,
+      chipRegistry: chipRegistry2,
+      chipBridge: chipBridge2,
+      chipJumpHandler: chipJumpHandler2,
+      addAnnotation: addAnnotation2,
+      removeAnnotation: removeAnnotation2,
+      updateAnnotation: updateAnnotation2,
+      useAnnotations: useAnnotations2,
+      flashRange: flashRange2,
+      clearFlashRange: clearFlashRange2,
+      holdRange: holdRange2,
+      quoteHandoff: quoteHandoff2,
+      ActionPopup: ActionPopup2,
+      ComposerPopover: ComposerPopover2,
+      ChipCards: ChipCards2,
+      MarkerLayer: MarkerLayer2,
+      TableAddButton: TableAddButton2,
+      diagnoseMiss: diagnoseMiss2,
+      tableAnchor: tableAnchor2,
+      readSelection: readSelection2,
+      clearSelection: clearSelection2,
+      tableToMarkdown: tableToMarkdown2,
+      findFlow: findFlow2,
+      MAX_QUOTE_CHARS: MAX_QUOTE_CHARS2,
+      MAX_ANNOTATIONS: MAX_ANNOTATIONS2,
+      TAB_KIND: TAB_KIND2,
+      t: boundT
+    } = deps;
+    return function AnnotationDock(props) {
+      const { inputActions, useInput, sessionId } = props;
+      const t = typeof props.t === "function" ? props.t : boundT;
+      const draft = useDraft(useInput);
+      const occurrences = useDraftOccurrences(useInput);
+      const inputStateRef = import_react7.default.useRef(null);
+      inputStateRef.current = { draft, occurrences };
+      const annotations = useAnnotations2(sessionId);
+      const [overlay, setOverlay] = import_react7.default.useState(null);
+      const [notice, setNotice] = import_react7.default.useState("");
+      const overlayRef = import_react7.default.useRef(null);
+      overlayRef.current = overlay;
+      const labels = import_react7.default.useMemo(() => ({
+        annotate: t("popup.annotate"),
+        askInSide: t("popup.askInSide"),
+        tooLong: t("popup.tooLong"),
+        unavailable: t("popup.unavailable"),
+        title: t("compose.title"),
+        placeholder: t("compose.placeholder"),
+        selected: t("compose.selected"),
+        table: t("compose.table"),
+        confirm: t("compose.confirm"),
+        cancel: t("compose.cancel"),
+        hint: t("compose.hint"),
+        content: t("card.content"),
+        remove: t("card.remove"),
+        count: t("card.count"),
+        clear: t("card.clear"),
+        missing: t("card.missing"),
+        limit: t("card.limit"),
+        jump: t("marker.jump"),
+        tableAdd: t("table.add"),
+        edit: t("bubble.edit"),
+        comment: t("bubble.comment"),
+        saved: t("bubble.saved"),
+        deleted: t("bubble.deleted"),
+        /** Bubble-editor placeholder. The compose box keeps `placeholder`;
+         * a duplicate key here silently overrode it, so the compose box was showing
+         * the bubble's hint. */
+        bubblePlaceholder: t("bubble.placeholder"),
+        save: t("bubble.save"),
+        delete: t("bubble.delete")
+      }), [t]);
+      import_react7.default.useEffect(() => {
+        if (overlay === null) return void 0;
+        const onPointerDown = (event) => {
+          const surface = document.querySelector(".qc-popup, .qc-compose");
+          if (surface !== null && surface.contains(event.target)) return;
+          setOverlay(null);
+        };
+        const onKeyDown = (event) => {
+          if (event.key === "Escape") setOverlay(null);
+        };
+        document.addEventListener("mousedown", onPointerDown, true);
+        document.addEventListener("keydown", onKeyDown, true);
+        return () => {
+          document.removeEventListener("mousedown", onPointerDown, true);
+          document.removeEventListener("keydown", onKeyDown, true);
+        };
+      }, [overlay === null]);
+      import_react7.default.useEffect(() => {
+        if (typeof document === "undefined") return void 0;
+        let frame = 0;
+        let pointerDown = false;
+        let releasePoint = null;
+        const evaluate = () => {
+          frame = 0;
+          if (overlayRef.current !== null) return;
+          if (pointerDown) return;
+          const next = readSelection2(releasePoint);
+          if (next === null) {
+            setOverlay((current) => current === null || current.kind === "actions" ? null : current);
+            return;
+          }
+          if (next.text.length > MAX_QUOTE_CHARS2) {
+            setNotice(labels.tooLong.replace("{max}", String(MAX_QUOTE_CHARS2)));
+            setOverlay(null);
+            return;
+          }
+          setOverlay({ kind: "actions", source: next });
+        };
+        const schedule = () => {
+          if (frame !== 0) return;
+          frame = requestAnimationFrame(evaluate);
+        };
+        const onDown = () => {
+          pointerDown = true;
+          releasePoint = null;
+        };
+        const onUp = (event) => {
+          pointerDown = false;
+          if (typeof event?.clientX === "number" && typeof event?.clientY === "number") {
+            releasePoint = { x: event.clientX, y: event.clientY };
+          } else {
+            releasePoint = null;
+          }
+          schedule();
+        };
+        document.addEventListener("pointerdown", onDown, true);
+        document.addEventListener("mousedown", onDown, true);
+        document.addEventListener("pointerup", onUp, true);
+        document.addEventListener("mouseup", onUp, true);
+        document.addEventListener("keyup", schedule, true);
+        document.addEventListener("selectionchange", schedule);
+        return () => {
+          if (frame !== 0) cancelAnimationFrame(frame);
+          document.removeEventListener("pointerdown", onDown, true);
+          document.removeEventListener("mousedown", onDown, true);
+          document.removeEventListener("pointerup", onUp, true);
+          document.removeEventListener("mouseup", onUp, true);
+          document.removeEventListener("keyup", schedule, true);
+          document.removeEventListener("selectionchange", schedule);
+        };
+      }, [labels]);
+      import_react7.default.useEffect(() => {
+        if (notice === "") return void 0;
+        const timer = setTimeout(() => setNotice(""), 3200);
+        return () => clearTimeout(timer);
+      }, [notice]);
+      import_react7.default.useEffect(() => () => clearFlashRange2(), []);
+      const writeChip = import_react7.default.useCallback((annotation) => chipBridge2.place(
+        inputActions,
+        () => ({ draft, occurrences: inputStateRef.current?.occurrences }),
+        annotation,
+        labels
+      ), [draft, inputActions, labels]);
+      const cancelCompose = import_react7.default.useCallback(() => {
+        clearFlashRange2();
+        setOverlay(null);
+      }, []);
+      const commit = import_react7.default.useCallback((source, comment) => {
+        if (sessionId === void 0) return;
+        const text = typeof comment === "string" ? comment.trim() : "";
+        const stored = addAnnotation2(sessionId, {
+          kind: source.kind,
+          text: source.text,
+          previewText: source.previewText,
+          // The captured markup is what the card replays. It used to be stored
+          // under `html` while the card read `previewHtml`, so every card body
+          // came out blank — the "content is not rendered" symptom.
+          previewHtml: source.kind === "table" ? "" : source.previewHtml,
+          // A table is annotatable too: the requirement asks for a comment box
+          // on tables, so its comment is kept like any other.
+          comment: text,
+          anchor: source.anchor
+        });
+        if (stored === null) {
+          setNotice(labels.limit.replace("{max}", String(MAX_ANNOTATIONS2)));
+          return;
+        }
+        if (!writeChip(stored)) setNotice(labels.unavailable);
+        setOverlay(null);
+        clearSelection2();
+        const flow = findFlow2();
+        const range = flow === null ? null : resolveAnchor(flow, stored.anchor);
+        if (range !== null) flashRange2(range);
+      }, [sessionId, labels, writeChip]);
+      const annotateTable = import_react7.default.useCallback((table) => {
+        const markdown = tableToMarkdown2(table);
+        if (markdown === "") return;
+        const flow = findFlow2();
+        setOverlay({
+          kind: "compose",
+          source: {
+            kind: "table",
+            text: markdown,
+            previewHtml: "",
+            previewText: markdown,
+            rect: table.getBoundingClientRect(),
+            rows: table.rows.length,
+            anchor: flow === null ? { nodeKey: "", offset: 0, quote: "" } : tableAnchor2(flow, table)
+          }
+        });
+        clearSelection2();
+      }, []);
+      const onHighlight = import_react7.default.useCallback((annotation, on) => {
+        const flow = findFlow2();
+        if (flow === null) return;
+        if (!on) {
+          clearFlashRange2();
+          return;
+        }
+        const range = resolveAnchor(flow, annotation.anchor);
+        if (range === null) return;
+        holdRange2(range, () => {
+          const live = findFlow2();
+          return live === null ? null : resolveAnchor(live, annotation.anchor);
+        });
+      }, []);
+      const onJump = import_react7.default.useCallback((annotation) => {
+        const flow = findFlow2();
+        if (flow === null) {
+          setNotice(diagnoseMiss2(null, annotation));
+          return;
+        }
+        setNotice("");
+        navigation2.reveal(flow, annotation).then((range) => {
+          if (range === null) {
+            setNotice(diagnoseMiss2(findFlow2(), annotation));
+            return;
+          }
+          flashRange2(range, FLASH_MS, () => {
+            const live = findFlow2();
+            return live === null ? null : resolveAnchor(live, annotation.anchor);
+          });
+        }, (failure) => {
+          console.error("[dsh-quote-chat] jump failed:", failure);
+          setNotice(diagnoseMiss2(findFlow2(), annotation));
+        });
+      }, []);
+      import_react7.default.useEffect(() => {
+        chipJumpHandler2.current = (ref) => {
+          const match = annotations.find((item) => item.id === ref);
+          if (match === void 0) return false;
+          onJump(match);
+          return true;
+        };
+        return () => {
+          if (chipJumpHandler2.current !== null) chipJumpHandler2.current = null;
+        };
+      }, [annotations, onJump]);
+      const onRemove = import_react7.default.useCallback((annotation) => {
+        if (sessionId === void 0) return;
+        chipBridge2.release(
+          inputActions,
+          () => ({ draft, occurrences: inputStateRef.current?.occurrences }),
+          annotation.id
+        );
+        removeAnnotation2(sessionId, annotation.id);
+      }, [draft, inputActions, sessionId]);
+      const onUpdate = import_react7.default.useCallback((annotation, comment) => {
+        if (sessionId === void 0) return;
+        chipRegistry2.updateComment(annotation.id, comment);
+        updateAnnotation2(sessionId, annotation.id, comment);
+      }, [sessionId]);
+      const onAsk = import_react7.default.useCallback((source) => {
+        const opener = ctx.get("sidebarRight");
+        if (typeof opener?.openTab !== "function") return;
+        quoteHandoff2.remember(source.text);
+        try {
+          opener.openTab(TAB_KIND2, {
+            params: { quote: source.text, title: t("side.title") },
+            revealIfOpened: true
+          });
+        } catch (failure) {
+          console.error("[dsh-quote-chat] side-chat open failed:", failure);
+          setNotice(labels.unavailable);
+          return;
+        }
+        setOverlay(null);
+        clearSelection2();
+      }, [ctx, labels, t]);
+      const canAnnotate = typeof inputActions?.setDraft === "function" || typeof inputActions?.captureInsertion === "function" && typeof inputActions?.insertText === "function";
+      const canAsk = typeof ctx.get("sidebarRight")?.openTab === "function";
+      return h6(
+        import_react7.default.Fragment,
+        null,
+        overlay === null ? null : overlay.kind === "actions" ? h6(ActionPopup2, {
+          anchor: overlay.source.rect,
+          canAnnotate,
+          canAsk,
+          labels,
+          onAnnotate: () => {
+            const source = overlay.source;
+            const flow = findFlow2();
+            if (flow !== null && source.anchor !== void 0) {
+              const range = resolveAnchor(flow, source.anchor);
+              if (range !== null) {
+                holdRange2(range, () => {
+                  const live = findFlow2();
+                  return live === null ? null : resolveAnchor(live, source.anchor);
+                });
+              }
+            }
+            setOverlay({ kind: "compose", source });
+          },
+          onAsk: () => onAsk(overlay.source)
+        }) : h6(ComposerPopover2, {
+          source: overlay.source,
+          labels,
+          onConfirm: (comment) => commit(overlay.source, comment),
+          onCancel: cancelCompose
+        }),
+        h6(ChipCards2, { annotations, occurrences, labels, onJump, onRemove }),
+        h6(MarkerLayer2, { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
+        h6(TableAddButton2, { label: labels.tableAdd, onAdd: annotateTable }),
+        typeof notice === "string" && notice !== "" ? h6("div", { className: "qc-notice" }, notice) : null
+      );
+    };
+  }
+
   // src/index.js
   var MAX_QUOTE_CHARS = 8e3;
   var MAX_ANNOTATIONS = 12;
   var VIEWPORT_MARGIN4 = 8;
-  var h6 = import_react7.default.createElement;
+  var h7 = import_react8.default.createElement;
   var NS = "quoteChat";
   var TAB_ID = "dsh-quote-chat:side";
   var TAB_KIND = "dsh-quote-chat";
@@ -2757,7 +3083,6 @@ function __dshQuoteChatFactory(hostRequire) {
     findFlow: layout.findFlow,
     anchorInTranscript: (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer)
   });
-  var revealWithSearch = (flow, annotation) => navigation.reveal(flow, annotation);
   var findFlow = () => layout.findFlow();
   var highlighter = createHighlighter();
   var flashRange = (range, ms = FLASH_MS, resolve = null) => highlighter.flash(range, ms, resolve);
@@ -2768,23 +3093,23 @@ function __dshQuoteChatFactory(hostRequire) {
   var removeAnnotation = (sessionId, id) => annotationStore.remove(sessionId, id);
   var updateAnnotation = (sessionId, id, comment) => annotationStore.update(sessionId, id, comment);
   function useAnnotations(sessionId) {
-    const subscribe = import_react7.default.useCallback(
+    const subscribe = import_react8.default.useCallback(
       (listener) => annotationStore.subscribe(sessionId, listener),
       [sessionId]
     );
-    const snapshot = import_react7.default.useCallback(
+    const snapshot = import_react8.default.useCallback(
       () => annotationStore.snapshot(sessionId),
       [sessionId]
     );
-    return import_react7.default.useSyncExternalStore(subscribe, snapshot, snapshot);
+    return import_react8.default.useSyncExternalStore(subscribe, snapshot, snapshot);
   }
   var chipRegistry = createChipRegistry();
   var chipBridge = createDraftBridge({ registry: chipRegistry, source: CHIP_SOURCE });
   var chipJumpHandler = { current: null };
   function TableAddButton(props) {
     const { label, onAdd } = props;
-    const [target, setTarget] = import_react7.default.useState(null);
-    import_react7.default.useEffect(() => {
+    const [target, setTarget] = import_react8.default.useState(null);
+    import_react8.default.useEffect(() => {
       if (typeof document === "undefined") return void 0;
       let frame = 0;
       let pending = null;
@@ -2830,14 +3155,14 @@ function __dshQuoteChatFactory(hostRequire) {
       left: Math.max(VIEWPORT_MARGIN4, target.rect.right - 116),
       top: Math.max(VIEWPORT_MARGIN4, target.rect.top + 4)
     };
-    return (0, import_react_dom4.createPortal)(
-      h6("button", {
+    return (0, import_react_dom5.createPortal)(
+      h7("button", {
         type: "button",
         className: "qc-table-add",
         style: { left: `${position.left}px`, top: `${position.top}px` },
         onMouseDown: (event) => event.preventDefault(),
         onClick: () => onAdd(target.element)
-      }, h6(IconAnnotate, null), label),
+      }, h7(IconAnnotate, null), label),
       document.body
     );
   }
@@ -2865,298 +3190,6 @@ function __dshQuoteChatFactory(hostRequire) {
       endPath: path,
       endOffset: table.childNodes.length,
       quote: table.innerText.trim()
-    };
-  }
-  function annotationDock(deps) {
-    const { ctx, t: boundT } = deps;
-    return function AnnotationDock(props) {
-      const { inputActions, useInput, sessionId } = props;
-      const t = typeof props.t === "function" ? props.t : boundT;
-      const draft = useDraft(useInput);
-      const occurrences = useDraftOccurrences(useInput);
-      const inputStateRef = import_react7.default.useRef(null);
-      inputStateRef.current = { draft, occurrences };
-      const annotations = useAnnotations(sessionId);
-      const [overlay, setOverlay] = import_react7.default.useState(null);
-      const [notice, setNotice] = import_react7.default.useState("");
-      const overlayRef = import_react7.default.useRef(null);
-      overlayRef.current = overlay;
-      const labels = import_react7.default.useMemo(() => ({
-        annotate: t("popup.annotate"),
-        askInSide: t("popup.askInSide"),
-        tooLong: t("popup.tooLong"),
-        unavailable: t("popup.unavailable"),
-        title: t("compose.title"),
-        placeholder: t("compose.placeholder"),
-        selected: t("compose.selected"),
-        table: t("compose.table"),
-        confirm: t("compose.confirm"),
-        cancel: t("compose.cancel"),
-        hint: t("compose.hint"),
-        content: t("card.content"),
-        remove: t("card.remove"),
-        count: t("card.count"),
-        clear: t("card.clear"),
-        missing: t("card.missing"),
-        limit: t("card.limit"),
-        jump: t("marker.jump"),
-        tableAdd: t("table.add"),
-        edit: t("bubble.edit"),
-        comment: t("bubble.comment"),
-        saved: t("bubble.saved"),
-        deleted: t("bubble.deleted"),
-        /** Bubble-editor placeholder. The compose box keeps `placeholder`;
-         * a duplicate key here silently overrode it, so the compose box was showing
-         * the bubble's hint. */
-        bubblePlaceholder: t("bubble.placeholder"),
-        save: t("bubble.save"),
-        delete: t("bubble.delete")
-      }), [t]);
-      import_react7.default.useEffect(() => {
-        if (overlay === null) return void 0;
-        const onPointerDown = (event) => {
-          const surface = document.querySelector(".qc-popup, .qc-compose");
-          if (surface !== null && surface.contains(event.target)) return;
-          setOverlay(null);
-        };
-        const onKeyDown = (event) => {
-          if (event.key === "Escape") setOverlay(null);
-        };
-        document.addEventListener("mousedown", onPointerDown, true);
-        document.addEventListener("keydown", onKeyDown, true);
-        return () => {
-          document.removeEventListener("mousedown", onPointerDown, true);
-          document.removeEventListener("keydown", onKeyDown, true);
-        };
-      }, [overlay === null]);
-      import_react7.default.useEffect(() => {
-        if (typeof document === "undefined") return void 0;
-        let frame = 0;
-        let pointerDown = false;
-        let releasePoint = null;
-        const evaluate = () => {
-          frame = 0;
-          if (overlayRef.current !== null) return;
-          if (pointerDown) return;
-          const next = readSelection(releasePoint);
-          if (next === null) {
-            setOverlay((current) => current === null || current.kind === "actions" ? null : current);
-            return;
-          }
-          if (next.text.length > MAX_QUOTE_CHARS) {
-            setNotice(labels.tooLong.replace("{max}", String(MAX_QUOTE_CHARS)));
-            setOverlay(null);
-            return;
-          }
-          setOverlay({ kind: "actions", source: next });
-        };
-        const schedule = () => {
-          if (frame !== 0) return;
-          frame = requestAnimationFrame(evaluate);
-        };
-        const onDown = () => {
-          pointerDown = true;
-          releasePoint = null;
-        };
-        const onUp = (event) => {
-          pointerDown = false;
-          if (typeof event?.clientX === "number" && typeof event?.clientY === "number") {
-            releasePoint = { x: event.clientX, y: event.clientY };
-          } else {
-            releasePoint = null;
-          }
-          schedule();
-        };
-        document.addEventListener("pointerdown", onDown, true);
-        document.addEventListener("mousedown", onDown, true);
-        document.addEventListener("pointerup", onUp, true);
-        document.addEventListener("mouseup", onUp, true);
-        document.addEventListener("keyup", schedule, true);
-        document.addEventListener("selectionchange", schedule);
-        return () => {
-          if (frame !== 0) cancelAnimationFrame(frame);
-          document.removeEventListener("pointerdown", onDown, true);
-          document.removeEventListener("mousedown", onDown, true);
-          document.removeEventListener("pointerup", onUp, true);
-          document.removeEventListener("mouseup", onUp, true);
-          document.removeEventListener("keyup", schedule, true);
-          document.removeEventListener("selectionchange", schedule);
-        };
-      }, [labels]);
-      import_react7.default.useEffect(() => {
-        if (notice === "") return void 0;
-        const timer = setTimeout(() => setNotice(""), 3200);
-        return () => clearTimeout(timer);
-      }, [notice]);
-      import_react7.default.useEffect(() => () => clearFlashRange(), []);
-      const writeChip = import_react7.default.useCallback((annotation) => chipBridge.place(
-        inputActions,
-        () => ({ draft, occurrences: inputStateRef.current?.occurrences }),
-        annotation,
-        labels
-      ), [draft, inputActions, labels]);
-      const cancelCompose = import_react7.default.useCallback(() => {
-        clearFlashRange();
-        setOverlay(null);
-      }, []);
-      const commit = import_react7.default.useCallback((source, comment) => {
-        if (sessionId === void 0) return;
-        const text = typeof comment === "string" ? comment.trim() : "";
-        const stored = addAnnotation(sessionId, {
-          kind: source.kind,
-          text: source.text,
-          previewText: source.previewText,
-          // The captured markup is what the card replays. It used to be stored
-          // under `html` while the card read `previewHtml`, so every card body
-          // came out blank — the "content is not rendered" symptom.
-          previewHtml: source.kind === "table" ? "" : source.previewHtml,
-          // A table is annotatable too: the requirement asks for a comment box
-          // on tables, so its comment is kept like any other.
-          comment: text,
-          anchor: source.anchor
-        });
-        if (stored === null) {
-          setNotice(labels.limit.replace("{max}", String(MAX_ANNOTATIONS)));
-          return;
-        }
-        if (!writeChip(stored)) setNotice(labels.unavailable);
-        setOverlay(null);
-        clearSelection();
-        const flow = findFlow();
-        const range = flow === null ? null : resolveAnchor(flow, stored.anchor);
-        if (range !== null) flashRange(range);
-      }, [sessionId, labels, writeChip]);
-      const annotateTable = import_react7.default.useCallback((table) => {
-        const markdown = tableToMarkdown(table);
-        if (markdown === "") return;
-        const flow = findFlow();
-        setOverlay({
-          kind: "compose",
-          source: {
-            kind: "table",
-            text: markdown,
-            previewHtml: "",
-            previewText: markdown,
-            rect: table.getBoundingClientRect(),
-            rows: table.rows.length,
-            anchor: flow === null ? { nodeKey: "", offset: 0, quote: "" } : tableAnchor(flow, table)
-          }
-        });
-        clearSelection();
-      }, []);
-      const onHighlight = import_react7.default.useCallback((annotation, on) => {
-        const flow = findFlow();
-        if (flow === null) return;
-        if (!on) {
-          clearFlashRange();
-          return;
-        }
-        const range = resolveAnchor(flow, annotation.anchor);
-        if (range === null) return;
-        holdRange(range, () => {
-          const live = findFlow();
-          return live === null ? null : resolveAnchor(live, annotation.anchor);
-        });
-      }, []);
-      const onJump = import_react7.default.useCallback((annotation) => {
-        const flow = findFlow();
-        if (flow === null) {
-          setNotice(diagnoseMiss(null, annotation));
-          return;
-        }
-        setNotice("");
-        revealWithSearch(flow, annotation).then((range) => {
-          if (range === null) {
-            setNotice(diagnoseMiss(findFlow(), annotation));
-            return;
-          }
-          flashRange(range, FLASH_MS, () => {
-            const live = findFlow();
-            return live === null ? null : resolveAnchor(live, annotation.anchor);
-          });
-        }, (failure) => {
-          console.error("[dsh-quote-chat] jump failed:", failure);
-          setNotice(diagnoseMiss(findFlow(), annotation));
-        });
-      }, []);
-      import_react7.default.useEffect(() => {
-        chipJumpHandler.current = (ref) => {
-          const match = annotations.find((item) => item.id === ref);
-          if (match === void 0) return false;
-          onJump(match);
-          return true;
-        };
-        return () => {
-          if (chipJumpHandler.current !== null) chipJumpHandler.current = null;
-        };
-      }, [annotations, onJump]);
-      const onRemove = import_react7.default.useCallback((annotation) => {
-        if (sessionId === void 0) return;
-        chipBridge.release(
-          inputActions,
-          () => ({ draft, occurrences: inputStateRef.current?.occurrences }),
-          annotation.id
-        );
-        removeAnnotation(sessionId, annotation.id);
-      }, [draft, inputActions, sessionId]);
-      const onUpdate = import_react7.default.useCallback((annotation, comment) => {
-        if (sessionId === void 0) return;
-        chipRegistry.updateComment(annotation.id, comment);
-        updateAnnotation(sessionId, annotation.id, comment);
-      }, [sessionId]);
-      const onAsk = import_react7.default.useCallback((source) => {
-        const opener = ctx.get("sidebarRight");
-        if (typeof opener?.openTab !== "function") return;
-        quoteHandoff.remember(source.text);
-        try {
-          opener.openTab(TAB_KIND, {
-            params: { quote: source.text, title: t("side.title") },
-            revealIfOpened: true
-          });
-        } catch (failure) {
-          console.error("[dsh-quote-chat] side-chat open failed:", failure);
-          setNotice(labels.unavailable);
-          return;
-        }
-        setOverlay(null);
-        clearSelection();
-      }, [ctx, labels, t]);
-      const canAnnotate = typeof inputActions?.setDraft === "function" || typeof inputActions?.captureInsertion === "function" && typeof inputActions?.insertText === "function";
-      const canAsk = typeof ctx.get("sidebarRight")?.openTab === "function";
-      return h6(
-        import_react7.default.Fragment,
-        null,
-        overlay === null ? null : overlay.kind === "actions" ? h6(ActionPopup, {
-          anchor: overlay.source.rect,
-          canAnnotate,
-          canAsk,
-          labels,
-          onAnnotate: () => {
-            const source = overlay.source;
-            const flow = findFlow();
-            if (flow !== null && source.anchor !== void 0) {
-              const range = resolveAnchor(flow, source.anchor);
-              if (range !== null) {
-                holdRange(range, () => {
-                  const live = findFlow();
-                  return live === null ? null : resolveAnchor(live, source.anchor);
-                });
-              }
-            }
-            setOverlay({ kind: "compose", source });
-          },
-          onAsk: () => onAsk(overlay.source)
-        }) : h6(ComposerPopover, {
-          source: overlay.source,
-          labels,
-          onConfirm: (comment) => commit(overlay.source, comment),
-          onCancel: cancelCompose
-        }),
-        h6(ChipCards, { annotations, occurrences, labels, onJump, onRemove }),
-        h6(MarkerLayer, { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
-        h6(TableAddButton, { label: labels.tableAdd, onAdd: annotateTable }),
-        typeof notice === "string" && notice !== "" ? h6("div", { className: "qc-notice" }, notice) : null
-      );
     };
   }
   function applyImpl(ctx) {
@@ -3235,7 +3268,36 @@ function __dshQuoteChatFactory(hostRequire) {
         id: "quote-chat-annotations",
         order: 15,
         locale: NS
-      }, annotationDock({ ctx, t })));
+      }, annotationDock({
+        ctx,
+        navigation,
+        chipRegistry,
+        chipBridge,
+        chipJumpHandler,
+        addAnnotation,
+        removeAnnotation,
+        updateAnnotation,
+        useAnnotations,
+        flashRange,
+        clearFlashRange,
+        holdRange,
+        quoteHandoff,
+        ActionPopup,
+        ComposerPopover,
+        ChipCards,
+        MarkerLayer,
+        TableAddButton,
+        diagnoseMiss,
+        tableAnchor,
+        readSelection,
+        clearSelection,
+        tableToMarkdown,
+        findFlow,
+        MAX_QUOTE_CHARS,
+        MAX_ANNOTATIONS,
+        TAB_KIND,
+        t
+      })));
       return () => {
         if (typeof release === "function") release();
       };
