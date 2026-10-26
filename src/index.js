@@ -156,15 +156,12 @@ const { MarkerLayer } = createMarkerLayer({
 const quoteHandoff = createQuoteHandoff()
 
 /**
- * The quote a freshly opened side chat should show.
- * @param carried - the quote the tab's own navigation params carried.
- * @returns the carried quote, a fresh pending one, or an empty string.
+ * The side chat. It borrows only the handoff, and binds `forTab` itself: the wrapper that used to
+ * sit here existed solely to rename the method.
  */
-function quoteForTab(carried) {
-  return quoteHandoff.forTab(carried)
-}
-
-const { SideChat, SideChatTab } = createSideChat({ quoteForTab })
+const { SideChat, SideChatTab } = createSideChat({
+  quoteForTab: (carried) => quoteHandoff.forTab(carried),
+})
 
 const { ActionPopup, ComposerPopover } = createPopovers({
   findFlow: layout.findFlow,
@@ -179,14 +176,6 @@ const { ActionPopup, ComposerPopover } = createPopovers({
  */
 const highlighter = createHighlighter()
 
-/** Paint the transient glow on a range, then clear it. */
-const flashRange = (range, ms = FLASH_MS, resolve = null) => highlighter.flash(range, ms, resolve)
-
-/** Clear any highlight currently painted. */
-const clearFlashRange = () => highlighter.clear()
-
-/** Paint a highlight that stays until cleared. */
-const holdRange = (range, resolve = null) => highlighter.hold(range, resolve)
 
 // #region annotation store
 
@@ -345,7 +334,7 @@ function applyImpl(ctx) {
         // Chip identity and the draft seam.
         chips: { registry: chipRegistry, bridge: chipBridge, jumpHandler: chipJumpHandler },
         // Painting: the transient glow and the held editor highlight.
-        highlights: { flashRange, clearFlashRange, holdRange },
+        highlights: highlighter,
         // Restoring a stored passage into view.
         navigation,
         // The passage a freshly opened side chat should show.

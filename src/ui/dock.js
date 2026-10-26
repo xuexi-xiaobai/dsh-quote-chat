@@ -71,7 +71,10 @@ export function annotationDock(deps) {
   // The store's own methods, used directly: the entry's wrappers were identical pass-throughs.
   const { add: addAnnotation, remove: removeAnnotation, update: updateAnnotation } = annotationStore
   const { registry: chipRegistry, bridge: chipBridge, jumpHandler: chipJumpHandler } = chips
-  const { flashRange, clearFlashRange, holdRange } = highlights
+  // The highlighter's own methods; the entry's wrappers added a default that no call site used.
+  const {
+    flash: flashRange, clear: clearFlashRange, hold: holdRange,
+  } = highlights
   const {
     ActionPopup, ComposerPopover, ChipCards, MarkerLayer, TableAddButton,
   } = surfaces

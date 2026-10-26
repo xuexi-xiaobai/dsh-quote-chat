@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:4cad6e53295f826a
+ * Artifact: sha256:d5a4752b9213e485
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -2414,7 +2414,7 @@ function __dshQuoteChatFactory(hostRequire) {
 
   // src/ui/side-chat.js
   var h5 = import_react7.default.createElement;
-  function createSideChat({ quoteForTab: quoteForTab2 }) {
+  function createSideChat({ quoteForTab }) {
     function SideChat2(props) {
       const { quote, t, locale, inputActions, useInput } = props;
       const draft = useDraft(useInput);
@@ -2620,7 +2620,7 @@ function __dshQuoteChatFactory(hostRequire) {
     function SideChatTab2(props) {
       const { useTabInfo, inputActions, useInput, t, pluginCtx } = props;
       const info = typeof useTabInfo === "function" ? useTabInfo() : void 0;
-      const quote = quoteForTab2(info?.tab?.navigation?.params?.quote);
+      const quote = quoteForTab(info?.tab?.navigation?.params?.quote);
       const localeService = pluginCtx?.locale;
       const locale = import_react7.default.useSyncExternalStore(
         import_react7.default.useCallback(
@@ -2673,7 +2673,11 @@ function __dshQuoteChatFactory(hostRequire) {
     } = annotations;
     const { add: addAnnotation, remove: removeAnnotation, update: updateAnnotation } = annotationStore2;
     const { registry: chipRegistry2, bridge: chipBridge2, jumpHandler: chipJumpHandler2 } = chips;
-    const { flashRange: flashRange2, clearFlashRange: clearFlashRange2, holdRange: holdRange2 } = highlights;
+    const {
+      flash: flashRange,
+      clear: clearFlashRange,
+      hold: holdRange
+    } = highlights;
     const {
       ActionPopup: ActionPopup2,
       ComposerPopover: ComposerPopover2,
@@ -2809,7 +2813,7 @@ function __dshQuoteChatFactory(hostRequire) {
         const timer = setTimeout(() => setNotice(""), 3200);
         return () => clearTimeout(timer);
       }, [notice]);
-      import_react8.default.useEffect(() => () => clearFlashRange2(), []);
+      import_react8.default.useEffect(() => () => clearFlashRange(), []);
       const writeChip = import_react8.default.useCallback((annotation) => chipBridge2.place(
         inputActions,
         () => ({ draft, occurrences: inputStateRef.current?.occurrences }),
@@ -2817,7 +2821,7 @@ function __dshQuoteChatFactory(hostRequire) {
         labels
       ), [draft, inputActions, labels]);
       const cancelCompose = import_react8.default.useCallback(() => {
-        clearFlashRange2();
+        clearFlashRange();
         setOverlay(null);
       }, []);
       const commit = import_react8.default.useCallback((source, comment) => {
@@ -2845,7 +2849,7 @@ function __dshQuoteChatFactory(hostRequire) {
         clearSelection2();
         const flow = findFlow();
         const range = flow === null ? null : resolveAnchor(flow, stored.anchor);
-        if (range !== null) flashRange2(range);
+        if (range !== null) flashRange(range);
       }, [sessionId, labels, writeChip]);
       const annotateTable = import_react8.default.useCallback((table) => {
         const markdown = tableToMarkdown2(table);
@@ -2869,12 +2873,12 @@ function __dshQuoteChatFactory(hostRequire) {
         const flow = findFlow();
         if (flow === null) return;
         if (!on) {
-          clearFlashRange2();
+          clearFlashRange();
           return;
         }
         const range = resolveAnchor(flow, annotation.anchor);
         if (range === null) return;
-        holdRange2(range, () => {
+        holdRange(range, () => {
           const live = findFlow();
           return live === null ? null : resolveAnchor(live, annotation.anchor);
         });
@@ -2891,7 +2895,7 @@ function __dshQuoteChatFactory(hostRequire) {
             setNotice(diagnoseMiss2(findFlow(), annotation));
             return;
           }
-          flashRange2(range, FLASH_MS, () => {
+          flashRange(range, FLASH_MS, () => {
             const live = findFlow();
             return live === null ? null : resolveAnchor(live, annotation.anchor);
           });
@@ -2958,7 +2962,7 @@ function __dshQuoteChatFactory(hostRequire) {
             if (flow !== null && source.anchor !== void 0) {
               const range = resolveAnchor(flow, source.anchor);
               if (range !== null) {
-                holdRange2(range, () => {
+                holdRange(range, () => {
                   const live = findFlow();
                   return live === null ? null : resolveAnchor(live, source.anchor);
                 });
@@ -3192,18 +3196,14 @@ function __dshQuoteChatFactory(hostRequire) {
     anchorAboveBubble: (flow, box, size) => layout.anchorAboveBubble(flow, box, size)
   });
   var quoteHandoff = createQuoteHandoff();
-  function quoteForTab(carried) {
-    return quoteHandoff.forTab(carried);
-  }
-  var { SideChat, SideChatTab } = createSideChat({ quoteForTab });
+  var { SideChat, SideChatTab } = createSideChat({
+    quoteForTab: (carried) => quoteHandoff.forTab(carried)
+  });
   var { ActionPopup, ComposerPopover } = createPopovers({
     findFlow: layout.findFlow,
     anchorInTranscript: (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer)
   });
   var highlighter = createHighlighter();
-  var flashRange = (range, ms = FLASH_MS, resolve = null) => highlighter.flash(range, ms, resolve);
-  var clearFlashRange = () => highlighter.clear();
-  var holdRange = (range, resolve = null) => highlighter.hold(range, resolve);
   var annotationStore = createAnnotationStore({ maxAnnotations: MAX_ANNOTATIONS });
   var useAnnotations = makeUseAnnotations(annotationStore);
   var chipRegistry = createChipRegistry();
@@ -3292,7 +3292,7 @@ function __dshQuoteChatFactory(hostRequire) {
         // Chip identity and the draft seam.
         chips: { registry: chipRegistry, bridge: chipBridge, jumpHandler: chipJumpHandler },
         // Painting: the transient glow and the held editor highlight.
-        highlights: { flashRange, clearFlashRange, holdRange },
+        highlights: highlighter,
         // Restoring a stored passage into view.
         navigation,
         // The passage a freshly opened side chat should show.

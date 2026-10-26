@@ -157,7 +157,10 @@ check('the highlight fades in',
     // Three halves, three files: the stylesheet declares the rule, the entry paints through the
     // instance highlighter, and the gutter calls the callback it is given.
     /::highlight\(quote-chat-hold\)/.test(css)
-      && /const holdRange = \(range, resolve = null\) => highlighter\.hold\(range, resolve\)/.test(source)
+      // The entry now hands the highlighter itself to the dock, which aliases `hold` to the name the
+      // body uses. Asserting the instance and the alias together is what proves the path is wired.
+      && /const highlighter = createHighlighter\(\)/.test(source)
+      && /hold: holdRange/.test(dockSource)
       && /onHighlight\(annotation, true\)/.test(markersSource),
     'opening the editor does not light the passage'),
 check('the held highlight is cleared on close',
