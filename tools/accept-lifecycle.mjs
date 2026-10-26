@@ -177,6 +177,40 @@ export async function run({ browser, check: report, url }) {
   const composeOpen = await waitFor("document.querySelector('.qc-compose textarea') !== null", { timeoutMs: 6000 })
   check('clicking annotate opens the comment box', composeOpen !== null)
 
+  // The compose box follows the same rule as the toolbar it replaces: near the pointer release
+  // point, inside the readable band. Asserting that it is attached to the selection is what
+  // distinguishes a positioned panel from one that defaulted to a corner.
+  // The compose box replaces the toolbar for the same selection. Its anchor is the passage
+  // rectangle, which has to be read from the probe block rather than from `getSelection()`:
+  // clicking 添加注释 consumes the selection, so a live range would report a zero rect and the
+  // measurement would silently become "distance from the top of the viewport".
+  const composeGeometry = await read(() => {
+    const box = document.querySelector('.qc-compose')
+    const passage = document.querySelector('[data-qc-probe="1"]')
+    if (box === null || passage === null) return null
+    const r = box.getBoundingClientRect()
+    const p = passage.getBoundingClientRect()
+    return {
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+      // Vertical distance from the passage it describes. The panel is tall, so it may extend
+      // beyond the passage; what matters is that it starts near it rather than at a corner.
+      topVersusPassage: Math.round(r.top - p.top),
+      overlapVertically: r.top < p.bottom && r.bottom > p.top,
+      inViewport: r.top >= 0 && r.left >= 0
+        && r.bottom <= window.innerHeight && r.right <= window.innerWidth,
+    }
+  })
+  check('the compose box is inside the viewport',
+    composeGeometry !== null && composeGeometry.inViewport === true,
+    JSON.stringify(composeGeometry))
+  check('the compose box is anchored near the selection, not parked at a corner',
+    composeGeometry !== null
+      && Math.abs(composeGeometry.topVersusPassage) <= 340
+      && composeGeometry.overlapVertically === true,
+    JSON.stringify(composeGeometry))
+
+
   const beforeMarkers = await count('.qc-marker')
   const beforeChips = await count('[data-composer-chip="quote-chat"]')
 
@@ -252,6 +286,32 @@ export async function run({ browser, check: report, url }) {
   })
   check('the card shows the comment', card !== null && card.includes(COMMENT), JSON.stringify(card))
 
+  // The card floats above its chip. On the live page the measured gap is about 3px, and the card
+  // must not cover the chip — covering it would hide the number the card refers to.
+  const cardGeometry = await read(() => {
+    const element = document.querySelector('.qc-card')
+    const chip = document.querySelector('[data-composer-chip="quote-chat"]')
+    if (element === null || chip === null) return null
+    const c = element.getBoundingClientRect()
+    const h = chip.getBoundingClientRect()
+    return {
+      gap: Math.round(h.top - c.bottom),
+      aboveChip: c.bottom <= h.top + 2,
+      coversChip: c.top < h.bottom && c.bottom > h.top
+        && c.left < h.right && c.right > h.left,
+      inViewport: c.top >= 0 && c.left >= 0
+        && c.bottom <= window.innerHeight && c.right <= window.innerWidth,
+    }
+  })
+  check('the card sits above its chip without covering it',
+    cardGeometry !== null && cardGeometry.aboveChip === true
+      && cardGeometry.coversChip === false,
+    JSON.stringify(cardGeometry))
+  check('the card is inside the viewport',
+    cardGeometry !== null && cardGeometry.inViewport === true,
+    JSON.stringify(cardGeometry))
+
+
   await moveAway()
   const cardHidden = await waitFor("document.querySelectorAll('.qc-card').length === 0", { timeoutMs: 6000 })
   check('the card clears when the pointer leaves', cardHidden !== null)
@@ -274,6 +334,100 @@ export async function run({ browser, check: report, url }) {
       : { supported: true, held: registry.get('quote-chat-flash') !== undefined }
   })
   check('opening the editor lights the passage', held.held === true, JSON.stringify(held))
+
+  // ── Placement: the editor panel against its bubble ─────────────────────
+  // Measured on the live page: the panel sits 4-8px above its bubble and its right edge lands
+  // within 8px of the bubble's. It does NOT sit BUBBLE_CLEARANCE (30px) above, because that
+  // constant is an offset in the scroll container's coordinate space, not a visible gap.
+  const panelGeometry = await read(() => {
+    const panel = document.querySelector('.qc-bubble-panel')
+    const bubble = document.querySelector('.qc-marker')
+    if (panel === null || bubble === null) return null
+    const p = panel.getBoundingClientRect()
+    const b = bubble.getBoundingClientRect()
+    return {
+      gap: Math.round(b.top - p.bottom),
+      rightDelta: Math.round(p.right - b.right),
+      above: p.bottom <= b.top + 2,
+      inViewport: p.top >= 0 && p.left >= 0
+        && p.bottom <= window.innerHeight && p.right <= window.innerWidth,
+    }
+  })
+  check('the editor panel sits just above its bubble',
+    panelGeometry !== null && panelGeometry.above === true
+      && panelGeometry.gap >= 0 && panelGeometry.gap <= 12,
+    JSON.stringify(panelGeometry))
+  check('the editor panel is horizontally aligned with its bubble',
+    panelGeometry !== null && Math.abs(panelGeometry.rightDelta) <= 12,
+    JSON.stringify(panelGeometry))
+  check('the editor panel is inside the viewport',
+    panelGeometry !== null && panelGeometry.inViewport === true,
+    JSON.stringify(panelGeometry))
+
+  // ── Placement survives a scroll ────────────────────────────────────────
+  // The surfaces are absolutely positioned inside the transcript's scroll container, so they ride
+  // the content. A surface that positioned itself once against the viewport would pass every other
+  // assertion in this file and fail only here, which is why this check exists.
+  //
+  // The scroll is verified before the geometry is compared: the transcript starts pinned to the
+  // bottom, so a downward scroll is a no-op and would make the comparison vacuously true.
+  const scrollProbe = await read(() => {
+    const flow = document.querySelector('[data-slot="conversation.chat.flow"]')
+    if (flow === null) return { found: false }
+    let scroller = flow.parentElement
+    while (scroller !== null && scroller.scrollHeight <= scroller.clientHeight + 4) {
+      scroller = scroller.parentElement
+    }
+    if (scroller === null) return { found: false }
+    const start = scroller.scrollTop
+    // Upward: the transcript is pinned to the bottom on open.
+    scroller.scrollTop = Math.max(0, start - 120)
+    return {
+      found: true,
+      start: Math.round(start),
+      end: Math.round(scroller.scrollTop),
+      moved: Math.round(scroller.scrollTop) !== Math.round(start),
+    }
+  })
+  await browser.page.waitForTimeout(180)
+
+  if (scrollProbe.found !== true || scrollProbe.moved !== true) {
+    // Reported as skipped, not passed: without a real scroll this comparison proves nothing.
+    check('the surfaces follow their anchors when the transcript scrolls',
+      false, 'SKIP: the transcript could not scroll in this session')
+  } else {
+    const afterScroll = await read(() => {
+      const marker = document.querySelector('.qc-marker')
+      const panel = document.querySelector('.qc-bubble-panel')
+      const block = document.querySelector('[data-qc-probe="1"]')
+      if (marker === null || block === null) return null
+      const m = marker.getBoundingClientRect()
+      const b = block.getBoundingClientRect()
+      const out = {
+        markerToPassage: Math.round(m.top - b.top),
+        inViewport: m.top >= 0 && m.left >= 0
+          && m.bottom <= window.innerHeight && m.right <= window.innerWidth,
+      }
+      if (panel !== null) {
+        const p = panel.getBoundingClientRect()
+        const bubble = marker.getBoundingClientRect()
+        out.panelGap = Math.round(bubble.top - p.bottom)
+      }
+      return out
+    })
+    check('the marker still sits level with its passage after a scroll',
+      afterScroll !== null && Math.abs(afterScroll.markerToPassage) <= 6,
+      JSON.stringify({ scroll: scrollProbe, after: afterScroll }))
+    check('the marker stays inside the viewport after a scroll',
+      afterScroll !== null && afterScroll.inViewport === true,
+      JSON.stringify(afterScroll))
+    // A few pixels of drift is expected and recorded in layout.js as an open observation; an
+    // unanchored panel would lose its relationship to the bubble entirely.
+    check('the editor panel keeps its gap to the bubble after a scroll',
+      afterScroll !== null && afterScroll.panelGap !== undefined
+        && afterScroll.panelGap >= 0 && afterScroll.panelGap <= 16,
+      JSON.stringify({ scroll: scrollProbe, after: afterScroll }))
+  }
 
   // ── Delete via the chip's own × ────────────────────────────────────────
   // A second, independent path. `.qc-chip-remove` is rendered only while the chip is hovered, and
