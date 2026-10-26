@@ -70,8 +70,10 @@ check('the observer is disconnected on teardown',
 // The measurement helpers now live in layout.js; this asserts the delegate reaches them rather
 // than that the implementation is declared in this file.
 check('the column element is derived, not hard-coded',
-  /const columnElement = \(flow\) => layout\.columnElement\(flow\)/.test(source),
-  'no columnElement delegate')
+  // The entry used to keep a pass-through wrapper for this; it was redundant, because callers use
+  // the layout instance directly. What the assertion means is that the column comes from the flow.
+  /columnElement/.test(layoutSource) && !/columnElement = document\.querySelector/.test(layoutSource),
+  'the column element is not derived from the flow')
 
 // ── 3. The jump centres in the readable area ──────────────────────────────
 // The band arithmetic is in layout.js. Here: the delegate exists, and layout.js still subtracts

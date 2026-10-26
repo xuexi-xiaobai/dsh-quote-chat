@@ -141,12 +141,20 @@ try {
   check('the question can be sent', sent === true)
 
   // ── The answer: wait for content, not for a duration ───────────────────
-  // A model answer arrives progressively. Waiting for "two bodies and no streaming indicator" is
-  // what actually settles; a fixed sleep either overshoots or flakes.
+  // A model answer arrives progressively, and the streaming indicator is NOT a completion signal:
+  // the dots render only while the message body is still empty (side-chat.js), so they disappear as
+  // soon as the first token lands. Waiting on them accepted a half sentence as a finished answer.
+  //
+  // Completion is `busy === false`, which the panel shows as the Stop button being replaced by the
+  // Send button. That is the condition that actually settles.
   const answered = await waitFor(
     "(() => { const t = document.querySelector('[data-slot=\"sidebar.right.pane.tab\"]');"
-      + " if (t === null) return false; const bodies = [...t.querySelectorAll('.qc-msg-body')];"
-      + " return bodies.length >= 2 && t.querySelector('.qc-dots') === null })()",
+      + " if (t === null) return false;"
+      + " const bodies = [...t.querySelectorAll('.qc-msg-body')];"
+      + " if (bodies.length < 2) return false;"
+      + " const buttons = [...t.querySelectorAll('button')];"
+      + " const streaming = buttons.some((b) => /停止|Stop/i.test(b.textContent ?? ''));"
+      + " return streaming === false && (bodies[bodies.length - 1].textContent ?? '').trim().length > 10 })()",
     { timeoutMs: 90000, intervalMs: 200 },
   )
   check('the tab renders a question and a settled answer', answered !== null,
@@ -160,12 +168,15 @@ try {
       bodies: bodies.map((body) => body.slice(0, 24)),
       assistant: bodies.length > 1 ? bodies[bodies.length - 1] : '',
       dots: tab.querySelector('.qc-dots') !== null,
+      // The authoritative signal: the Stop button exists only while a request is in flight.
+      streaming: [...tab.querySelectorAll('button')]
+        .some((button) => /停止|Stop/i.test(button.textContent ?? '')),
     }
   })
   check('the answer has content of its own',
     thread !== null && typeof thread.assistant === 'string' && thread.assistant.length > 10,
     JSON.stringify(thread?.assistant?.slice(0, 60)))
-  check('the answer is not still streaming', thread !== null && thread.dots === false)
+  check('the answer is not still streaming', thread !== null && thread.streaming === false)
 
   // The answer must be its own text, not a copy of the question.
   check('the answer is distinct from the question',

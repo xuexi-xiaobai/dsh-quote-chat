@@ -131,8 +131,6 @@ const navigation = createNavigation({ layout })
  * Created ONCE here, not inside a render: a factory call per render would mint new component
  * types and React would unmount and remount them, losing the editor's focus and measured size.
  */
-const { composerContainer } = layout
-
 const { ChipCards, AnnotationCard } = createCards({ composerContainer: layout.composerContainer })
 
 /**
@@ -147,12 +145,6 @@ const { MarkerLayer } = createMarkerLayer({
   anchorAboveBubble: (flow, box, size) => layout.anchorAboveBubble(flow, box, size)
 })
 
-/**
- * The side chat.
- *
- * Created once during wiring. The tab body keeps its own message list and abort controller; the
- * only thing it borrows from the instance is the quote handoff.
- */
 /**
  * The passage a freshly opened side chat should show.
  *
@@ -177,18 +169,6 @@ const { ActionPopup, ComposerPopover } = createPopovers({
   findFlow: layout.findFlow,
   anchorInTranscript: (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer)
 })
-
-/** The chat flow anchor. */
-const findFlow = () => layout.findFlow()
-
-/** Place a surface against a selection, inside the readable band. */
-const anchorInTranscript = (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer)
-
-/** Place the comment panel above a bubble, right edges flush. */
-const anchorAboveBubble = (flow, bubble, size) => layout.anchorAboveBubble(flow, bubble, size)
-
-/** The element whose width defines the text column. */
-const columnElement = (flow) => layout.columnElement(flow)
 
 /**
  * Range highlights: the transient jump glow and the held editor glow.
@@ -399,7 +379,7 @@ function applyImpl(ctx) {
         flashRange, clearFlashRange, holdRange, quoteHandoff,
         ActionPopup, ComposerPopover, ChipCards, MarkerLayer, TableAddButton,
         diagnoseMiss, tableAnchor, readSelection, clearSelection, tableToMarkdown,
-        findFlow,
+        findFlow: layout.findFlow,
         MAX_QUOTE_CHARS,
         MAX_ANNOTATIONS,
         TAB_KIND,

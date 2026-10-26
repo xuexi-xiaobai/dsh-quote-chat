@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:69c27a961f2eb3e1
+ * Artifact: sha256:15048b7e8980f75a
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -740,7 +740,7 @@ function __dshQuoteChatFactory(hostRequire) {
   function createLayout() {
     const columnCache = /* @__PURE__ */ new WeakMap();
     const containerCache = /* @__PURE__ */ new WeakMap();
-    function findFlow2() {
+    function findFlow() {
       if (typeof document === "undefined") return null;
       let fallback = null;
       for (const element of document.querySelectorAll(FLOW_SELECTOR)) {
@@ -909,7 +909,7 @@ function __dshQuoteChatFactory(hostRequire) {
     }
     return {
       composerContainer,
-      findFlow: findFlow2,
+      findFlow,
       scrollContainerOf,
       containerFor,
       findComposerDock,
@@ -1049,7 +1049,7 @@ function __dshQuoteChatFactory(hostRequire) {
   }
   function createNavigation({
     layout: layout2,
-    findFlow: findFlow2 = () => layout2.findFlow(),
+    findFlow = () => layout2.findFlow(),
     resolve = resolveAnchor
   } = {}) {
     function scrollToRange(range, flow) {
@@ -1079,7 +1079,7 @@ function __dshQuoteChatFactory(hostRequire) {
           const before = scroller.scrollTop;
           scroller.scrollTop = before + step * direction;
           for (let frame = 0; frame < FRAMES_PER_STEP; frame += 1) await nextFrame();
-          const live = findFlow2() ?? flow;
+          const live = findFlow() ?? flow;
           const hit = resolve(live, annotation.anchor);
           if (hit !== null) return scrollToRange(hit, live);
           if (scroller.scrollTop === before) {
@@ -1606,7 +1606,7 @@ function __dshQuoteChatFactory(hostRequire) {
     }
     return { left: Math.max(VIEWPORT_MARGIN, left), top: Math.max(VIEWPORT_MARGIN, top) };
   }
-  function createPopovers({ findFlow: findFlow2, anchorInTranscript }) {
+  function createPopovers({ findFlow, anchorInTranscript }) {
     function ActionPopup2(props) {
       const { anchor, canAnnotate, canAsk, labels, onAnnotate, onAsk } = props;
       const ref = import_react2.default.useRef(null);
@@ -1617,7 +1617,7 @@ function __dshQuoteChatFactory(hostRequire) {
         const rect = element.getBoundingClientRect();
         setSize({ width: rect.width, height: rect.height });
       }, []);
-      const flow = findFlow2();
+      const flow = findFlow();
       const measured = { width: size.width || 210, height: size.height || 34 };
       const anchored = flow === null ? null : anchorInTranscript(flow, anchor, measured, "below");
       const position = anchored === null ? placeNear(anchor, measured) : anchored.position;
@@ -1683,7 +1683,7 @@ function __dshQuoteChatFactory(hostRequire) {
       }, [onCancel]);
       const width = size.width || 420;
       const height = size.height || 170;
-      const flow = findFlow2();
+      const flow = findFlow();
       const anchored = flow === null ? null : anchorInTranscript(flow, source.rect, { width, height }, "below");
       const position = anchored === null ? placeNear(source.rect, { width, height }) : anchored.position;
       return (0, import_react_dom.createPortal)(
@@ -1755,7 +1755,7 @@ function __dshQuoteChatFactory(hostRequire) {
   var HOVER_LINGER_MS = 260;
   var CARD_EXIT_MS = 130;
   var VIEWPORT_MARGIN2 = 8;
-  function createCards({ composerContainer: composerContainer3 }) {
+  function createCards({ composerContainer: composerContainer2 }) {
     function ChipCards2(props) {
       const { annotations, occurrences, labels, onJump, onRemove } = props;
       const actionsRef = import_react3.default.useRef({ onJump, onRemove });
@@ -1836,7 +1836,7 @@ function __dshQuoteChatFactory(hostRequire) {
             }
           }
         });
-        const composerHost = composerContainer3();
+        const composerHost = composerContainer2();
         if (composerHost !== null) {
           observer.observe(composerHost, { childList: true, subtree: true });
         }
@@ -2022,7 +2022,7 @@ function __dshQuoteChatFactory(hostRequire) {
   var BUBBLE_CLEARANCE = 30;
   var BUBBLE_PANEL_WIDTH = 320;
   var BUBBLE_PANEL_HEIGHT = 200;
-  function createMarkerLayer({ findFlow: findFlow2, columnElement, anchorAboveBubble }) {
+  function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }) {
     function chipOrdinals(occurrences) {
       const ordinals = /* @__PURE__ */ new Map();
       if (typeof document === "undefined") return ordinals;
@@ -2033,7 +2033,7 @@ function __dshQuoteChatFactory(hostRequire) {
       }
       return ordinals;
     }
-    function composerContainer3() {
+    function composerContainer2() {
       if (typeof document === "undefined") return null;
       const selectors = [
         '[data-slot="conversation.composer.dock"]',
@@ -2195,7 +2195,7 @@ function __dshQuoteChatFactory(hostRequire) {
         let measured = [];
         const measure = () => {
           frame = 0;
-          const flow2 = findFlow2();
+          const flow2 = findFlow();
           if (flow2 === null) {
             measured = [];
             setPositions((current) => current.length === 0 ? current : []);
@@ -2243,11 +2243,11 @@ function __dshQuoteChatFactory(hostRequire) {
           timer = setTimeout(schedule, 80);
         };
         const observer = new MutationObserver(debounced);
-        const flow = findFlow2();
+        const flow = findFlow();
         if (flow !== null) observer.observe(flow, { childList: true, subtree: true });
         let columnObserver = null;
         const watchColumn = () => {
-          const flow2 = findFlow2();
+          const flow2 = findFlow();
           const target = flow2 === null ? null : columnElement(flow2);
           if (target === null) return;
           if (columnObserver !== null && columnObserver.__qcTarget === target) return;
@@ -2328,7 +2328,7 @@ function __dshQuoteChatFactory(hostRequire) {
         const annotation = annotations.find((item) => item.id === editing.id);
         if (annotation === void 0) return null;
         const row = editing.row;
-        const flow = findFlow2();
+        const flow = findFlow();
         const bubble = row !== void 0 && row !== null && row.isConnected ? row.querySelector('.qc-marker[data-qc-for="' + editing.id + '"]') : null;
         const box = bubble === null || bubble === void 0 ? row !== void 0 && row !== null && row.isConnected ? row.getBoundingClientRect() : null : bubble.getBoundingClientRect();
         const anchored = flow === null || box === null ? null : anchorAboveBubble(flow, box, {
@@ -2663,7 +2663,7 @@ function __dshQuoteChatFactory(hostRequire) {
       readSelection: readSelection2,
       clearSelection: clearSelection2,
       tableToMarkdown: tableToMarkdown2,
-      findFlow: findFlow2,
+      findFlow,
       MAX_QUOTE_CHARS: MAX_QUOTE_CHARS2,
       MAX_ANNOTATIONS: MAX_ANNOTATIONS2,
       TAB_KIND: TAB_KIND2,
@@ -2822,14 +2822,14 @@ function __dshQuoteChatFactory(hostRequire) {
         if (!writeChip(stored)) setNotice(labels.unavailable);
         setOverlay(null);
         clearSelection2();
-        const flow = findFlow2();
+        const flow = findFlow();
         const range = flow === null ? null : resolveAnchor(flow, stored.anchor);
         if (range !== null) flashRange2(range);
       }, [sessionId, labels, writeChip]);
       const annotateTable = import_react7.default.useCallback((table) => {
         const markdown = tableToMarkdown2(table);
         if (markdown === "") return;
-        const flow = findFlow2();
+        const flow = findFlow();
         setOverlay({
           kind: "compose",
           source: {
@@ -2845,7 +2845,7 @@ function __dshQuoteChatFactory(hostRequire) {
         clearSelection2();
       }, []);
       const onHighlight = import_react7.default.useCallback((annotation, on) => {
-        const flow = findFlow2();
+        const flow = findFlow();
         if (flow === null) return;
         if (!on) {
           clearFlashRange2();
@@ -2854,12 +2854,12 @@ function __dshQuoteChatFactory(hostRequire) {
         const range = resolveAnchor(flow, annotation.anchor);
         if (range === null) return;
         holdRange2(range, () => {
-          const live = findFlow2();
+          const live = findFlow();
           return live === null ? null : resolveAnchor(live, annotation.anchor);
         });
       }, []);
       const onJump = import_react7.default.useCallback((annotation) => {
-        const flow = findFlow2();
+        const flow = findFlow();
         if (flow === null) {
           setNotice(diagnoseMiss2(null, annotation));
           return;
@@ -2867,16 +2867,16 @@ function __dshQuoteChatFactory(hostRequire) {
         setNotice("");
         navigation2.reveal(flow, annotation).then((range) => {
           if (range === null) {
-            setNotice(diagnoseMiss2(findFlow2(), annotation));
+            setNotice(diagnoseMiss2(findFlow(), annotation));
             return;
           }
           flashRange2(range, FLASH_MS, () => {
-            const live = findFlow2();
+            const live = findFlow();
             return live === null ? null : resolveAnchor(live, annotation.anchor);
           });
         }, (failure) => {
           console.error("[dsh-quote-chat] jump failed:", failure);
-          setNotice(diagnoseMiss2(findFlow2(), annotation));
+          setNotice(diagnoseMiss2(findFlow(), annotation));
         });
       }, []);
       import_react7.default.useEffect(() => {
@@ -2933,12 +2933,12 @@ function __dshQuoteChatFactory(hostRequire) {
           labels,
           onAnnotate: () => {
             const source = overlay.source;
-            const flow = findFlow2();
+            const flow = findFlow();
             if (flow !== null && source.anchor !== void 0) {
               const range = resolveAnchor(flow, source.anchor);
               if (range !== null) {
                 holdRange2(range, () => {
-                  const live = findFlow2();
+                  const live = findFlow();
                   return live === null ? null : resolveAnchor(live, source.anchor);
                 });
               }
@@ -3164,7 +3164,6 @@ function __dshQuoteChatFactory(hostRequire) {
   }
   var layout = createLayout();
   var navigation = createNavigation({ layout });
-  var { composerContainer: composerContainer2 } = layout;
   var { ChipCards, AnnotationCard } = createCards({ composerContainer: layout.composerContainer });
   var { MarkerLayer } = createMarkerLayer({
     findFlow: layout.findFlow,
@@ -3180,7 +3179,6 @@ function __dshQuoteChatFactory(hostRequire) {
     findFlow: layout.findFlow,
     anchorInTranscript: (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer)
   });
-  var findFlow = () => layout.findFlow();
   var highlighter = createHighlighter();
   var flashRange = (range, ms = FLASH_MS, resolve = null) => highlighter.flash(range, ms, resolve);
   var clearFlashRange = () => highlighter.clear();
@@ -3303,7 +3301,7 @@ function __dshQuoteChatFactory(hostRequire) {
         readSelection,
         clearSelection,
         tableToMarkdown,
-        findFlow,
+        findFlow: layout.findFlow,
         MAX_QUOTE_CHARS,
         MAX_ANNOTATIONS,
         TAB_KIND,
