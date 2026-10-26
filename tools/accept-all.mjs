@@ -40,6 +40,9 @@ if (url === undefined) {
   process.exit(2)
 }
 
+// Recording is opt-in: it costs disk and a re-encode at the end.
+const record = process.argv.includes('--record')
+
 const onlyAt = process.argv.indexOf('--only')
 const only = onlyAt > 0 ? process.argv[onlyAt + 1] : undefined
 const selected = only === undefined
@@ -53,7 +56,7 @@ if (selected.length === 0) {
 const startedAt = Date.now()
 const totals = []
 
-const browser = await openBrowser()
+const browser = await openBrowser(record ? { video: true } : {})
 try {
   for (const suite of selected) {
     const suiteStart = Date.now()
@@ -80,7 +83,24 @@ try {
     totals.push({ ...suite, ...outcome })
   }
 } finally {
-  await browser.close()
+  const finished = await browser.close()
+  if (record) {
+    if (finished.video === null || finished.video === undefined) {
+      console.log('\n  recording: none produced')
+    } else {
+      console.log(`\n  recording: ${finished.video}`)
+      if (finished.fps !== null && finished.fps !== undefined) {
+        // Both rates are printed: the capture rate is a ceiling the screencast could reach, and the
+        // output rate is the constant time base the frames were muxed at. Reporting only the latter
+        // would imply the motion was captured that smoothly.
+        console.log(`  ${finished.frames} frames over ${finished.seconds}s `
+          + `(captured ${finished.capturedFps}fps), muxed at a constant ${finished.fps}fps`)
+        console.log(`  frames kept in ${finished.frameDir}`)
+      } else {
+        console.log(`  mux failed: ${finished.error ?? 'unknown'}; frames kept in ${finished.frameDir}`)
+      }
+    }
+  }
 }
 
 const passed = totals.reduce((sum, item) => sum + item.passed, 0)

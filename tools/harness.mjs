@@ -32,7 +32,10 @@
  * `launchPersistentContext` against the same profile the MCP server used, so the DSH login and the
  * session list survive exactly as before. Nothing about the app under test changes.
  */
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 
 /** pnpm keeps the real package under .pnpm; createRequire does not resolve a bare name through it. */
@@ -40,6 +43,12 @@ const PLAYWRIGHT = 'C:/Users/Ethan cole/AppData/Local/qc-playwright-mcp/node_mod
 
 /** The same profile the MCP server used, so the login survives. */
 const PROFILE = 'C:/Users/Ethan cole/AppData/Local/qc-playwright-profile'
+
+/** ffmpeg, used to rebuild recordings at a constant frame rate. */
+const FFMPEG = 'C:/Users/Ethan cole/AppData/Local/Microsoft/WinGet/Links/ffmpeg.exe'
+
+/** Where recordings are written when the caller does not name a directory. */
+const RECORDINGS = resolve(fileURLToPath(new URL('.', import.meta.url)), '..', 'recordings')
 
 /** The bundled Playwright expects a revision that is not installed; use the chromium that exists. */
 const CHROME = 'C:/Users/Ethan cole/AppData/Local/ms-playwright/chromium-1248/chrome-win64/chrome.exe'
@@ -61,6 +70,7 @@ export async function openBrowser(options = {}) {
   // step (~3.4s), and a campaign of several suites pays it once instead of once per suite.
   const context = options.context ?? await (async () => {
     mkdirSync(PROFILE, { recursive: true })
+
     return chromium.launchPersistentContext(PROFILE, {
       headless: false,
       executablePath: CHROME,
@@ -135,7 +145,16 @@ export async function openBrowser(options = {}) {
    * Navigate.
    * @param url - where to go.
    */
+  /** Whether the frame recorder has been started for this run. */
+  let recordingStarted = false
+
   const goto = async (url) => {
+    // Recording starts on the first navigation: every helper it needs is defined by then, and a
+    // suite always navigates before doing anything.
+    if (!recordingStarted && options.video !== undefined && options.video !== false) {
+      recordingStarted = true
+      await beginRecording()
+    }
     await page.goto(url, { waitUntil: 'domcontentloaded' })
   }
 
@@ -298,9 +317,139 @@ export async function openBrowser(options = {}) {
   /** Console errors logged by this plugin itself. */
   const pluginErrors = () => errors.filter((line) => line.includes('[dsh-quote-chat]'))
 
-  /** Close the browser, unless it was borrowed from a caller that owns it. */
+  /**
+   * Frame capture, started at launch when `video` is requested.
+   *
+   * ## Why not Playwright's own `recordVideo`
+   *
+   * It fails here with "Video rendering requires ffmpeg binary": the feature needs the ffmpeg build
+   * matching the installed Playwright revision, and the machine has ffmpeg-1009 and ffmpeg-1013 while
+   * this alpha build expects its own. Patching that would tie the harness to one build's internals.
+   * Its capture rate is fixed as well, so the requested frame rate could not be met through it.
+   *
+   * ## What this does
+   *
+   * CDP screencast — the same frame source Playwright's recorder reads. The page pushes a frame
+   * whenever it paints; frames are written as numbered JPEGs and muxed by ffmpeg at an exact rate.
+   *
+   * The screencast rate is a ceiling, not a promise: a still page pushes fewer frames, and the muxer's
+   * `-r` holds each frame for the missing time so the duration stays correct. The report prints the
+   * captured rate next to the output rate, so the gap is visible rather than implied.
+   */
+  let stopRecording = async () => ({ video: null })
+  let frameDir = null
+
+  const beginRecording = async (settings = {}) => {
+    if (options.video === undefined || options.video === false) return
+    const fps = settings.fps ?? 30
+    mkdirSync(RECORDINGS, { recursive: true })
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    frameDir = join(RECORDINGS, `frames-${stamp}`)
+    mkdirSync(frameDir, { recursive: true })
+
+    const session = await context.newCDPSession(page)
+    let frameIndex = 0
+    let lastWrite = 0
+    // Throttle to the requested rate, so the output is predictable even when the page paints faster.
+    const interval = 1000 / fps
+    const startedAt = Date.now()
+
+    // A single write failure is reported once and then ignored: a broken recording should say so
+    // rather than hide behind an empty directory.
+    let writeFailureReported = false
+    session.on('Page.screencastFrame', (event) => {
+      const now = Date.now()
+      if (now - lastWrite >= interval) {
+        lastWrite = now
+        try {
+          const payload = Buffer.from(event.data, 'base64')
+          if (payload.length === 0) {
+            if (!writeFailureReported) {
+              writeFailureReported = true
+              console.warn('[harness] screencast delivered an empty frame')
+            }
+          } else {
+            writeFileSync(
+              join(frameDir, `frame-${String(frameIndex).padStart(6, '0')}.jpg`),
+              payload,
+            )
+            frameIndex += 1
+          }
+        } catch (failure) {
+          if (!writeFailureReported) {
+            writeFailureReported = true
+            console.warn('[harness] frame write failed:', failure?.message ?? failure)
+          }
+        }
+      }
+      // Acknowledge every frame, or the screencast stalls after the first one.
+      session.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => {})
+    })
+
+    // Page.enable is required: without it startScreencast succeeds but emits no frames at all.
+    await session.send('Page.enable')
+    await session.send('Page.startScreencast', {
+      format: 'jpeg',
+      quality: 85,
+      maxWidth: 1920,
+      maxHeight: 1200,
+      everyNthFrame: 1,
+    })
+
+    stopRecording = async () => {
+      await session.send('Page.stopScreencast').catch(() => {})
+      await session.detach().catch(() => {})
+      const seconds = Math.max(0.001, (Date.now() - startedAt) / 1000)
+      const captured = frameIndex
+      if (captured === 0) return { video: null, frames: 0, frameDir }
+
+      const output = join(RECORDINGS, `run-${stamp}-${fps}fps.mp4`)
+      // The rate the frames REALLY arrived at. Using the requested rate here would compress the
+      // timeline: 21 frames described as 30fps is 0.7s, not the 2.1s the run actually took.
+      const sourceFps = Math.max(1, Math.round((captured / seconds) * 1000) / 1000)
+      try {
+        execFileSync(FFMPEG, [
+          '-y',
+          // How fast the frames arrived...
+          '-framerate', String(sourceFps),
+          '-i', join(frameDir, 'frame-%06d.jpg'),
+          '-c:v', 'libx264',
+          '-preset', 'veryfast',
+          '-crf', '18',
+          // yuv420p needs even dimensions.
+          '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+          '-pix_fmt', 'yuv420p',
+          // ...and the output rate. Frames are duplicated to reach it, so the duration is preserved
+          // and every frame carries an exact 1/fps timestamp.
+          '-r', String(fps),
+          output,
+        ], { stdio: 'pipe' })
+      } catch (failure) {
+        console.warn('[harness] ffmpeg mux failed:', failure?.message ?? failure)
+        return { video: null, frames: captured, frameDir, error: String(failure?.message ?? failure) }
+      }
+      return {
+        video: output,
+        frames: captured,
+        fps,
+        // What the screencast actually delivered, in frames per second.
+        capturedFps: Math.round((captured / seconds) * 10) / 10,
+        sourceFps: Math.round((captured / seconds) * 1000) / 1000,
+        seconds: Math.round(seconds * 10) / 10,
+        frameDir,
+      }
+    }
+  }
+
+  /**
+   * Close the browser, finishing any recording first.
+   *
+   * @returns the recording statistics, or `{ video: null }` when nothing was recorded.
+   */
   const close = async () => {
+    const recording = await stopRecording()
     if (options.context === undefined) await context.close()
+    return recording
   }
 
   /**
