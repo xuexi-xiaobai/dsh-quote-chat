@@ -31,7 +31,7 @@ import { createPortal } from 'react-dom'
 import { elementOf, cssEscape } from '../dom.js'
 import {
   rangeAt, captureAnchor, resolveAnchor, locateText, textOf,
-  squishText, sameText, textOfWithin, FLOW_SELECTOR, BLOCK_SELECTOR,
+  squishText, sameText, textOfWithin, FLOW_SELECTOR, BLOCK_SELECTOR, isInsideTranscript,
 } from '../text-ranges.js'
 import {
   serializeChipForModel, CHIP_SOURCE, CHIP_TRIGGER, CHIP_PLACEHOLDER,
@@ -130,12 +130,20 @@ export function annotationDock(deps) {
       delete: t('bubble.delete'),
     }), [t])
 
-    // Dismissal: a press anywhere outside the open surface closes it.
+    // Dismissal: a press inside the TRANSCRIPT closes the open surface; the surrounding chrome does not.
+    //
+    // The rule used to be "a press anywhere outside the open surface closes it", which threw away a draft comment for
+    // the slightest reason — adjusting a side panel, glancing at the header, or reaching for the composer. The draft is
+    // the user's work, so only moving on to another part of the transcript may discard it.
+    //
+    // The test lives in `isInsideTranscript` so this handler and the popover's own one cannot disagree. Before it was
+    // shared, this handler closed the panel on every outside press, which made the popover's own rule unreachable.
     React.useEffect(() => {
       if (overlay === null) return undefined
       const onPointerDown = (event) => {
         const surface = document.querySelector('.qc-popup, .qc-compose')
         if (surface !== null && surface.contains(event.target)) return
+        if (!isInsideTranscript(event.target)) return
         // Dismissing must go through cancelCompose, not setOverlay: the compose step paints the
         // passage, and only cancelCompose clears it. Calling setOverlay here unmounted the popover
         // before its own listener could run, so the highlight was left painted with nothing open.

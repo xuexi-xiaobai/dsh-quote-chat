@@ -70,6 +70,63 @@ export function findFlowElement() {
 }
 
 /**
+ * The composer surfaces, which live INSIDE the transcript's scroll container in this app's markup.
+ *
+ * Measured: `wSkVaW_scrollBody` contains the composer element. So "inside the container" alone cannot mean "inside the
+ * transcript" — the composer had to be excluded explicitly, otherwise a press on the composer counted as a press on the
+ * transcript and threw the draft away.
+ */
+const COMPOSER_SELECTORS = [
+  '[data-slot="conversation.composer.dock"]',
+  '[data-slot="conversation.input.dock"]',
+  '[data-composer-root]',
+  '[contenteditable="true"]',
+]
+
+/**
+ * Whether a click landed inside the transcript's own area.
+ *
+ * Dismissal of the compose panel is defined in terms of this: a press inside the transcript means the user has moved on
+ * to another passage, so the panel and its draft are discarded; a press anywhere else (a side panel, the header, the
+ * composer, the window's chrome) leaves them alone.
+ *
+ * Two places enforce that rule — the popover's outside-press handler and the dock's — and both call this, so the
+ * definition cannot drift between them. Before it was centralised the dock closed the panel on ANY outside press,
+ * which made the popover's own rule unreachable.
+ *
+ * The area is the flow's scroll container MINUS the composer. Both parts of that matter:
+ *   - the container, not the flow element, because the blank space beside and below the prose is inside the container
+ *     and outside the flow, and clicking there is still "clicking in the transcript";
+ *   - minus the composer, because this app nests the composer inside that same container (measured), so the container
+ *     alone would count a press on the chat box as a press on the transcript.
+ *
+ * @param target - the event target.
+ * @returns true when the target sits inside the transcript area.
+ */
+export function isInsideTranscript(target) {
+  if (target === null || target === undefined) return false
+  const flow = findFlowElement()
+  if (flow === null) return false
+  // The composer first: a press on it is never a press on the transcript.
+  for (const selector of COMPOSER_SELECTORS) {
+    for (const element of document.querySelectorAll(selector)) {
+      if (element.contains(target) === true) return false
+    }
+  }
+  // Then the container: the nearest scrollable ancestor of the flow, or the flow itself when it scrolls.
+  let container = null
+  for (let node = flow; node !== null; node = node.parentElement) {
+    if (node.nodeType !== 1) continue
+    if (node.scrollHeight > node.clientHeight + 8) {
+      container = node
+      break
+    }
+  }
+  if (container === null) container = flow
+  return container.contains(target) === true
+}
+
+/**
  * Block-level elements a bubble can use as its containing block.
  *
  * Each is its own box with a well-defined top edge, so the bubble can sit at top:0 without

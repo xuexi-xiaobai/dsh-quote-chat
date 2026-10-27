@@ -75,6 +75,11 @@ const page = context.pages()[0] ?? await context.newPage()
   const { windowId } = await session.send('Browser.getWindowForTarget')
   const current = await session.send('Browser.getWindowBounds', { windowId })
   if (current.bounds.windowState !== 'maximized') {
+    // A minimised or fullscreen window rejects the maximise request: restore to normal first.
+    if (current.bounds.windowState !== 'normal') {
+      await session.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } })
+      await new Promise((resolve) => { setTimeout(resolve, 120) })
+    }
     await session.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'maximized' } })
   }
   let state = 'unknown'

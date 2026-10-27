@@ -23,7 +23,7 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
 import { IconAnnotate, IconSideChat, IconCheck } from '../icons.js'
-import { findFlowElement } from '../text-ranges.js'
+import { findFlowElement, isInsideTranscript } from '../text-ranges.js'
 
 /** createElement, bound once. */
 const h = React.createElement
@@ -272,15 +272,28 @@ export function createPopovers({
       }
     }, [source.block])
 
-    // Only Enter and the confirm button commit; EVERY other dismissal cancels.
+    // Dismissal: only a click inside the transcript cancels; the surrounding chrome does not.
     //
-    // Clicking elsewhere in the transcript, or on the composer, used to leave the box open with the
-    // passage still lit, which read as "my comment is being kept". An outside click is a dismissal
-    // like any other, so it cancels — and cancelling clears the highlight.
+    // The rule used to be "any click outside the panel cancels". That made the panel fragile in a way the user hit
+    // immediately: adjusting a side panel, glancing at the header, or reaching for the composer all threw away the
+    // comment being typed. The draft is the user's work, so chrome that is merely adjacent to the passage must not
+    // destroy it.
+    //
+    // Now: a click INSIDE the transcript's scroll container cancels (the user has moved on to another passage, and
+    // cancelling also clears the highlight, which is what they expect). A click anywhere else — the left rail, the
+    // right sidebar, the header, the composer, the window's own chrome — leaves the panel and its text untouched.
+    //
+    // `scroller` is the container the panel is mounted into, so "inside it" is exactly the text flow. The panel itself
+    // lives INSIDE that container, which is why its own clicks are excluded first.
     React.useEffect(() => {
       const onDown = (event) => {
-        if (ref.current !== null && event.target instanceof Node
-          && ref.current.contains(event.target)) return
+        const target = event.target
+        if (!(target instanceof Node)) return
+        if (ref.current !== null && ref.current.contains(target)) return
+        // The dock has its own handler that closes the surface; both call `isInsideTranscript`, so the region that
+        // dismisses cannot differ between them. Kept here too because the popover can be mounted on its own (no
+        // container), where the dock's rule is not enough to close it.
+        if (isInsideTranscript(target) === false) return
         onCancel()
       }
       const onKey = (event) => {

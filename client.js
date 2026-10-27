@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:624463f927d2aa8a
+ * Artifact: sha256:17dd6dc6654a72b2
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -604,6 +604,32 @@ function __dshQuoteChatFactory(hostRequire) {
     }
     return null;
   }
+  var COMPOSER_SELECTORS = [
+    '[data-slot="conversation.composer.dock"]',
+    '[data-slot="conversation.input.dock"]',
+    "[data-composer-root]",
+    '[contenteditable="true"]'
+  ];
+  function isInsideTranscript(target) {
+    if (target === null || target === void 0) return false;
+    const flow = findFlowElement();
+    if (flow === null) return false;
+    for (const selector of COMPOSER_SELECTORS) {
+      for (const element of document.querySelectorAll(selector)) {
+        if (element.contains(target) === true) return false;
+      }
+    }
+    let container = null;
+    for (let node = flow; node !== null; node = node.parentElement) {
+      if (node.nodeType !== 1) continue;
+      if (node.scrollHeight > node.clientHeight + 8) {
+        container = node;
+        break;
+      }
+    }
+    if (container === null) container = flow;
+    return container.contains(target) === true;
+  }
   var BLOCK_SELECTOR = "p, li, h1, h2, h3, h4, h5, h6, pre, blockquote, table, figure";
   function rangeAt(root, offset, length) {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -751,7 +777,7 @@ function __dshQuoteChatFactory(hostRequire) {
   var ANCHOR_INSET = 8;
   var PANEL_BUBBLE_GAP = 10;
   var SIDEBAR_TAB_SELECTOR = "[data-sidebar-right-tab]";
-  var COMPOSER_SELECTORS = [
+  var COMPOSER_SELECTORS2 = [
     '[data-slot="conversation.composer.dock"]',
     '[data-slot="conversation.input.dock"]',
     "[data-composer-root]"
@@ -819,7 +845,7 @@ function __dshQuoteChatFactory(hostRequire) {
     }
     function findComposerDock() {
       if (typeof document === "undefined") return null;
-      for (const selector of COMPOSER_SELECTORS) {
+      for (const selector of COMPOSER_SELECTORS2) {
         for (const element of document.querySelectorAll(selector)) {
           if (element.closest(SIDEBAR_TAB_SELECTOR) !== null) continue;
           const box = element.getBoundingClientRect();
@@ -1880,7 +1906,10 @@ function __dshQuoteChatFactory(hostRequire) {
       }, [source.block]);
       import_react3.default.useEffect(() => {
         const onDown = (event) => {
-          if (ref.current !== null && event.target instanceof Node && ref.current.contains(event.target)) return;
+          const target2 = event.target;
+          if (!(target2 instanceof Node)) return;
+          if (ref.current !== null && ref.current.contains(target2)) return;
+          if (isInsideTranscript(target2) === false) return;
           onCancel();
         };
         const onKey = (event) => {
@@ -2953,6 +2982,7 @@ function __dshQuoteChatFactory(hostRequire) {
         const onPointerDown = (event) => {
           const surface = document.querySelector(".qc-popup, .qc-compose");
           if (surface !== null && surface.contains(event.target)) return;
+          if (!isInsideTranscript(event.target)) return;
           cancelCompose();
         };
         const onKeyDown = (event) => {

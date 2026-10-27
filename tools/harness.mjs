@@ -158,6 +158,12 @@ export async function openBrowser(options = {}) {
       const { windowId } = await session.send('Browser.getWindowForTarget')
       const current = await session.send('Browser.getWindowBounds', { windowId })
       if (current.bounds.windowState !== 'maximized') {
+        // A minimised or fullscreen window rejects the request outright:
+        // "To maximize a minimized or fullscreen window, restore it to normal state first."
+        if (current.bounds.windowState !== 'normal') {
+          await session.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } })
+          await new Promise((resolve) => { setTimeout(resolve, 120) })
+        }
         await session.send('Browser.setWindowBounds', {
           windowId,
           bounds: { windowState: 'maximized' },
@@ -681,8 +687,24 @@ export async function openBrowser(options = {}) {
     return changes
   }
 
+  /**
+   * Reload the page so it picks up a freshly built plugin bundle.
+   *
+   * Necessary after `node build.mjs` when attached to the long-lived browser: `goto()` deliberately skips navigation
+   * for the same URL, so the page keeps running the bundle it loaded earlier. A probe that measures the old code
+   * produces confident, wrong answers — measured: a dismissal rule that had just been changed still behaved the old
+   * way on every trial.
+   *
+   * Skipped when this handle started a fresh browser, where `goto()` already navigated.
+   */
+  const reload = async () => {
+    if (attached === false) return
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(400)
+  }
+
   return {
-    page, context, goto, waitFor, read, count, click, tripleClick, hover, type, press,
+    page, context, goto, reload, waitFor, read, count, click, tripleClick, hover, type, press,
     moveAway, rightClickAt, clickAt, dragSelect, setAnimationRate, textOf, pluginErrors, errors, close, prepareSession, collapseRightSidebar,
   }
 }
