@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:8e3a7c47d5471132
+ * Artifact: sha256:174a005d3f19acb9
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -1817,10 +1817,13 @@ function __dshQuoteChatFactory(hostRequire) {
       const liveBlock = source.block;
       const blockBox = liveBlock !== void 0 && liveBlock !== null && liveBlock.isConnected === true ? liveBlock.getBoundingClientRect() : source.blockRect ?? source.rect?.passage ?? source.rect;
       const resting = anchorAboveSelection ? anchorAboveSelection(blockBox, { width, height }) : placeNear(source.rect?.passage ?? source.rect, { width, height });
+      const scrollerBox = scroller === null ? { top: 0, left: 0, bottom: typeof window === "undefined" ? 0 : window.innerHeight } : scroller.getBoundingClientRect();
       const hasInput = comment.trim() !== "";
-      const docked = hasInput && snapPosition ? snapPosition(resting.top, { width, height }) : null;
+      const restingBottom = resting.top + height;
+      const fullyVisible = resting.top >= scrollerBox.top - 1 && restingBottom <= scrollerBox.bottom + 1;
+      const needsRescue = hasInput && !fullyVisible;
+      const docked = needsRescue && snapPosition ? snapPosition(resting.top, { width, height }) : null;
       const inViewport = docked ?? { left: resting.left, top: resting.top };
-      const scrollerBox = scroller === null ? { top: 0, left: 0 } : scroller.getBoundingClientRect();
       const target = scroller === null ? inViewport : {
         left: Math.round(inViewport.left - scrollerBox.left + scroller.scrollLeft),
         top: Math.round(inViewport.top - scrollerBox.top + scroller.scrollTop)

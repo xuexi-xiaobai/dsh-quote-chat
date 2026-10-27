@@ -590,14 +590,18 @@ export async function run({ browser, check: report, url }) {
           to: { x: Math.round(box.left + 140), y },
         }
       })
-      if (points === null) return false
+      if (points === null) {
+        const why = await read(() => window.__qcNoCandidate ?? null)
+        console.log('     typing test: no block whose panel fits  ' + JSON.stringify(why))
+        return false
+      }
       await browser.dragSelect(points.from, points.to)
       const popupUp = await waitFor("document.querySelectorAll('.qc-popup button').length === 2",
         { timeoutMs: 4000 })
-      if (popupUp === null) return false
+      if (popupUp === null) { console.log('     typing test: no toolbar'); return false }
       await click('.qc-popup button:first-child')
       const opened = await waitFor("document.querySelector('.qc-compose') !== null", { timeoutMs: 4000 })
-      if (opened === null) return false
+      if (opened === null) { console.log('     typing test: no panel'); return false }
       await browser.page.waitForTimeout(240)
       return true
     }
@@ -733,7 +737,9 @@ export async function run({ browser, check: report, url }) {
             && box.bottom <= bandBottom - 4
         })
         const element = candidates[0]
-        if (element === undefined) return null
+        if (element === undefined) {
+            return null
+        }
         for (const old of document.querySelectorAll('[data-qc-probe="1"]')) old.removeAttribute('data-qc-probe')
         element.setAttribute('data-qc-probe', '1')
         const box = element.getBoundingClientRect()
@@ -846,6 +852,156 @@ export async function run({ browser, check: report, url }) {
       check('the compose panel does not jump when it reaches the header', false,
         'could not set the test up: no scroll movement was produced')
     }
+
+    await press('Escape')
+    await waitFor("document.querySelector('.qc-compose') === null", { timeoutMs: 4000 })
+  }
+
+  // ── Typing must not move a visible panel, and must rescue an out-of-view one ──
+  // Reported problem: typing made the panel jump 96px even when it was already fully visible and correctly placed
+  // above its passage. The rescue behaviour is only needed when the panel has scrolled out of sight.
+  {
+    /** Open a panel on the first eligible block, after scrolling to a known offset. */
+    const openOnFreshBlock = async (scrollTo) => {
+      await press('Escape')
+      await browser.page.waitForTimeout(120)
+      await read((offset) => {
+        const scroller = document.querySelector('.wSkVaW_scrollBody')
+        if (scroller === null) return
+        scroller.style.scrollBehavior = 'auto'
+        scroller.scrollTop = offset
+        void scroller.offsetHeight
+      }, scrollTo)
+      await browser.page.waitForTimeout(280)
+
+      const points = await read(() => {
+        const flow = document.querySelector('[data-slot="conversation.chat.flow"]')
+        // The visible area is the SCROLL CONTAINER's box: the panel lives inside it now, so that is what clips it,
+        // not the composer's top edge. Using the composer gave a shallower band and rejected usable blocks.
+        const scroller = document.querySelector('.wSkVaW_scrollBody')
+        const scrollerBox = scroller === null ? null : scroller.getBoundingClientRect()
+        const bandTop = scrollerBox === null ? 0 : Math.round(scrollerBox.top)
+        const bandBottom = scrollerBox === null ? window.innerHeight : Math.round(scrollerBox.bottom)
+        // Choose a block by whether the panel ABOVE it would be fully visible, which is the condition this
+        // assertion needs. The previous filter asked for a fixed 160px of clearance and rejected blocks that were
+        // perfectly usable — the diagnostic found three at the same moment.
+        const PANEL_HEIGHT = 123
+        const PANEL_GAP = 10
+        const candidates = [...flow.querySelectorAll('p, li')].filter((element) => {
+          const box = element.getBoundingClientRect()
+          if ((element.innerText ?? '').trim().length <= 40) return false
+          if (box.height <= 30) return false
+          if (box.top < bandTop || box.bottom > bandBottom) return false
+          const panelTop = box.top - PANEL_GAP - PANEL_HEIGHT
+          return panelTop >= bandTop && panelTop + PANEL_HEIGHT <= bandBottom
+        })
+        const element = candidates[0]
+        if (element === undefined) return null
+        for (const old of document.querySelectorAll('[data-qc-probe="1"]')) old.removeAttribute('data-qc-probe')
+        element.setAttribute('data-qc-probe', '1')
+        const box = element.getBoundingClientRect()
+        return {
+          from: { x: Math.round(box.left + 20), y: Math.round(box.top + 14) },
+          to: { x: Math.round(box.left + 160), y: Math.round(box.top + 14) },
+        }
+      })
+      if (points === null) return false
+      await browser.dragSelect(points.from, points.to)
+      const popupUp = await waitFor("document.querySelectorAll('.qc-popup button').length === 2",
+        { timeoutMs: 4000 })
+      if (popupUp === null) return false
+      await click('.qc-popup button:first-child')
+      const opened = await waitFor("document.querySelector('.qc-compose') !== null", { timeoutMs: 4000 })
+      if (opened === null) return false
+      await browser.page.waitForTimeout(240)
+      return true
+    }
+
+    /** Panel position and visibility against the container's visible area. */
+    const measure = () => read(() => {
+      const panel = document.querySelector('.qc-compose')
+      if (panel === null) return null
+      const box = panel.getBoundingClientRect()
+      const scroller = document.querySelector('.wSkVaW_scrollBody')
+      const scrollerBox = scroller === null ? null : scroller.getBoundingClientRect()
+      const bandTop = scrollerBox === null ? 0 : Math.round(scrollerBox.top)
+      const bandBottom = scrollerBox === null ? window.innerHeight : Math.round(scrollerBox.bottom)
+      return {
+        top: Math.round(box.top),
+        bottom: Math.round(box.bottom),
+        fullyVisible: box.top >= bandTop - 1 && box.bottom <= bandBottom + 1,
+        hiddenAbove: Math.max(0, Math.round(bandTop - box.top)),
+        docked: panel.getAttribute('data-docked'),
+      }
+    })
+
+    // Find a panel that is genuinely fully visible: the offset that achieves that depends on where the suite has
+    // scrolled to, so it is searched for rather than assumed.
+    let visibleBefore = null
+    let visibleAfter = null
+    if (await openOnFreshBlock(0)) {
+      // The panel is an absolute child of the scroll container, so it moves WITH the content: adjusting `scrollTop`
+      // slides it into view. Rather than search for an offset that happens to work, measure where the panel is and
+      // scroll by exactly the amount that centres it — which is deterministic whatever the suite did before.
+      await read(() => {
+        const panel = document.querySelector('.qc-compose')
+        const scroller = document.querySelector('.wSkVaW_scrollBody')
+        if (panel === null || scroller === null) return
+        const panelBox = panel.getBoundingClientRect()
+        const scrollerBox = scroller.getBoundingClientRect()
+        // Space available inside the container, and the panel's current centre relative to it.
+        const room = scrollerBox.height
+        const panelHeight = panelBox.height
+        if (panelHeight >= room - 8) return
+        const desiredTop = scrollerBox.top + (room - panelHeight) / 2
+        scroller.style.scrollBehavior = 'auto'
+        scroller.scrollTop += panelBox.top - desiredTop
+        void scroller.offsetHeight
+      })
+      await browser.page.waitForTimeout(320)
+      const candidate = await measure()
+      if (candidate !== null && candidate.fullyVisible === true) {
+        visibleBefore = candidate
+        await browser.page.keyboard.type('测试', { delay: 30 })
+        await browser.page.waitForTimeout(700)
+        visibleAfter = await measure()
+      }
+    }
+
+    check('typing does not move a fully visible panel',
+      visibleBefore !== null && visibleAfter !== null
+        && visibleBefore.fullyVisible === true
+        && Math.abs(visibleAfter.top - visibleBefore.top) <= 2,
+      JSON.stringify({ before: visibleBefore, after: visibleAfter }))
+
+    // The other half: a panel scrolled out of view must be brought back.
+    let rescuableBefore = null
+    let rescuableAfter = null
+    if (await openOnFreshBlock(220)) {
+      // Push the panel up until its top is above the container's top edge.
+      for (let step = 0; step < 5; step += 1) {
+        await read(() => {
+          const scroller = document.querySelector('.wSkVaW_scrollBody')
+          if (scroller === null) return
+          scroller.style.scrollBehavior = 'auto'
+          scroller.scrollTop += 45
+          void scroller.offsetHeight
+        })
+        await browser.page.waitForTimeout(70)
+      }
+      rescuableBefore = await measure()
+      if (rescuableBefore !== null && rescuableBefore.fullyVisible === false) {
+        await browser.page.keyboard.type('测试', { delay: 30 })
+        await browser.page.waitForTimeout(800)
+        rescuableAfter = await measure()
+      }
+    }
+
+    check('typing brings a panel that scrolled out of view back into view',
+      rescuableBefore !== null && rescuableAfter !== null
+        && rescuableBefore.fullyVisible === false
+        && rescuableAfter.fullyVisible === true,
+      JSON.stringify({ before: rescuableBefore, after: rescuableAfter }))
 
     await press('Escape')
     await waitFor("document.querySelector('.qc-compose') === null", { timeoutMs: 4000 })

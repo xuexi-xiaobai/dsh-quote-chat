@@ -276,21 +276,39 @@ export function createPopovers({
       ? anchorAboveSelection(blockBox, { width, height })
       : placeNear(source.rect?.passage ?? source.rect, { width, height })
 
-    // Once the user has typed something, the panel glides to the nearer edge of the visible area. The resting
-    // position is kept as the "no input yet" answer, so clearing the text puts it back.
+    // The container's box: needed both to decide whether the panel is visible and to convert the coordinates.
+    //
+    // With no container the panel is mounted on `document.body`, and the conversion below is the identity because
+    // the offsets are zero. One conversion serves both cases, so there is no second code path to keep in step.
+    const scrollerBox = scroller === null
+      ? { top: 0, left: 0, bottom: typeof window === 'undefined' ? 0 : window.innerHeight }
+      : scroller.getBoundingClientRect()
+
+    // Typing moves the panel ONLY when it has drifted out of the visible area.
+    //
+    // The earlier rule was "once there is text, glide to the nearer edge". That was written when the panel was
+    // fixed-positioned and could be parked anywhere on screen, including off it. Now the panel lives in the scroll
+    // container, so it can be scrolled out of view like any text — and that is the only situation that needs
+    // rescuing.
+    //
+    // When the panel is fully visible its position is already correct: its bottom edge sits just above the block it
+    // annotates. Moving it in that state takes it AWAY from the passage the user is describing, and a measured 96px
+    // jump reads as a misclick. So:
+    //
+    //   - fully visible -> stay put, keep the passage anchored;
+    //   - any part outside the visible area -> glide to the nearer edge, bringing it back where it can be used.
+    //
+    // Clearing the text restores the resting position, unchanged from before.
     const hasInput = comment.trim() !== ''
-    const docked = hasInput && snapPosition
+    const restingBottom = resting.top + height
+    const fullyVisible = resting.top >= scrollerBox.top - 1 && restingBottom <= scrollerBox.bottom + 1
+    const needsRescue = hasInput && !fullyVisible
+    const docked = needsRescue && snapPosition
       ? snapPosition(resting.top, { width, height })
       : null
     const inViewport = docked ?? { left: resting.left, top: resting.top }
 
     // Convert to the container's content space: content = viewport - containerTop + scrollOffset.
-    //
-    // With no container the panel is mounted on `document.body`, and the conversion is the identity because the
-    // offsets are zero. One conversion serves both cases, so there is no second code path to keep in step.
-    const scrollerBox = scroller === null
-      ? { top: 0, left: 0 }
-      : scroller.getBoundingClientRect()
     const target = scroller === null
       ? inViewport
       : {
