@@ -136,7 +136,14 @@ export const STYLESHEET = `
 /* In-flow placement: the panel is a child of the annotated paragraph, so it rides
    with the text (scroll, zoom, reflow) and needs no reposition listener. It sits just
    clear of the bubble so the two never overlap. */
-.qc-bubble-panel{position:absolute;z-index:40;box-sizing:border-box;
+/* z-index 6 — the SAME layer as the compose panel, and deliberately BELOW the composer (7).
+ *
+ * It used to be 40, which put the editor on top of the chat box: scrolling the panel down to the composer's position
+ * drew it OVER the chat box, while the compose panel correctly slid underneath. Both editors now share one layer, so
+ * the chrome covers them exactly as it covers the transcript text. 6 also keeps them above the code-block banner,
+ * which is 6 as well and older in DOM order.
+ */
+.qc-bubble-panel{position:absolute;z-index:6;box-sizing:border-box;
   width:min(320px,80vw);padding:10px;
   border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:12px;
   background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);
