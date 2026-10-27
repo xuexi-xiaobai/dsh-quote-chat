@@ -672,18 +672,9 @@ export async function run({ browser, check: report, url }) {
   // Paint order is checked with elementFromPoint rather than by reading z-index: the CSS value does not decide
   // who wins, the stacking contexts do, and the header is a static element with none.
   {
-    // Scroll to the TOP first. The assertion walks the passage UP toward the header by increasing scrollTop, and the
-    // earlier assertions leave the transcript at its end, where there is no room to grow — which is why this block
-    // previously reported "could not set the test up".
-    await read(() => {
-      const scroller = document.querySelector('.wSkVaW_scrollBody')
-      if (scroller === null) return
-      scroller.style.scrollBehavior = 'auto'
-      scroller.scrollTop = 0
-      void scroller.offsetHeight
-    })
-    await browser.page.waitForTimeout(400)
-
+    // Do NOT scroll to the top here. This conversation's prose begins far below the top, so at `scrollTop = 0` no
+    // block is visible and the pick below returns null — which surfaced as "could not set the test up" in four
+    // separate assertions. The positioning that the walk actually needs happens later, in `scrollIntoRange`.
     const picked = await read(() => {
       const flow = document.querySelector('[data-slot="conversation.chat.flow"]')
       const header = document.querySelector('.wSkVaW_header')
@@ -710,14 +701,40 @@ export async function run({ browser, check: report, url }) {
     const stackingRows = []
     const jumpRows = []
     if (picked !== null) {
-      // Start from the top of the transcript so scrollTop can grow; the earlier assertions leave it at the end.
-      await read(() => {
-        const scroller = document.querySelector('.wSkVaW_scrollBody')
-        if (scroller === null) return
-        scroller.style.scrollBehavior = 'auto'
-        scroller.scrollTop = 0
-        void scroller.offsetHeight
-      })
+      // Position the transcript so a usable block is visible AND there is room above it to scroll the panel into the
+      // header. Scrolling to the very top is wrong: this conversation's prose sits well below the top, so at
+      // `scrollTop = 0` every block is off-screen and the re-pick below finds nothing.
+      //
+      // Instead, scroll until a candidate exists, searching outward from the current position.
+      const scrollIntoRange = async () => {
+        for (const fraction of [0, 0.25, 0.5, 0.75, 1]) {
+          const found = await read((ratio) => {
+            const scroller = document.querySelector('.wSkVaW_scrollBody')
+            const flow = document.querySelector('[data-slot="conversation.chat.flow"]')
+            if (scroller === null || flow === null) return false
+            const header = document.querySelector('.wSkVaW_header')
+            const bandTop = header === null ? 0 : Math.round(header.getBoundingClientRect().bottom)
+            const editors = [...document.querySelectorAll('[contenteditable="true"]')]
+              .filter((element) => element.getBoundingClientRect().height > 0)
+            const bandBottom = editors.length === 0
+              ? window.innerHeight : Math.round(editors[editors.length - 1].getBoundingClientRect().top)
+            const maxScroll = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+            scroller.style.scrollBehavior = 'auto'
+            scroller.scrollTop = Math.round(maxScroll * ratio)
+            void scroller.offsetHeight
+            return [...flow.querySelectorAll('p, li')].some((element) => {
+              const box = element.getBoundingClientRect()
+              return (element.innerText ?? '').trim().length > 40
+                && box.height > 30
+                && box.top >= bandTop + 170
+                && box.bottom <= bandBottom - 4
+            })
+          }, fraction)
+          if (found === true) return true
+        }
+        return false
+      }
+      const positioned = await scrollIntoRange()
       await browser.page.waitForTimeout(400)
 
       // Re-pick after the view moved.
@@ -865,13 +882,29 @@ export async function run({ browser, check: report, url }) {
     const openOnFreshBlock = async (scrollTo) => {
       await press('Escape')
       await browser.page.waitForTimeout(120)
-      await read((offset) => {
+      // Try the requested offset, then a spread of others. A fixed offset is wrong here: the usable prose in this
+      // conversation sits at a specific depth, so one hard-coded scroll position finds nothing and the assertion
+      // reports "before: null" instead of testing anything.
+      const offsets = [scrollTo, 0, 0.25, 0.5, 0.75, 1]
+      for (const candidate of offsets) {
+        if (!(await tryOpenAt(candidate))) continue
+        return true
+      }
+      return false
+    }
+
+    /** Open a panel after scrolling to a fraction of the transcript, or to a pixel offset. */
+    const tryOpenAt = async (position) => {
+      await read((where) => {
         const scroller = document.querySelector('.wSkVaW_scrollBody')
         if (scroller === null) return
         scroller.style.scrollBehavior = 'auto'
-        scroller.scrollTop = offset
+        const maxScroll = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+        scroller.scrollTop = typeof where === 'number' && where <= 1
+          ? Math.round(maxScroll * where)
+          : where
         void scroller.offsetHeight
-      }, scrollTo)
+      }, position)
       await browser.page.waitForTimeout(280)
 
       const points = await read(() => {
@@ -1571,3 +1604,4 @@ async function main() {
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   process.exit(await main())
 }
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The package's stylesheet.
  *
  * One exported string, injected once by installStyles. It is a separate module because it is
@@ -44,7 +44,7 @@ export const STYLESHEET = `
  * header are rendered by the host at higher layers, so when the panel is pushed under them it is
  * covered rather than floating on top. That is the requested behaviour.
  */
-.qc-compose{position:absolute;z-index:5;width:min(420px,92vw);box-sizing:border-box;
+.qc-compose{position:absolute;z-index:6;width:min(420px,92vw);box-sizing:border-box;
   border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:18px;
   background:var(--dsw-alias-bg-overlay);
   box-shadow:0 16px 40px rgba(0,0,0,.32),0 2px 8px rgba(0,0,0,.18);
@@ -450,3 +450,5 @@ export const STYLESHEET = `
   border:1px solid var(--dsw-alias-border-l2);font-weight:400}
 .qc-btn-ghost:hover{background:var(--dsw-alias-bg-layer-2)}
 `
+
+
