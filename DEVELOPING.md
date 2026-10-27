@@ -101,6 +101,25 @@ node test/boot.mjs      # boots the SHIPPED client.js under a React stub
 
 `npm run verify` runs the drift check, a syntax check and every suite.
 
+### Running probes against one long-lived browser
+
+Launching a browser per probe costs 6-9s including navigation and session selection. Start one and reuse it instead:
+
+```sh
+# once, leave running
+node tools/browser-serve.mjs "<tokenised url>"
+
+# in every other shell
+QC_CDP=http://127.0.0.1:9222 node tools/probe-something.mjs "<url>"
+```
+
+Attaching takes ~34ms and keeps the open conversation, scroll offset and sidebar state. `goto()` skips re-navigation
+when the page is already showing the same URL.
+
+Every probe carries a hard timeout (`QC_PROBE_TIMEOUT_MS`, default 180s) that forces exit with a diagnostic, because a
+resource that is opened and never released keeps Node alive and looks exactly like a slow test.
+See `docs/test-script-lessons.md`.
+
 ## Rules
 
 - Edit `src/` only. `client.js` is regenerated and committed so existing installs keep

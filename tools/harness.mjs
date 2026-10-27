@@ -68,7 +68,49 @@ export async function openBrowser(options = {}) {
   const viewport = options.viewport ?? null
   // Attach to an existing context when one is supplied. Launching is the single most expensive
   // step (~3.4s), and a campaign of several suites pays it once instead of once per suite.
+  //
+  // `QC_CDP` makes that reuse survive across PROCESSES: when it names a CDP endpoint, this attaches to the browser
+  // that `tools/browser-serve.mjs` launched instead of starting another one. That is what stops a debugging loop from
+  // paying a full launch — plus navigation, session selection and its settle time — on every single iteration.
+  // Measured: a launch-and-setup cycle is 6-9s; attaching is under 0.5s.
+  const cdpEndpoint = options.cdp ?? process.env.QC_CDP ?? null
+  const attached = cdpEndpoint !== null
+
+  // Hard stop, so a probe can never hang forever.
+  //
+  // A resource that is not released keeps Node's event loop alive: the probe finishes its work, the browser stops
+  // receiving commands, and the process sits there. A shell never sees its prompt and a background job never reports
+  // completion, which looks exactly like "the command is still running" — it cost a long debugging detour once.
+  // This timer is NOT unref'd on purpose: it must fire even when something else still holds the loop open.
+  //
+  // `QC_PROBE_TIMEOUT_MS` overrides it; `0` disables the guard for a deliberate long-running session.
+  const hangGuardMs = Number(process.env.QC_PROBE_TIMEOUT_MS ?? 180000)
+  let hangGuard = null
+  if (Number.isFinite(hangGuardMs) && hangGuardMs > 0) {
+    hangGuard = setTimeout(() => {
+      console.error(
+        `[harness] HUNG: still running after ${hangGuardMs}ms. A resource was probably never released —`
+        + ' most often an un-closed CDP attachment or a browser that was not closed.'
+        + ' Forcing exit so the caller is not left waiting.',
+      )
+      process.exit(3)
+    }, hangGuardMs)
+  }
+  /**
+   * The CDP connection, when attached.
+   *
+   * Kept so it can be closed explicitly. Without that the socket holds Node's event loop open: the probe finishes its
+   * work, the browser stops receiving commands, and the process never exits — so a shell never sees its prompt and a
+   * background job never reports completion. That reads as "the command hung", which is exactly what happened.
+   */
+  let cdpBrowser = null
   const context = options.context ?? await (async () => {
+    if (attached) {
+      cdpBrowser = await chromium.connectOverCDP(cdpEndpoint)
+      const existing = cdpBrowser.contexts()[0]
+      if (existing === undefined) throw new Error(`no browser context at ${cdpEndpoint}`)
+      return existing
+    }
     mkdirSync(PROFILE, { recursive: true })
 
     return chromium.launchPersistentContext(PROFILE, {
@@ -107,7 +149,7 @@ export async function openBrowser(options = {}) {
    *
    * Runs only when this call launched the browser: an attached context belongs to someone else.
    */
-  if (options.context === undefined && options.maximize !== false) {
+  if (options.context === undefined && options.maximize !== false && attached === false) {
     try {
       const session = await context.newCDPSession(page)
       const { windowId } = await session.send('Browser.getWindowForTarget')
@@ -149,6 +191,22 @@ export async function openBrowser(options = {}) {
   let recordingStarted = false
 
   const goto = async (url) => {
+    // Skip the navigation when the attached browser is already showing this page.
+    //
+    // A reload throws away the conversation that was opened, the scroll position, the collapsed sidebar and the focus —
+    // everything the previous probe spent seconds establishing. In CDP mode the state is meant to SURVIVE between
+    // probes, so re-navigating is exactly wrong. Only the origin and path are compared; the token may differ.
+    if (attached) {
+      const current = page.url()
+      const samePage = current.startsWith('http') && current.split('?')[0] === url.split('?')[0]
+      if (samePage) {
+        if (!recordingStarted && options.video !== undefined && options.video !== false) {
+          recordingStarted = true
+          await beginRecording()
+        }
+        return
+      }
+    }
     await page.goto(url, { waitUntil: 'domcontentloaded' })
     // Recording starts AFTER the first navigation commits. Starting it before meant the CDP session was
     // created against the initial about:blank document, and a cross-document navigation invalidated it:
@@ -507,7 +565,20 @@ export async function openBrowser(options = {}) {
    */
   const close = async () => {
     const recording = await stopRecording()
-    if (options.context === undefined) await context.close()
+    // Never close a browser this helper did not launch. In CDP mode the browser belongs to
+    // `tools/browser-serve.mjs` and must outlive this process, which is the whole point of attaching.
+    if (options.context === undefined && attached === false) await context.close()
+    // Disconnect the CDP socket even though the browser stays alive. `close()` on a connected browser releases the
+    // connection rather than killing the process at the other end, and it is what lets Node exit: without it the
+    // socket keeps the event loop alive and the probe appears to hang after finishing.
+    if (cdpBrowser !== null) {
+      await cdpBrowser.close().catch(() => {})
+      cdpBrowser = null
+    }
+    if (hangGuard !== null) {
+      clearTimeout(hangGuard)
+      hangGuard = null
+    }
     return recording
   }
 

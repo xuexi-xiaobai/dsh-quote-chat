@@ -217,23 +217,60 @@ export function createPopovers({
       inputRef.current?.focus({ preventScroll: true })
     }, [])
 
-    // Re-place whenever anything that moves the text happens.
+    // Keep the panel on its passage by watching the passage's POSITION, every frame.
     //
-    // The panel is position: fixed and its position is derived from the block's box. Scrolling the transcript
-    // or resizing the window moves that box; without this the panel stayed at the old viewport coordinate
-    // while the passage slid away — the reported "it does not stick to the text".
+    // The panel's coordinates are derived from the block's live box, so the panel has to be re-placed whenever that box
+    // moves. Two separate defects lived here:
     //
-    // Registered in the CAPTURE phase: the transcript scrolls an inner container, and a bubble-phase
-    // listener on document would never see that event.
+    //   1. Only `scroll` and `resize` were listened for. Dragging the transcript's width divider re-wraps the prose and
+    //      slides the passage — by a measured 98px during one drag — while `scrollTop` and `window.innerWidth` both
+    //      stay put, so neither listener fired. The panel kept its old coordinates and the first scroll afterwards
+    //      re-placed it, which the user saw as the panel jumping "like a refresh" (measured: +94px, then -64px).
+    //
+    //   2. `ResizeObserver` was then tried, on the scroll container and then on the block. That cannot work in general:
+    //      a ResizeObserver reports SIZE changes, and a reflow can move a box without changing its size at all. Five of
+    //      this transcript's 29 paragraphs keep their exact height while everything after them shifts 25px.
+    //
+    // A per-frame comparison of the block's own rectangle has neither limitation: it fires for scrolling, for a window
+    // resize, for a reflow, for the composer growing, for a sidebar closing, and for anything else that displaces the
+    // passage — with no assumptions about which element changed or how. Reading three integers per frame is cheap, and
+    // a re-render only happens when one of them actually differs, so an idle panel costs nothing.
     React.useEffect(() => {
-      const reposition = () => setViewportTick((tick) => tick + 1)
-      window.addEventListener('scroll', reposition, true)
-      window.addEventListener('resize', reposition)
-      return () => {
-        window.removeEventListener('scroll', reposition, true)
-        window.removeEventListener('resize', reposition)
+      const block = source.block
+      let frame = 0
+      let primed = false
+      let lastTop = null
+      let lastLeft = null
+      let lastHeight = null
+
+      const watch = () => {
+        frame = window.requestAnimationFrame(watch)
+        if (block === null || block === undefined || block.isConnected !== true) return
+        const box = block.getBoundingClientRect()
+        const top = Math.round(box.top)
+        const left = Math.round(box.left)
+        const height = Math.round(box.height)
+        // The first reading only records the baseline: the render that mounted the panel already placed it against
+        // this box, so re-rendering here would be wasted work.
+        if (primed === false) {
+          primed = true
+          lastTop = top
+          lastLeft = left
+          lastHeight = height
+          return
+        }
+        if (top === lastTop && left === lastLeft && height === lastHeight) return
+        lastTop = top
+        lastLeft = left
+        lastHeight = height
+        setViewportTick((tick) => tick + 1)
       }
-    }, [])
+
+      frame = window.requestAnimationFrame(watch)
+      return () => {
+        if (frame !== 0) window.cancelAnimationFrame(frame)
+      }
+    }, [source.block])
 
     // Only Enter and the confirm button commit; EVERY other dismissal cancels.
     //

@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:82cd45bd915eb6bb
+ * Artifact: sha256:624463f927d2aa8a
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -1847,14 +1847,37 @@ function __dshQuoteChatFactory(hostRequire) {
         inputRef.current?.focus({ preventScroll: true });
       }, []);
       import_react3.default.useEffect(() => {
-        const reposition = () => setViewportTick((tick) => tick + 1);
-        window.addEventListener("scroll", reposition, true);
-        window.addEventListener("resize", reposition);
-        return () => {
-          window.removeEventListener("scroll", reposition, true);
-          window.removeEventListener("resize", reposition);
+        const block = source.block;
+        let frame = 0;
+        let primed = false;
+        let lastTop = null;
+        let lastLeft = null;
+        let lastHeight = null;
+        const watch = () => {
+          frame = window.requestAnimationFrame(watch);
+          if (block === null || block === void 0 || block.isConnected !== true) return;
+          const box = block.getBoundingClientRect();
+          const top = Math.round(box.top);
+          const left = Math.round(box.left);
+          const height2 = Math.round(box.height);
+          if (primed === false) {
+            primed = true;
+            lastTop = top;
+            lastLeft = left;
+            lastHeight = height2;
+            return;
+          }
+          if (top === lastTop && left === lastLeft && height2 === lastHeight) return;
+          lastTop = top;
+          lastLeft = left;
+          lastHeight = height2;
+          setViewportTick((tick) => tick + 1);
         };
-      }, []);
+        frame = window.requestAnimationFrame(watch);
+        return () => {
+          if (frame !== 0) window.cancelAnimationFrame(frame);
+        };
+      }, [source.block]);
       import_react3.default.useEffect(() => {
         const onDown = (event) => {
           if (ref.current !== null && event.target instanceof Node && ref.current.contains(event.target)) return;
