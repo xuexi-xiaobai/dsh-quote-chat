@@ -147,16 +147,22 @@ export async function openBrowser(options = {}) {
    * resulting state is read back; a window that refuses to maximise is reported rather than silently
    * left half-sized.
    *
-   * Runs only when this call launched the browser: an attached context belongs to someone else.
+   * ALSO runs when attached. A maximised window is a hard requirement for every run: the readable band, the number of
+   * paragraphs on screen and therefore every threshold-based assertion all depend on it. Skipping it in attach mode
+   * meant probes measured a half-sized window and reported "no usable passage", which looked like a product failure.
+   * When the window is already maximised the request is a no-op, so the cost is one round trip.
    */
-  if (options.context === undefined && options.maximize !== false && attached === false) {
+  if (options.context === undefined && options.maximize !== false) {
     try {
       const session = await context.newCDPSession(page)
       const { windowId } = await session.send('Browser.getWindowForTarget')
-      await session.send('Browser.setWindowBounds', {
-        windowId,
-        bounds: { windowState: 'maximized' },
-      })
+      const current = await session.send('Browser.getWindowBounds', { windowId })
+      if (current.bounds.windowState !== 'maximized') {
+        await session.send('Browser.setWindowBounds', {
+          windowId,
+          bounds: { windowState: 'maximized' },
+        })
+      }
       // The OS applies this asynchronously; poll briefly for the state to settle.
       let state = 'unknown'
       for (let attempt = 0; attempt < 20; attempt += 1) {

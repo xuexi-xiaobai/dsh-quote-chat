@@ -118,7 +118,16 @@ when the page is already showing the same URL.
 
 Every probe carries a hard timeout (`QC_PROBE_TIMEOUT_MS`, default 180s) that forces exit with a diagnostic, because a
 resource that is opened and never released keeps Node alive and looks exactly like a slow test.
-See `docs/test-script-lessons.md`.
+
+**Three rules that are not negotiable:**
+
+1. **Do not run the full suite for a small change.** Pick the one probe that exercises the change. Run everything only
+   at a milestone, or when the blast radius cannot be predicted.
+2. **The window must be maximised.** Every band/threshold assertion assumes it, and a half-sized window reports
+   "no usable passage", which reads like a product defect.
+3. **Use the persistent browser.** Do not kill it to get a "clean" state; use `tools/reset-session.mjs`.
+
+Details and the reasoning behind them: `docs/test-script-lessons.md`.
 
 ## Rules
 

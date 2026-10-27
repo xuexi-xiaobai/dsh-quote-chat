@@ -67,6 +67,32 @@ const context = await chromium.launchPersistentContext(PROFILE, {
 
 const page = context.pages()[0] ?? await context.newPage()
 
+// Maximise, and confirm it. This process OWNS the window, so it is the right place to do it: probes attach and skip
+// their own maximise when the state is already maximised, and a half-sized window silently breaks every
+// threshold-based assertion by shrinking the readable band.
+{
+  const session = await context.newCDPSession(page)
+  const { windowId } = await session.send('Browser.getWindowForTarget')
+  const current = await session.send('Browser.getWindowBounds', { windowId })
+  if (current.bounds.windowState !== 'maximized') {
+    await session.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'maximized' } })
+  }
+  let state = 'unknown'
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const result = await session.send('Browser.getWindowBounds', { windowId })
+    state = result.bounds.windowState
+    if (state === 'maximized') break
+    await new Promise((resolve) => { setTimeout(resolve, 50) })
+  }
+  await session.detach()
+  if (state === 'maximized') {
+    console.log('[browser-serve] window maximised')
+  } else {
+    console.error(`[browser-serve] WINDOW DID NOT MAXIMISE (state: ${state}) — thresholds in the suites assume`
+      + ' a maximised window; fix this before trusting any measurement')
+  }
+}
+
 if (url !== undefined) {
   await page.goto(url, { waitUntil: 'domcontentloaded' })
 }
