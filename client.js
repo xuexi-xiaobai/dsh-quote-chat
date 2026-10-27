@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:a08764c782801993
+ * Artifact: sha256:d4d8990307603991
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -986,7 +986,9 @@ function __dshQuoteChatFactory(hostRequire) {
       const band = readableBand();
       const left = Math.max(margin, Math.round((viewportWidth - size.width) / 2));
       const above = blockBox.top - gap - size.height;
-      return { left, top: Math.round(above), edge: "above" };
+      const maxTop = band.bottom - gap - size.height;
+      const top = Math.round(Math.min(above, maxTop));
+      return { left, top, edge: "above" };
     }
     function snapPosition(restingTop, size, options = {}) {
       const gap = options.gap ?? 8;
