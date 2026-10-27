@@ -352,10 +352,14 @@ check('the compose popover docks once the user types',
   /snapPosition\(resting\.top, \{ width, height \}\)/.test(popoversSource)
     && /comment\.trim\(\) !== ''/.test(popoversSource),
   'the compose panel does not dock to the header or the composer')
-check('the compose popover is mounted at body for fixed coordinates',
-  /document\.body,\n\s*\)\n\s*\}/.test(popoversSource)
-    && /position: 'fixed'/.test(popoversSource),
-  'a fixed panel inside the scroller would be offset by the scroll amount')
+check('the compose popover is mounted inside the transcript container',
+  // The panel shares the text's layer: the container clips at its top edge and the composer covers it at the
+  // bottom, so it is covered exactly as text is. That needs an absolute child of the container, not a fixed
+  // element on document.body — the earlier design used the latter and covered the chrome instead of being
+  // covered by it.
+  /scroller \?\? document\.body/.test(popoversSource)
+    && /position: scroller === null \? 'fixed' : 'absolute'/.test(popoversSource),
+  'the panel is positioned against the viewport, so the header and composer cannot cover it')
 check('the docking move is animated, not a jump',
   /transition:top .*cubic-bezier/.test(css)
     && /data-docked/.test(popoversSource),

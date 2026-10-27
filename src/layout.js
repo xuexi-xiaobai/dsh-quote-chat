@@ -373,28 +373,17 @@ export function createLayout() {
 
     const left = Math.max(margin, Math.round((viewportWidth - size.width) / 2))
 
-    const spaceAbove = blockBox.top - band.top
-    const spaceBelow = band.bottom - blockBox.bottom
-    const needed = size.height + gap + margin
-
-    // Above the block: the panel's bottom edge sits one gap above the block's top edge.
+    // ALWAYS above the block, never below.
+    //
+    // The previous version fell back to placing the panel below the block when there was not enough room above.
+    // That fallback is what produced the reported jump: scrolling down moves the block toward the header, the
+    // space above crosses the threshold, and the panel flips sides in a single frame — then flips back on the
+    // next scroll, which is why it looked like it settled after one jump.
+    //
+    // Keeping the side and letting the chrome cover the panel is the required behaviour anyway: the panel must
+    // be under the header and the composer, so being partially covered is correct, while flipping is not.
     const above = blockBox.top - gap - size.height
-    // Below the block: its top edge one gap under the block's bottom edge.
-    const below = blockBox.bottom + gap
-
-    if (spaceAbove >= needed) return { left, top: above, edge: 'above' }
-    if (spaceBelow >= needed) return { left, top: below, edge: 'below' }
-
-    // Neither side fits. Prefer the side with more room and clamp inside the band; a partly visible
-    // panel beats one pushed off-screen.
-    const preferred = spaceAbove >= spaceBelow ? above : below
-    const highest = band.top + margin
-    const lowest = Math.max(highest, band.bottom - size.height - margin)
-    return {
-      left,
-      top: Math.min(Math.max(highest, preferred), lowest),
-      edge: spaceAbove >= spaceBelow ? 'above-clamped' : 'below-clamped',
-    }
+    return { left, top: Math.round(above), edge: 'above' }
   }
 
   /**

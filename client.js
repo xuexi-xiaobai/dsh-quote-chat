@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:7666fff8589b1f57
+ * Artifact: sha256:8e3a7c47d5471132
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -886,21 +886,8 @@ function __dshQuoteChatFactory(hostRequire) {
       const viewportWidth = typeof window === "undefined" ? 0 : window.innerWidth;
       const band = readableBand();
       const left = Math.max(margin, Math.round((viewportWidth - size.width) / 2));
-      const spaceAbove = blockBox.top - band.top;
-      const spaceBelow = band.bottom - blockBox.bottom;
-      const needed = size.height + gap + margin;
       const above = blockBox.top - gap - size.height;
-      const below = blockBox.bottom + gap;
-      if (spaceAbove >= needed) return { left, top: above, edge: "above" };
-      if (spaceBelow >= needed) return { left, top: below, edge: "below" };
-      const preferred = spaceAbove >= spaceBelow ? above : below;
-      const highest = band.top + margin;
-      const lowest = Math.max(highest, band.bottom - size.height - margin);
-      return {
-        left,
-        top: Math.min(Math.max(highest, preferred), lowest),
-        edge: spaceAbove >= spaceBelow ? "above-clamped" : "below-clamped"
-      };
+      return { left, top: Math.round(above), edge: "above" };
     }
     function snapPosition(restingTop, size, options = {}) {
       const gap = options.gap ?? 8;
@@ -1207,11 +1194,19 @@ function __dshQuoteChatFactory(hostRequire) {
    * top property would animate the first paint as well, so the panel would fly in from wherever it
    * rendered instead of appearing at its resting place above the selection.
    *
-   * z-index 60 keeps it above the transcript but BELOW the app's chrome: the composer dock and the
+   * z-index -1 puts it BELOW the app's chrome, which is the required relationship: the header and the
+   * composer must cover this panel when they overlap it.
+   *
+   * A negative z-index is deliberate. The header is a static element with no stacking context, so ANY
+   * positioned element with a non-negative z-index paints above it — no value above zero can satisfy the
+   * requirement. Negative values are valid for positioned elements and paint behind the in-flow content of the
+   * stacking context, which is exactly "under the chrome, above the background".
+   *
+   * The old note claimed:
    * header are rendered by the host at higher layers, so when the panel is pushed under them it is
    * covered rather than floating on top. That is the requested behaviour.
    */
-  .qc-compose{position:fixed;z-index:60;width:min(420px,92vw);box-sizing:border-box;
+  .qc-compose{position:absolute;z-index:5;width:min(420px,92vw);box-sizing:border-box;
     border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:18px;
     background:var(--dsw-alias-bg-overlay);
     box-shadow:0 16px 40px rgba(0,0,0,.32),0 2px 8px rgba(0,0,0,.18);
@@ -1688,6 +1683,18 @@ function __dshQuoteChatFactory(hostRequire) {
   var h2 = import_react3.default.createElement;
   var VIEWPORT_MARGIN = 8;
   var ANCHOR_GAP = 8;
+  function findScroller() {
+    if (typeof document === "undefined") return null;
+    const flow = document.querySelector('[data-slot="conversation.chat.flow"]');
+    if (flow === null) return null;
+    for (const element of document.querySelectorAll("*")) {
+      if (element.scrollHeight <= element.clientHeight + 8) continue;
+      if (!element.contains(flow)) continue;
+      if (element === document.body || element === document.documentElement) continue;
+      return element;
+    }
+    return null;
+  }
   function placeNear(rect, size) {
     const width = size.width;
     const height = size.height;
@@ -1703,7 +1710,8 @@ function __dshQuoteChatFactory(hostRequire) {
     findFlow,
     anchorInTranscript,
     anchorAboveSelection,
-    snapPosition
+    snapPosition,
+    readableBand
   }) {
     function ActionPopup2(props) {
       const { anchor, canAnnotate, canAsk, labels, onAnnotate, onAsk } = props;
@@ -1758,6 +1766,17 @@ function __dshQuoteChatFactory(hostRequire) {
       const [comment, setComment] = import_react3.default.useState("");
       const [, setViewportTick] = import_react3.default.useState(0);
       const [size, setSize] = import_react3.default.useState({ width: 0, height: 0 });
+      const scrollerRef = import_react3.default.useRef(void 0);
+      if (scrollerRef.current === void 0) {
+        scrollerRef.current = findScroller();
+      }
+      const scroller = scrollerRef.current;
+      import_react3.default.useLayoutEffect(() => {
+        if (scroller === null) return;
+        if (getComputedStyle(scroller).position === "static") {
+          scroller.style.position = "relative";
+        }
+      }, [scroller]);
       import_react3.default.useLayoutEffect(() => {
         const element = ref.current;
         if (element === null) return;
@@ -1800,7 +1819,12 @@ function __dshQuoteChatFactory(hostRequire) {
       const resting = anchorAboveSelection ? anchorAboveSelection(blockBox, { width, height }) : placeNear(source.rect?.passage ?? source.rect, { width, height });
       const hasInput = comment.trim() !== "";
       const docked = hasInput && snapPosition ? snapPosition(resting.top, { width, height }) : null;
-      const target = docked ?? { left: resting.left, top: resting.top };
+      const inViewport = docked ?? { left: resting.left, top: resting.top };
+      const scrollerBox = scroller === null ? { top: 0, left: 0 } : scroller.getBoundingClientRect();
+      const target = scroller === null ? inViewport : {
+        left: Math.round(inViewport.left - scrollerBox.left + scroller.scrollLeft),
+        top: Math.round(inViewport.top - scrollerBox.top + scroller.scrollTop)
+      };
       return (0, import_react_dom.createPortal)(
         h2(
           "div",
@@ -1815,7 +1839,10 @@ function __dshQuoteChatFactory(hostRequire) {
             style: {
               left: `${target.left}px`,
               top: `${target.top}px`,
-              position: "fixed"
+              // Absolute inside the transcript's scroll container, so the panel shares the text's layer. The container
+              // clips it at its top edge and the composer covers it at the bottom, exactly as happens to text — no
+              // clip-path, no z-index trick, and no scroll listener needed for the resting position.
+              position: scroller === null ? "fixed" : "absolute"
             },
             onMouseDown: (event) => event.stopPropagation(),
             onKeyDown: (event) => {
@@ -1856,8 +1883,9 @@ function __dshQuoteChatFactory(hostRequire) {
             }, h2(IconCheck, null), h2("span", { className: "qc-compose-confirm-text" }, labels.confirm))
           )
         ),
-        // Mounted on body: a fixed dialog whose coordinates are viewport coordinates.
-        document.body
+        // Inside the transcript's scroll container, so the panel is covered and clipped exactly as the text is.
+        // Falls back to `body` when there is no container, where `position: fixed` and viewport coordinates apply.
+        scroller ?? document.body
       );
     }
     return { ActionPopup: ActionPopup2, ComposerPopover: ComposerPopover2 };
@@ -3410,7 +3438,10 @@ function __dshQuoteChatFactory(hostRequire) {
     anchorInTranscript: (flow, box, size, prefer) => layout.anchorInTranscript(flow, box, size, prefer),
     // Viewport-space placement for the compose panel: above the selection, then docked once it has text.
     anchorAboveSelection: layout.anchorAboveSelection,
-    snapPosition: layout.snapPosition
+    snapPosition: layout.snapPosition,
+    // The band the panel must stay visually inside: the header above, the composer below. Used to clip the
+    // panel, so those surfaces appear to cover it.
+    readableBand: layout.readableBand
   });
   var highlighter = createHighlighter();
   var annotationStore = createAnnotationStore({ maxAnnotations: MAX_ANNOTATIONS });

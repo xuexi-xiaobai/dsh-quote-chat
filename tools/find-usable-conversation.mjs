@@ -123,6 +123,15 @@ export const findUsableConversation = async (browser, options = {}) => {
     if (ready === null || ready === false) continue
     await page.waitForTimeout(250)
 
+    // A conversation that does not scroll cannot demonstrate the panel approaching the header, and its
+    // block positions never change no matter how much scrollTop is assigned. Require real overflow.
+    const scrollable = await read(() => {
+      const scroller = document.querySelector('.wSkVaW_scrollBody')
+      if (scroller === null) return 0
+      return scroller.scrollHeight - scroller.clientHeight
+    })
+    if (scrollable < 400) continue
+
     await scrollToEnd()
     const result = await scan()
     if (result.usable.length === 0) continue

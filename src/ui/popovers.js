@@ -34,6 +34,32 @@ const VIEWPORT_MARGIN = 8
 const ANCHOR_GAP = 8
 
 /**
+ * Find the transcript's scroll container.
+ *
+ * The compose panel is mounted inside it so that it shares the text's layer: the container clips at its top edge
+ * (its box begins at the header's bottom and it has `overflow: auto`) and the composer is sticky above it, so the
+ * panel is covered exactly as the text is. Measurement confirmed both behaviours for a child of this container,
+ * which is why the panel needs no clip-path and no z-index trick.
+ *
+ * Located by what it does rather than by a class name, since the app's class names are generated: it is the
+ * element that actually scrolls and contains the chat flow.
+ *
+ * @returns the scrolling element, or null when there is none.
+ */
+function findScroller() {
+  if (typeof document === 'undefined') return null
+  const flow = document.querySelector('[data-slot="conversation.chat.flow"]')
+  if (flow === null) return null
+  for (const element of document.querySelectorAll('*')) {
+    if (element.scrollHeight <= element.clientHeight + 8) continue
+    if (!element.contains(flow)) continue
+    if (element === document.body || element === document.documentElement) continue
+    return element
+  }
+  return null
+}
+
+/**
  * Place a surface near an anchor, inside the viewport.
  *
  * Only used when there is no transcript to anchor into. Coordinates are viewport-relative, which
@@ -71,7 +97,7 @@ function placeNear(rect, size) {
  *   the header or the composer once the user types.
  */
 export function createPopovers({
-  findFlow, anchorInTranscript, anchorAboveSelection, snapPosition,
+  findFlow, anchorInTranscript, anchorAboveSelection, snapPosition, readableBand,
 }) {
   /**
    * The floating action pair shown over a selected passage.
@@ -132,6 +158,38 @@ export function createPopovers({
     // geometry. The value itself is never read.
     const [, setViewportTick] = React.useState(0)
     const [size, setSize] = React.useState({ width: 0, height: 0 })
+
+    // The transcript's scroll container, resolved ONCE and cached across renders.
+    //
+    // The panel is mounted inside it so that it shares the text's layer: the container clips at its top edge (its
+    // box begins at the header's bottom, with `overflow: auto`) and the composer is sticky above it, so the panel
+    // is covered exactly as the text is. Measurement confirmed both behaviours for a child of this container.
+    // This is what the user asked for: text is not clipped by a special effect, it is simply covered.
+    //
+    // Resolved during the FIRST render only, via a lazy initializer, and stored in a ref afterwards. Resolving it in
+    // an effect and storing it in state caused the component to be torn down and remounted on the state update:
+    // a mutation observer recorded `.qc-compose` added and removed in the same millisecond, so the panel never
+    // became visible. A ref carries the value across renders without triggering one.
+    const scrollerRef = React.useRef(undefined)
+    if (scrollerRef.current === undefined) {
+      scrollerRef.current = findScroller()
+    }
+    const scroller = scrollerRef.current
+
+    // Make the container the panel's containing block.
+    //
+    // The container is `position: static`, so an absolutely positioned child would resolve against a distant
+    // ancestor AND would not be clipped by the container's `overflow`. `position: relative` establishes the
+    // containing block without moving anything, which is what makes the top edge clip exactly as it does for text.
+    // Applied in a layout effect so it is in place before the panel is painted.
+    React.useLayoutEffect(() => {
+      if (scroller === null) return
+      if (getComputedStyle(scroller).position === 'static') {
+        scroller.style.position = 'relative'
+      }
+    }, [scroller])
+
+
 
     // Measured on mount AND whenever the content changes height: typing grows the textarea, and a
     // stale height would place the panel against a box that no longer exists — which is what produced
@@ -196,40 +254,20 @@ export function createPopovers({
       }
     }, [onCancel])
 
-    // Positioned in VIEWPORT space, mounted on document.body.
-    //
-    // Three things forced this away from the scroller:
-    //
-    //   - the scroll container is 417px wide and the panel is 420, so a `left` computed inside it
-    //     clamps to the inset and the panel reads 142px left of the window's centre;
-    //   - the requirement is expressed in window terms ("above the selected text", "never covered by
-    //     the chat box"), which is viewport reasoning;
-    //   - the panel now docks against the header or the composer once the user types, and both of
-    //     those are viewport-anchored chrome.
+    // Placement is computed in VIEWPORT coordinates by the helpers below, then converted into the container's
+    // content space at the very end. Keeping the helpers unchanged matters: they were measured and corrected
+    // against real behaviour (above the BLOCK's top edge, never flipping sides), and rewriting them in container
+    // coordinates would risk reintroducing faults that took several rounds to find.
     const width = size.width || 420
     // The first paint has no measurement; 170 is a rough guess that survives one frame only. Every
     // later render uses the real height, which is what the placement needs to be exact.
     const height = size.height || 170
 
-    // The resting place: centred, just above the PASSAGE.
+    // The LIVE box of the block being annotated, in viewport coordinates.
     //
-    // Not `source.rect`: for a mouse gesture that is the pointer release point, which can sit anywhere
-    // inside the passage. Placing "above the pointer" therefore put the panel over the text it was
-    // describing. `source.passage` is the selection's own box, which is the thing the requirement
-    // refers to. Falls back to the pointer only when no passage box exists.
-    // The passage box lives INSIDE rect (selection.js sets rect.passage), not on the source itself.
-    // Reading source.passage silently fell back to the pointer rect, which is why three attempts at
-    // this fix changed nothing at all.
-    // The BLOCK, not the selection range: a drag usually selects part of a paragraph, and aligning to
-    // the range put the panel over that paragraph's earlier lines. `source.block` is the element the
-    // selection started in, resolved with `closest(BLOCK_SELECTOR)`.
-    // The snapshot taken when the selection was read, not a live measurement at render time.
-    // The LIVE box, not the snapshot. The snapshot is what made scrolling leave the panel behind and made
-    // the resting place depend on the drag direction: it captured one rectangle at read time, from whichever
-    // end of the range the gesture started at. The element's own box has neither problem.
-    //
-    // The snapshot stays as a fallback for when the block has been re-rendered out of the document, where a
-    // live measurement would read zero.
+    // Not the snapshot: a snapshot made the panel lag behind the text when the transcript scrolled, and made the
+    // resting place depend on the drag direction, because it captured one rectangle at read time from whichever
+    // end of the range the gesture started at.
     const liveBlock = source.block
     const blockBox = (liveBlock !== undefined && liveBlock !== null && liveBlock.isConnected === true)
       ? liveBlock.getBoundingClientRect()
@@ -238,13 +276,27 @@ export function createPopovers({
       ? anchorAboveSelection(blockBox, { width, height })
       : placeNear(source.rect?.passage ?? source.rect, { width, height })
 
-    // Once the user has typed something, the panel glides to the nearer edge of the band. The
-    // resting position is kept as the "no input yet" answer, so clearing the text puts it back.
+    // Once the user has typed something, the panel glides to the nearer edge of the visible area. The resting
+    // position is kept as the "no input yet" answer, so clearing the text puts it back.
     const hasInput = comment.trim() !== ''
     const docked = hasInput && snapPosition
       ? snapPosition(resting.top, { width, height })
       : null
-    const target = docked ?? { left: resting.left, top: resting.top }
+    const inViewport = docked ?? { left: resting.left, top: resting.top }
+
+    // Convert to the container's content space: content = viewport - containerTop + scrollOffset.
+    //
+    // With no container the panel is mounted on `document.body`, and the conversion is the identity because the
+    // offsets are zero. One conversion serves both cases, so there is no second code path to keep in step.
+    const scrollerBox = scroller === null
+      ? { top: 0, left: 0 }
+      : scroller.getBoundingClientRect()
+    const target = scroller === null
+      ? inViewport
+      : {
+        left: Math.round(inViewport.left - scrollerBox.left + scroller.scrollLeft),
+        top: Math.round(inViewport.top - scrollerBox.top + scroller.scrollTop),
+      }
 
     return createPortal(
       h('div', {
@@ -258,7 +310,10 @@ export function createPopovers({
         style: {
           left: `${target.left}px`,
           top: `${target.top}px`,
-          position: 'fixed',
+          // Absolute inside the transcript's scroll container, so the panel shares the text's layer. The container
+          // clips it at its top edge and the composer covers it at the bottom, exactly as happens to text — no
+          // clip-path, no z-index trick, and no scroll listener needed for the resting position.
+          position: scroller === null ? 'fixed' : 'absolute',
         },
         onMouseDown: (event) => event.stopPropagation(),
         onKeyDown: (event) => {
@@ -298,8 +353,9 @@ export function createPopovers({
         }, h(IconCheck, null), h('span', { className: 'qc-compose-confirm-text' }, labels.confirm)),
       ),
       ),
-      // Mounted on body: a fixed dialog whose coordinates are viewport coordinates.
-      document.body,
+      // Inside the transcript's scroll container, so the panel is covered and clipped exactly as the text is.
+      // Falls back to `body` when there is no container, where `position: fixed` and viewport coordinates apply.
+      scroller ?? document.body,
     )
   }
 

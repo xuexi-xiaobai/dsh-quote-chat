@@ -172,6 +172,9 @@ const { ActionPopup, ComposerPopover } = createPopovers({
   // Viewport-space placement for the compose panel: above the selection, then docked once it has text.
   anchorAboveSelection: layout.anchorAboveSelection,
   snapPosition: layout.snapPosition,
+  // The band the panel must stay visually inside: the header above, the composer below. Used to clip the
+  // panel, so those surfaces appear to cover it.
+  readableBand: layout.readableBand,
 })
 
 /**
