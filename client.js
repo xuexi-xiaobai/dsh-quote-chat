@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:17dd6dc6654a72b2
+ * Artifact: sha256:a08764c782801993
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -610,10 +610,24 @@ function __dshQuoteChatFactory(hostRequire) {
     "[data-composer-root]",
     '[contenteditable="true"]'
   ];
+  function composerSurface() {
+    const editable = [...document.querySelectorAll('[contenteditable="true"]')].find((element) => element.getBoundingClientRect().height > 0) ?? null;
+    if (editable === null) return null;
+    const flow = findFlowElement();
+    let surface = editable;
+    for (let node = editable.parentElement; node !== null; node = node.parentElement) {
+      if (node === document.body || node === document.documentElement) break;
+      if (flow !== null && node.contains(flow)) break;
+      surface = node;
+    }
+    return surface;
+  }
   function isInsideTranscript(target) {
     if (target === null || target === void 0) return false;
     const flow = findFlowElement();
     if (flow === null) return false;
+    const composer = composerSurface();
+    if (composer !== null && composer.contains(target) === true) return false;
     for (const selector of COMPOSER_SELECTORS) {
       for (const element of document.querySelectorAll(selector)) {
         if (element.contains(target) === true) return false;

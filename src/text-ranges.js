@@ -84,6 +84,32 @@ const COMPOSER_SELECTORS = [
 ]
 
 /**
+ * The whole composer surface: the highest ancestor of the editable that does NOT contain the chat flow.
+ *
+ * Excluding only the editable is not enough. The composer box has padding, borders and buttons around its input, so a
+ * press on any of that has a target OUTSIDE the editable — it fell through to "inside the transcript" and cancelled the
+ * panel. Reported exactly that way: "clicking the blank parts of the chat box also cancels".
+ *
+ * Climbing stops at the first ancestor that also holds the flow, which is the element shared by the transcript and the
+ * composer. That yields the composer's own box without relying on generated class names.
+ *
+ * @returns the composer's outermost element, or null when there is no composer.
+ */
+function composerSurface() {
+  const editable = [...document.querySelectorAll('[contenteditable="true"]')]
+    .find((element) => element.getBoundingClientRect().height > 0) ?? null
+  if (editable === null) return null
+  const flow = findFlowElement()
+  let surface = editable
+  for (let node = editable.parentElement; node !== null; node = node.parentElement) {
+    if (node === document.body || node === document.documentElement) break
+    if (flow !== null && node.contains(flow)) break
+    surface = node
+  }
+  return surface
+}
+
+/**
  * Whether a click landed inside the transcript's own area.
  *
  * Dismissal of the compose panel is defined in terms of this: a press inside the transcript means the user has moved on
@@ -94,11 +120,11 @@ const COMPOSER_SELECTORS = [
  * definition cannot drift between them. Before it was centralised the dock closed the panel on ANY outside press,
  * which made the popover's own rule unreachable.
  *
- * The area is the flow's scroll container MINUS the composer. Both parts of that matter:
+ * The area is the flow's scroll container MINUS the whole composer surface. Every part of that matters:
  *   - the container, not the flow element, because the blank space beside and below the prose is inside the container
  *     and outside the flow, and clicking there is still "clicking in the transcript";
- *   - minus the composer, because this app nests the composer inside that same container (measured), so the container
- *     alone would count a press on the chat box as a press on the transcript.
+ *   - minus the WHOLE composer, because this app nests the composer inside that same container (measured) and because
+ *     the composer's padding and buttons sit outside its editable element.
  *
  * @param target - the event target.
  * @returns true when the target sits inside the transcript area.
@@ -107,7 +133,9 @@ export function isInsideTranscript(target) {
   if (target === null || target === undefined) return false
   const flow = findFlowElement()
   if (flow === null) return false
-  // The composer first: a press on it is never a press on the transcript.
+  // The composer first: a press anywhere on it is never a press on the transcript.
+  const composer = composerSurface()
+  if (composer !== null && composer.contains(target) === true) return false
   for (const selector of COMPOSER_SELECTORS) {
     for (const element of document.querySelectorAll(selector)) {
       if (element.contains(target) === true) return false

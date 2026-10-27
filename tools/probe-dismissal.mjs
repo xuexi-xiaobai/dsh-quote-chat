@@ -83,6 +83,21 @@ const pressRegion = async (descriptor) => {
         return [...document.querySelectorAll('[contenteditable="true"]')]
           .filter((element) => element.getBoundingClientRect().height > 0).pop() ?? null
       }
+      if (find.kind === 'composerSurface') {
+        // The composer's own box: the highest ancestor of the editable that does not contain the flow. This is the
+        // region whose padding and buttons are OUTSIDE the editable, which is where the user saw the panel cancel.
+        const editable = [...document.querySelectorAll('[contenteditable="true"]')]
+          .filter((element) => element.getBoundingClientRect().height > 0).pop() ?? null
+        if (editable === null) return null
+        const flow = document.querySelector('[data-slot="conversation.chat.flow"]')
+        let surface = editable
+        for (let node = editable.parentElement; node !== null; node = node.parentElement) {
+          if (node === document.body) break
+          if (flow !== null && node.contains(flow)) break
+          surface = node
+        }
+        return surface
+      }
       if (find.kind === 'leftRail') {
         const tree = document.querySelector('[role="treeitem"]')
         return tree === null ? null : tree.closest('aside, nav, [class*="rail"], [class*="sidebar"]')
@@ -127,8 +142,15 @@ try {
     document.querySelector('[data-slot="conversation.chat.flow"]') !== null)
   if (flowOpen === false) {
     await read(() => [...document.querySelectorAll('[role="treeitem"]')][0]?.click())
-    await page.waitForTimeout(1800)
   }
+  // Wait for real prose before starting. A fixed sleep was not enough: the first two regions reported "could not open a
+  // panel" because the conversation was still rendering, which looked like a rule failure instead of a timing artefact.
+  await waitFor(
+    '(() => { const f = document.querySelector(\'[data-slot="conversation.chat.flow"]\');'
+      + ' return f !== null && [...f.querySelectorAll("p, li")].some((e) => (e.innerText ?? "").trim().length > 40) })()',
+    { timeoutMs: 20000 },
+  )
+  await page.waitForTimeout(400)
 
   const results = []
   /** Chrome must NOT dismiss. */
@@ -136,7 +158,8 @@ try {
     { kind: 'panel', label: 'the panel itself' },
     { kind: 'header', label: 'the header' },
     { kind: 'leftRail', label: 'the left rail' },
-    { kind: 'composer', label: 'the composer' },
+    { kind: 'composer', label: 'composer input' },
+    { kind: 'composerSurface', label: 'composer blank' },
   ]) {
     // Retry opening: the first attempt often runs while the conversation is still settling after the reload.
     let opened = false
