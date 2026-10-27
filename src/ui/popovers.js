@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The two floating surfaces over a selection: the action pair and the comment editor.
  *
  * ## Why these are a factory
@@ -369,14 +369,47 @@ export function createPopovers({
         top: Math.round(inViewport.top - scrollerBox.top + scroller.scrollTop),
       }
 
+    // Glide across a dock-state change; track scroll frame-by-frame.
+    //
+    // `docked` flips between null and {edge} exactly when the panel starts or stops being pinned to an edge. Only that
+    // discrete move is animated: while docked the target is an edge that shifts with every scroll frame, and a
+    // transition there makes the panel trail the content — the "inertia" that was reported.
+    //
+    // The animation uses the Web Animations API rather than a CSS transition on `top`. A CSS transition cannot work
+    // here: the attribute that would enable it and the new position are committed together, so the browser has no
+    // previous value to interpolate from and the move lands instantly (measured: 84 -> 97 within one frame, no
+    // intermediate positions painted). WAAPI takes the previous VIEWPORT top explicitly, so it does not depend on
+    // stylesheet timing at all.
+    const dockedEdge = docked === null ? null : docked.edge
+    const previousEdgeRef = React.useRef(undefined)
+    const previousTopRef = React.useRef(null)
+    React.useLayoutEffect(() => {
+      const element = ref.current
+      if (element === null) return
+      const viewportTop = element.getBoundingClientRect().top
+      const previousEdge = previousEdgeRef.current
+      const previousTop = previousTopRef.current
+      // The first paint has no previous state, so it must not animate in from the origin.
+      if (previousEdge !== undefined && previousEdge !== dockedEdge && previousTop !== null) {
+        const delta = previousTop - viewportTop
+        if (Math.abs(delta) > 2 && typeof element.animate === 'function') {
+          element.animate(
+            [{ transform: `translateY(${delta}px)` }, { transform: 'none' }],
+            { duration: 260, easing: 'cubic-bezier(.22,.61,.36,1)' },
+          )
+        }
+      }
+      previousEdgeRef.current = dockedEdge
+      previousTopRef.current = viewportTop
+    })
+
     return createPortal(
       h('div', {
         ref,
         className: 'qc-compose',
         role: 'dialog',
         'aria-label': labels.title,
-        // The docked slot is a data attribute so the stylesheet can add the transition only when a
-        // move is actually happening — the first paint must not animate from the origin.
+        // The docked slot, exposed for the stylesheet and for probes. The glide itself is done with WAAPI above.
         'data-docked': docked === null ? 'false' : docked.edge,
         style: {
           left: `${target.left}px`,
@@ -432,3 +465,5 @@ export function createPopovers({
 
   return { ActionPopup, ComposerPopover }
 }
+
+

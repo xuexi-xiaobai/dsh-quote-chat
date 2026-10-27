@@ -49,13 +49,17 @@ export const STYLESHEET = `
   background:var(--dsw-alias-bg-overlay);
   box-shadow:0 16px 40px rgba(0,0,0,.32),0 2px 8px rgba(0,0,0,.18);
   padding:12px;color:var(--dsw-alias-label-primary);
-  font-size:12.5px;animation:qc-pop .1s ease-out;
-  /* Smooth glide between the resting place and the docked slots. */
-  transition:top .26s cubic-bezier(.22,.61,.36,1),left .26s cubic-bezier(.22,.61,.36,1)}
-.qc-compose[data-docked="false"]{transition:none}
-/* The gutter bubble's editor docks the same way the compose panel does, so it gets the same glide. */
-.qc-bubble-panel[data-docked="false"]{transition:none}
-.qc-bubble-panel{transition:top .26s cubic-bezier(.22,.61,.36,1),right .26s cubic-bezier(.22,.61,.36,1),left .26s cubic-bezier(.22,.61,.36,1)}
+  font-size:12.5px;animation:qc-pop .1s ease-out}
+/* No CSS transition on the panel's position, deliberately.
+ *
+ * A transition on the top property made a docked panel trail every scroll frame: each frame set a new target and the
+ * 260ms interpolation restarted, so the panel arrived late — the inertia reported. Turning it off makes tracking exact.
+ *
+ * The glide across the two dock-state changes is animated by the component with the Web Animations API instead, because
+ * a CSS transition cannot express it: the attribute that enables the transition and the new position arrive in the same
+ * commit, so the browser has no starting value and the change lands instantly (measured: 84 -> 97 in one frame, no
+ * intermediate positions).
+ */
 .qc-compose textarea{width:100%;box-sizing:border-box;resize:none;min-height:2.8em;max-height:9em;
   font:inherit;line-height:1.5;padding:9px 11px;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);
   background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);outline:none}
@@ -460,5 +464,6 @@ export const STYLESHEET = `
   border:1px solid var(--dsw-alias-border-l2);font-weight:400}
 .qc-btn-ghost:hover{background:var(--dsw-alias-bg-layer-2)}
 `
+
 
 

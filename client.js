@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:274de0d4aa6a5868
+ * Artifact: sha256:8680512e8d841e46
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -1313,13 +1313,17 @@ function __dshQuoteChatFactory(hostRequire) {
     background:var(--dsw-alias-bg-overlay);
     box-shadow:0 16px 40px rgba(0,0,0,.32),0 2px 8px rgba(0,0,0,.18);
     padding:12px;color:var(--dsw-alias-label-primary);
-    font-size:12.5px;animation:qc-pop .1s ease-out;
-    /* Smooth glide between the resting place and the docked slots. */
-    transition:top .26s cubic-bezier(.22,.61,.36,1),left .26s cubic-bezier(.22,.61,.36,1)}
-  .qc-compose[data-docked="false"]{transition:none}
-  /* The gutter bubble's editor docks the same way the compose panel does, so it gets the same glide. */
-  .qc-bubble-panel[data-docked="false"]{transition:none}
-  .qc-bubble-panel{transition:top .26s cubic-bezier(.22,.61,.36,1),right .26s cubic-bezier(.22,.61,.36,1),left .26s cubic-bezier(.22,.61,.36,1)}
+    font-size:12.5px;animation:qc-pop .1s ease-out}
+  /* No CSS transition on the panel's position, deliberately.
+   *
+   * A transition on the top property made a docked panel trail every scroll frame: each frame set a new target and the
+   * 260ms interpolation restarted, so the panel arrived late — the inertia reported. Turning it off makes tracking exact.
+   *
+   * The glide across the two dock-state changes is animated by the component with the Web Animations API instead, because
+   * a CSS transition cannot express it: the attribute that enables the transition and the new position arrive in the same
+   * commit, so the browser has no starting value and the change lands instantly (measured: 84 -> 97 in one frame, no
+   * intermediate positions).
+   */
   .qc-compose textarea{width:100%;box-sizing:border-box;resize:none;min-height:2.8em;max-height:9em;
     font:inherit;line-height:1.5;padding:9px 11px;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);
     background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);outline:none}
@@ -1965,6 +1969,27 @@ function __dshQuoteChatFactory(hostRequire) {
         left: Math.round(inViewport.left - scrollerBox.left + scroller.scrollLeft),
         top: Math.round(inViewport.top - scrollerBox.top + scroller.scrollTop)
       };
+      const dockedEdge = docked === null ? null : docked.edge;
+      const previousEdgeRef = import_react3.default.useRef(void 0);
+      const previousTopRef = import_react3.default.useRef(null);
+      import_react3.default.useLayoutEffect(() => {
+        const element = ref.current;
+        if (element === null) return;
+        const viewportTop = element.getBoundingClientRect().top;
+        const previousEdge = previousEdgeRef.current;
+        const previousTop = previousTopRef.current;
+        if (previousEdge !== void 0 && previousEdge !== dockedEdge && previousTop !== null) {
+          const delta = previousTop - viewportTop;
+          if (Math.abs(delta) > 2 && typeof element.animate === "function") {
+            element.animate(
+              [{ transform: `translateY(${delta}px)` }, { transform: "none" }],
+              { duration: 260, easing: "cubic-bezier(.22,.61,.36,1)" }
+            );
+          }
+        }
+        previousEdgeRef.current = dockedEdge;
+        previousTopRef.current = viewportTop;
+      });
       return (0, import_react_dom.createPortal)(
         h2(
           "div",
@@ -1973,8 +1998,7 @@ function __dshQuoteChatFactory(hostRequire) {
             className: "qc-compose",
             role: "dialog",
             "aria-label": labels.title,
-            // The docked slot is a data attribute so the stylesheet can add the transition only when a
-            // move is actually happening — the first paint must not animate from the origin.
+            // The docked slot, exposed for the stylesheet and for probes. The glide itself is done with WAAPI above.
             "data-docked": docked === null ? "false" : docked.edge,
             style: {
               left: `${target.left}px`,
@@ -2391,6 +2415,26 @@ function __dshQuoteChatFactory(hostRequire) {
       const dockTop = bandTop;
       const dockBottom = Math.max(bandTop, bandBottom - panelHeight);
       const dockedEdge = docks === false ? null : Math.abs(anchoredTop - dockTop) <= Math.abs(dockBottom - anchoredTop) ? "top" : "bottom";
+      const previousEdgeRef = import_react5.default.useRef(void 0);
+      const previousTopRef = import_react5.default.useRef(null);
+      import_react5.default.useLayoutEffect(() => {
+        const element = ref.current;
+        if (element === null) return;
+        const viewportTop = element.getBoundingClientRect().top;
+        const previousEdge = previousEdgeRef.current;
+        const previousTop = previousTopRef.current;
+        if (previousEdge !== void 0 && previousEdge !== dockedEdge && previousTop !== null) {
+          const delta = previousTop - viewportTop;
+          if (Math.abs(delta) > 2 && typeof element.animate === "function") {
+            element.animate(
+              [{ transform: `translateY(${delta}px)` }, { transform: "none" }],
+              { duration: 260, easing: "cubic-bezier(.22,.61,.36,1)" }
+            );
+          }
+        }
+        previousEdgeRef.current = dockedEdge;
+        previousTopRef.current = viewportTop;
+      });
       const clampedTop = docks === false ? anchoredTop : dockedEdge === "top" ? dockTop : Math.min(dockBottom, Math.max(bandTop, bandBottom - (measured || 0)));
       const commit = () => {
         setFlash(labels.saved);
@@ -2415,7 +2459,7 @@ function __dshQuoteChatFactory(hostRequire) {
             top: `${clampedTop}px`,
             visibility: size.width === 0 ? "hidden" : "visible"
           },
-          // Same docking marker the compose panel uses, so the stylesheet can animate a move only when one is happening.
+          // The docked slot, exposed for the stylesheet and for probes. The glide is done with WAAPI above.
           "data-docked": dockedEdge === null ? "false" : dockedEdge
         },
         // No passage preview and no jump button: the passage is already lit in the

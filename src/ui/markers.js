@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The gutter: numbered markers beside annotated passages, and the comment editor they open.
  *
  * ## How the marker is placed
@@ -262,6 +262,30 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
     const dockedEdge = docks === false
       ? null
       : Math.abs(anchoredTop - dockTop) <= Math.abs(dockBottom - anchoredTop) ? 'top' : 'bottom'
+    // Glide only across a dock-state change; track a scroll frame-by-frame. Same reasoning as the compose panel: a CSS
+    // transition on a per-frame target makes the panel trail the content, and it cannot interpolate the state change
+    // anyway because the flag that enables it arrives in the same commit. WAAPI gets the previous viewport position
+    // explicitly, so it works regardless of stylesheet timing.
+    const previousEdgeRef = React.useRef(undefined)
+    const previousTopRef = React.useRef(null)
+    React.useLayoutEffect(() => {
+      const element = ref.current
+      if (element === null) return
+      const viewportTop = element.getBoundingClientRect().top
+      const previousEdge = previousEdgeRef.current
+      const previousTop = previousTopRef.current
+      if (previousEdge !== undefined && previousEdge !== dockedEdge && previousTop !== null) {
+        const delta = previousTop - viewportTop
+        if (Math.abs(delta) > 2 && typeof element.animate === 'function') {
+          element.animate(
+            [{ transform: `translateY(${delta}px)` }, { transform: 'none' }],
+            { duration: 260, easing: 'cubic-bezier(.22,.61,.36,1)' },
+          )
+        }
+      }
+      previousEdgeRef.current = dockedEdge
+      previousTopRef.current = viewportTop
+    })
     // Clamping applies ONLY while docked. At rest the position is the pure anchor, which is what lets the editor leave
     // the screen with its passage.
     const clampedTop = docks === false
@@ -302,7 +326,7 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
           top: `${clampedTop}px`,
           visibility: size.width === 0 ? 'hidden' : 'visible',
         },
-      // Same docking marker the compose panel uses, so the stylesheet can animate a move only when one is happening.
+      // The docked slot, exposed for the stylesheet and for probes. The glide is done with WAAPI above.
       'data-docked': dockedEdge === null ? 'false' : dockedEdge,
     },
     // No passage preview and no jump button: the passage is already lit in the
@@ -787,3 +811,4 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
 
   return { MarkerLayer: MarkerLayer }
 }
+
