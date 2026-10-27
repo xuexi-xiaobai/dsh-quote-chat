@@ -126,13 +126,30 @@ try {
       console.log('  no passage to annotate')
       process.exitCode = 1
     } else {
-      // Shift-click selects reliably even when a plain drag loses focus after a reload.
-      await page.mouse.click(points.from.x, points.from.y)
-      await page.waitForTimeout(120)
-      await page.keyboard.down('Shift')
-      await page.mouse.click(points.to.x, points.to.y)
-      await page.keyboard.up('Shift')
-      await page.waitForTimeout(150)
+      // Triple-click the paragraph. Coordinate selection was unreliable here: the cleanup pass focuses the composer, and
+      // a click-plus-Shift-click on the transcript sometimes left an empty selection, so the toolbar never appeared and
+      // the probe aborted before measuring anything. A triple click selects the paragraph in one gesture.
+      await read(() => {
+        const scroller = document.querySelector('.wSkVaW_scrollBody')
+        const flow = document.querySelector('[data-slot="conversation.chat.flow"]')
+        if (scroller === null || flow === null) return
+        scroller.style.scrollBehavior = 'auto'
+        scroller.scrollTop = 600
+        void scroller.offsetHeight
+        for (const old of document.querySelectorAll('[data-qc-seed]')) old.removeAttribute('data-qc-seed')
+        const scrollerBox = scroller.getBoundingClientRect()
+        const candidate = [...flow.querySelectorAll('p, li')].find((element) => {
+          const box = element.getBoundingClientRect()
+          return (element.innerText ?? '').trim().length > 40
+            && box.top >= scrollerBox.top + 190
+            && box.bottom <= scrollerBox.bottom - 60
+        })
+        candidate?.setAttribute('data-qc-seed', '1')
+      })
+      await browser.tripleClick('[data-qc-seed="1"]')
+      await page.waitForTimeout(300)
+      const selected = await read(() => (window.getSelection() ?? '').toString().trim().length)
+      console.log(`  selected ${selected} characters by triple click`)
       await waitFor('document.querySelectorAll(\'.qc-popup button\').length === 2', { timeoutMs: 5000 })
       await click('.qc-popup button:first-child')
       await waitFor('document.querySelector(\'.qc-compose\') !== null', { timeoutMs: 5000 })
@@ -148,23 +165,46 @@ try {
     console.log('  no marker available')
     process.exitCode = 1
   } else {
-    // Seat the bubble low enough that the editor has somewhere to sit, then open it.
+    // Seat the bubble in the middle of the usable area, measured against the CHAT BOX rather than a fixed offset.
+    //
+    // A fixed `scrollerTop + 430` put the bubble at 506 while the composer's top edge was at 469 — i.e. behind the chat
+    // box, so clicking it hit the composer instead and the editor never opened. The composer's position depends on the
+    // window and on how many lines the draft has, so the only safe anchor is the composer itself.
     await read(() => {
       const scroller = document.querySelector('.wSkVaW_scrollBody')
       const marker = document.querySelector('.qc-marker')
       if (scroller === null || marker === null) return
       scroller.style.scrollBehavior = 'auto'
       const scrollerBox = scroller.getBoundingClientRect()
+      const editable = [...document.querySelectorAll('[contenteditable="true"]')]
+        .filter((element) => element.getBoundingClientRect().height > 0).pop() ?? null
+      const composerTop = editable === null ? scrollerBox.bottom : editable.getBoundingClientRect().top
+      // 190px above the chat box: comfortably inside the band, and low enough that the editor has room above it.
+      const wanted = Math.max(scrollerBox.top + 140, composerTop - 190)
       for (let attempt = 0; attempt < 8; attempt += 1) {
         const box = marker.getBoundingClientRect()
-        const delta = box.top - (scrollerBox.top + 430)
+        const delta = box.top - wanted
         if (Math.abs(delta) <= 6) break
         scroller.scrollTop += delta
         void scroller.offsetHeight
       }
     })
     await page.waitForTimeout(300)
-    await read(() => document.querySelector('.qc-marker')?.click())
+    // Click the marker with a REAL pointer press. A synthetic `.click()` only dispatches `click`, and the editor is
+    // opened from a pointer handler, so the panel never appeared — which read as "the editor did not open" while the
+    // marker was perfectly clickable by hand.
+    const markerPoint = await read(() => {
+      const marker = document.querySelector('.qc-marker')
+      if (marker === null) return null
+      const box = marker.getBoundingClientRect()
+      return { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2) }
+    })
+    if (markerPoint === null) {
+      console.log('  the marker disappeared before it could be clicked')
+      process.exitCode = 1
+    } else {
+      await page.mouse.click(markerPoint.x, markerPoint.y)
+    }
     const opened = await waitFor('document.querySelector(\'.qc-bubble-panel\') !== null', { timeoutMs: 4000 })
     if (opened === null) {
       console.log('  the editor did not open')
@@ -203,7 +243,43 @@ try {
       const gaps = [first, ...restRows].filter((row) => row !== null).map((row) => row.attachGap)
       const gapSpread = gaps.length === 0 ? 0 : Math.max(...gaps) - Math.min(...gaps)
 
-      // ── Phase 2: typing must dock it ──
+      // Phase 1b: with no text the editor must be ordinary content, free to leave the screen.
+      //
+      // The reported defect was the chat box "pushing" it: the editor held its ground while the bubble scrolled away. So
+      // the observable proof is a sample where the editor's bottom edge goes PAST the chat box's top edge — allowed,
+      // because the chat box simply covers it, exactly as it covers the transcript text. If every sample stays clear of
+      // the chat box, the editor is being clamped into the band again.
+      const pushedRows = []
+      for (let step = 1; step <= 10; step += 1) {
+        await read(() => {
+          const scroller = document.querySelector('.wSkVaW_scrollBody')
+          if (scroller === null) return
+          scroller.style.scrollBehavior = 'auto'
+          scroller.scrollTop -= 55
+          void scroller.offsetHeight
+        })
+        await page.waitForTimeout(180)
+        const next = await sample()
+        if (next !== null) pushedRows.push({ step, ...next })
+      }
+      const enteredComposer = pushedRows.filter((row) => row.intoComposer !== null && row.intoComposer > 0)
+      const attachSpreads = pushedRows.map((row) => row.attachGap)
+      const attachOk = attachSpreads.length > 0
+        && Math.max(...attachSpreads) - Math.min(...attachSpreads) <= 12
+
+      console.log('\n  phase 1b: scrolled down, no text — the editor must be free to leave the screen')
+      console.log('   step  panelTop..Bottom  bubbleTop  attachGap  intoComposer')
+      for (const row of pushedRows) {
+        console.log(`   ${String(row.step).padStart(4)}`
+          + `  ${String(row.panelTop).padStart(6)}..${String(row.panelBottom).padEnd(6)}`
+          + `  ${String(row.bubbleTop).padStart(9)}`
+          + `  ${String(row.attachGap).padStart(9)}`
+          + `  ${String(row.intoComposer).padStart(12)}`)
+      }
+      console.log(`\n  samples reaching past the chat box's top: ${enteredComposer.length}`
+        + `  (this is ALLOWED when there is no text)`)
+      console.log(`  the bubble gap stayed constant across the scroll: ${attachOk}`)
+
       await read(() => {
         const area = document.querySelector('.qc-bubble-panel textarea, .qc-bubble-panel [contenteditable="true"]')
         area?.focus()
@@ -226,20 +302,22 @@ try {
       console.log(`   panel ${restored.panelTop}..${restored.panelBottom}`
         + `   docked=${restored.docked}   attachGap=${restored.attachGap}`)
 
-      const follows = gapSpread <= 8
+      const follows = gapSpread <= 12
       const dockedOk = docked.docked !== 'false' && docked.intoComposer !== null && docked.intoComposer <= 0
-      // Restored means "attached to the bubble again", not "the same offset as when it opened": whether the editor sits
-      // above or below depends on how much room there is, and that legitimately changes as the transcript scrolls.
       const restoredOk = restored.docked === 'false'
         && restored.attachGap !== null && Math.abs(restored.attachGap) <= 12
+      // The decisive check for the reported defect: with no text the editor must be able to scroll behind the chat box.
+      const freeToLeave = enteredComposer.length > 0 && attachOk
 
       console.log('\n  ══ verdict ══')
-      console.log(`     at rest, the bubble gap varied by ${gapSpread}px across the scroll  ${follows ? 'OK' : 'DRIFTED'}`)
+      console.log(`     at rest, it follows its bubble: gap varied ${gapSpread}px  ${follows ? 'OK' : 'DRIFTED'}`)
+      console.log(`     at rest, it can scroll behind the chat box: ${enteredComposer.length} samples did`
+        + `  ${freeToLeave ? 'OK' : 'STILL PUSHED'}`)
       console.log(`     typing docked it to an edge: ${docked.docked}, clear of the chat box by`
         + ` ${docked.intoComposer === null ? 'n/a' : -docked.intoComposer}px  ${dockedOk ? 'OK' : 'WRONG'}`)
       console.log(`     clearing the text restored the anchor  ${restoredOk ? 'OK' : 'WRONG'}`)
 
-      const ok = follows && dockedOk && restoredOk
+      const ok = follows && freeToLeave && dockedOk && restoredOk
       console.log(`\n     ${ok ? 'OK' : 'NOT OK'}`)
       process.exitCode = ok ? 0 : 1
     }

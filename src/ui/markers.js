@@ -216,7 +216,14 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
     // Bottom edge sits a fixed gap above the bubble, measured against the panel's OWN
     // height. Until it has measured, the anchor's assumption is used.
     const measured = height > 0 ? height : 0
-    const anchoredTopBase = rel !== null
+    // At rest the panel hangs purely above its bubble: no clamping, no flipping.
+    //
+    // This is the compose panel's behaviour, and the user asked for the same: with no text, the editor is ordinary
+    // content and must be allowed to scroll out of view (clipped by the top of the transcript, covered by the chat box)
+    // instead of being pushed along the screen. Clamping it into the readable band is what made the chat box shove it
+    // upwards on every scroll — measured: the editor held its position while the bubble travelled, and its gap to the
+    // bubble swung by 183px.
+    const anchoredTop = rel !== null
       ? (rel.bubbleTop === undefined
         ? rel.top
         : rel.bubbleTop - rel.gap - (measured || rel.gap))
@@ -226,24 +233,9 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
         Math.max(VIEWPORT_MARGIN, anchor.top),
         Math.max(VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN),
       )
-    // At rest the panel hangs above its bubble; when there is no room above, it hangs BELOW. Going below keeps it
-    // attached to the bubble instead of being clamped onto the top of the band, where it covered the bubble itself.
-    const bandTopForAnchor = rel === null || rel.bandTop === undefined ? 0 : rel.bandTop
-    const bandBottomForAnchor = rel === null || rel.bandBottom === undefined ? 0 : rel.bandBottom
-    const fitsAbove = rel === null || rel.bubbleTop === undefined
-      || anchoredTopBase >= bandTopForAnchor
-    const anchoredTop = fitsAbove === true || rel === null || rel.bubbleBottom === undefined
-      ? anchoredTopBase
-      : Math.min(rel.bubbleBottom + rel.gap, Math.max(bandTopForAnchor, bandBottomForAnchor - (measured || 0)))
 
-    // Docking, matching the compose panel: the panel sticks to its bubble at rest, and only snaps to the nearer edge of
-    // the readable band once there is text in it.
-    //
-    // The compose panel works this way ("only moves when you type"), and the bubble editor must feel the same. Without
-    // it the editor could sit off the bottom of the screen after a scroll with no way to reach its buttons; with it, the
-    // moment the user types the box moves somewhere it can be used.
-    //
-    // `docked` is null at rest, so no transition is applied and the first paint does not animate from the origin.
+    // Docking, matching the compose panel: at rest the editor sticks to its bubble, and only once there is text does it
+    // snap to the nearer edge of the readable band so it stays usable.
     const hasText = touched === true
     const docks = rel !== null && rel.bubbleTop !== undefined && hasText
     const bandTop = rel === null || rel.bandTop === undefined ? 0 : rel.bandTop
@@ -253,12 +245,13 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
     const dockedEdge = docks === false
       ? null
       : Math.abs(anchoredTop - dockTop) <= Math.abs(dockBottom - anchoredTop) ? 'top' : 'bottom'
-    const top = docks === false
+    // Clamping applies ONLY while docked. At rest the position is the pure anchor, which is what lets the editor leave
+    // the screen with its passage.
+    const clampedTop = docks === false
       ? anchoredTop
-      : dockedEdge === 'top' ? dockTop : dockBottom
-    const clampedTop = rel !== null
-      ? Math.min(Math.max(top, bandTop), Math.max(bandTop, bandBottom - (measured || 0)))
-      : top
+      : dockedEdge === 'top'
+        ? dockTop
+        : Math.min(dockBottom, Math.max(bandTop, bandBottom - (measured || 0)))
     /**
      * Save, with a visible acknowledgement.
      *
@@ -294,14 +287,6 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
         },
       // Same docking marker the compose panel uses, so the stylesheet can animate a move only when one is happening.
       'data-docked': dockedEdge === null ? 'false' : dockedEdge,
-      // Placement inputs, exposed so a probe can explain a wrong position instead of guessing at it.
-      'data-qc-geom': rel === null
-        ? 'no-rel'
-        : JSON.stringify({
-          bubbleTop: rel.bubbleTop, bubbleBottom: rel.bubbleBottom,
-          bandTop: rel.bandTop, bandBottom: rel.bandBottom,
-          measured, top, clampedTop, dockedEdge,
-        }),
     },
     // No passage preview and no jump button: the passage is already lit in the
     // transcript behind this panel, which is a better answer than a truncated

@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:6e92af2f08d9b8e5
+ * Artifact: sha256:986186fd1d6ac560
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -2367,14 +2367,10 @@ function __dshQuoteChatFactory(hostRequire) {
         Math.max(VIEWPORT_MARGIN3, window.innerWidth - width - VIEWPORT_MARGIN3)
       );
       const measured = height > 0 ? height : 0;
-      const anchoredTopBase = rel !== null ? rel.bubbleTop === void 0 ? rel.top : rel.bubbleTop - rel.gap - (measured || rel.gap) : inFlow ? -(height + BUBBLE_CLEARANCE) : Math.min(
+      const anchoredTop = rel !== null ? rel.bubbleTop === void 0 ? rel.top : rel.bubbleTop - rel.gap - (measured || rel.gap) : inFlow ? -(height + BUBBLE_CLEARANCE) : Math.min(
         Math.max(VIEWPORT_MARGIN3, anchor.top),
         Math.max(VIEWPORT_MARGIN3, window.innerHeight - height - VIEWPORT_MARGIN3)
       );
-      const bandTopForAnchor = rel === null || rel.bandTop === void 0 ? 0 : rel.bandTop;
-      const bandBottomForAnchor = rel === null || rel.bandBottom === void 0 ? 0 : rel.bandBottom;
-      const fitsAbove = rel === null || rel.bubbleTop === void 0 || anchoredTopBase >= bandTopForAnchor;
-      const anchoredTop = fitsAbove === true || rel === null || rel.bubbleBottom === void 0 ? anchoredTopBase : Math.min(rel.bubbleBottom + rel.gap, Math.max(bandTopForAnchor, bandBottomForAnchor - (measured || 0)));
       const hasText = touched === true;
       const docks = rel !== null && rel.bubbleTop !== void 0 && hasText;
       const bandTop = rel === null || rel.bandTop === void 0 ? 0 : rel.bandTop;
@@ -2382,8 +2378,7 @@ function __dshQuoteChatFactory(hostRequire) {
       const dockTop = bandTop;
       const dockBottom = Math.max(bandTop, bandBottom - (measured || rel?.gap || 0));
       const dockedEdge = docks === false ? null : Math.abs(anchoredTop - dockTop) <= Math.abs(dockBottom - anchoredTop) ? "top" : "bottom";
-      const top = docks === false ? anchoredTop : dockedEdge === "top" ? dockTop : dockBottom;
-      const clampedTop = rel !== null ? Math.min(Math.max(top, bandTop), Math.max(bandTop, bandBottom - (measured || 0))) : top;
+      const clampedTop = docks === false ? anchoredTop : dockedEdge === "top" ? dockTop : Math.min(dockBottom, Math.max(bandTop, bandBottom - (measured || 0)));
       const commit = () => {
         setFlash(labels.saved);
         setTimeout(() => onSave(text), 160);
@@ -2408,18 +2403,7 @@ function __dshQuoteChatFactory(hostRequire) {
             visibility: size.width === 0 ? "hidden" : "visible"
           },
           // Same docking marker the compose panel uses, so the stylesheet can animate a move only when one is happening.
-          "data-docked": dockedEdge === null ? "false" : dockedEdge,
-          // Placement inputs, exposed so a probe can explain a wrong position instead of guessing at it.
-          "data-qc-geom": rel === null ? "no-rel" : JSON.stringify({
-            bubbleTop: rel.bubbleTop,
-            bubbleBottom: rel.bubbleBottom,
-            bandTop: rel.bandTop,
-            bandBottom: rel.bandBottom,
-            measured,
-            top,
-            clampedTop,
-            dockedEdge
-          })
+          "data-docked": dockedEdge === null ? "false" : dockedEdge
         },
         // No passage preview and no jump button: the passage is already lit in the
         // transcript behind this panel, which is a better answer than a truncated
