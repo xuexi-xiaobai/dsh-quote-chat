@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Shared browser harness for the acceptance suites, driven directly by Playwright.
  *
  * ## Why this exists
@@ -233,7 +233,71 @@ export async function openBrowser(options = {}) {
     }
   }
 
-  /** Begin recording on demand; used with `video: 'manual'`. */
+  /**
+   * Create one annotation through the plugin's own UI, so a gutter bubble exists to click.
+   *
+   * Every probe that exercises the bubble editor needs this, and doing it ad hoc in each probe wasted a lot of time: a
+   * fixed scroll offset plus fixed margins only works for one window height and one composer height, and the composer
+   * grows with its draft. The failures looked like "the editor did not open" when nothing had been annotated at all.
+   *
+   * This walks several scroll offsets and picks the first paragraph with room, uses a triple click (a plain drag lost
+   * focus after a reload and produced an empty selection), and verifies the marker actually appeared. Margins are
+   * relative to the composer's own top edge, which is the only stable reference.
+   *
+   * @returns the number of markers now present, or 0 when nothing could be annotated.
+   */
+  const seedAnnotation = async (options = {}) => {
+    const comment = options.comment ?? '测试注释'
+    const before = await read(() => document.querySelectorAll('.qc-marker').length)
+    for (const offset of [600, 300, 900, 0, 1200, 1500, 450, 750]) {
+      const seeded = await read((target) => {
+        const scroller = document.querySelector('.wSkVaW_scrollBody')
+        const flow = document.querySelector('[data-slot="conversation.chat.flow"]')
+        if (scroller === null || flow === null) return false
+        scroller.style.scrollBehavior = 'auto'
+        scroller.scrollTop = target
+        void scroller.offsetHeight
+        for (const old of document.querySelectorAll('[data-qc-seed]')) old.removeAttribute('data-qc-seed')
+        const scrollerBox = scroller.getBoundingClientRect()
+        const editable = [...document.querySelectorAll('[contenteditable="true"]')]
+          .filter((element) => element.getBoundingClientRect().height > 0).pop() ?? null
+        const composerTop = editable === null
+          ? scrollerBox.bottom : editable.getBoundingClientRect().top
+        // Room for the editor above it, and clear of the chat box below it.
+        const candidate = [...flow.querySelectorAll('p, li')].find((element) => {
+          const box = element.getBoundingClientRect()
+          return (element.innerText ?? '').trim().length > 40
+            && box.top >= scrollerBox.top + 60
+            && box.bottom <= composerTop - 40
+        })
+        if (candidate === undefined) return false
+        candidate.setAttribute('data-qc-seed', '1')
+        return true
+      }, offset)
+      if (seeded === false) continue
+
+      await page.locator('[data-qc-seed="1"]').first()
+        .click({ clickCount: 3, timeout: 4000 }).catch(() => {})
+      await page.waitForTimeout(200)
+      const selected = await read(() => (window.getSelection() ?? '').toString().trim().length)
+      if (selected === 0) continue
+
+      const toolbar = await waitFor('document.querySelectorAll(\'.qc-popup button\').length === 2',
+        { timeoutMs: 4000 })
+      if (toolbar === null) continue
+      await click('.qc-popup button:first-child')
+      const compose = await waitFor('document.querySelector(\'.qc-compose\') !== null', { timeoutMs: 4000 })
+      if (compose === null) continue
+      await page.waitForTimeout(200)
+      await page.keyboard.type(comment, { delay: 12 })
+      await click('.qc-compose-confirm')
+      await page.waitForTimeout(700)
+
+      const after = await read(() => document.querySelectorAll('.qc-marker').length)
+      if (after > before) return after
+    }
+    return 0
+  }
   const startRecording = async (settings = {}) => {
     if (recordingStarted === true) return
     recordingStarted = true
@@ -803,9 +867,10 @@ export async function openBrowser(options = {}) {
   }
 
   return {
-    page, context, goto, reload, startRecording, resetAnnotations, waitFor, read, count, click, tripleClick, hover, type, press,
+    page, context, goto, reload, startRecording, resetAnnotations, seedAnnotation, waitFor, read, count, click, tripleClick, hover, type, press,
     moveAway, rightClickAt, clickAt, dragSelect, setAnimationRate, textOf, pluginErrors, errors, close, prepareSession, collapseRightSidebar,
   }
 }
 
 export { PLAYWRIGHT, PROFILE, CHROME }
+

@@ -29,7 +29,7 @@ import React from 'react'
 import { createPortal } from 'react-dom'
 import { CHIP_SOURCE } from '../chip-draft.js'
 import { elementOf } from '../dom.js'
-import { resolveAnchor, BLOCK_SELECTOR } from '../text-ranges.js'
+import { resolveAnchor, BLOCK_SELECTOR, isInsideTranscript } from '../text-ranges.js'
 
 /** createElement, bound once. */
 const h = React.createElement
@@ -166,11 +166,17 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
       areaRef.current?.focus()
     }, [])
 
-    // Clicking anywhere else closes it; the panel stops the event itself.
+    // Dismissal, matching the compose panel: only a press inside the transcript closes the editor.
+    //
+    // It used to close on any outside press, so reaching for a side panel, the header or the composer threw the edit
+    // away — the same defect that was fixed for the compose panel, and the user reported the two behaving differently.
+    // `isInsideTranscript` is the shared definition, so both editors now agree on which regions dismiss.
     React.useEffect(() => {
       const onDown = (event) => {
-        if (ref.current !== null && event.target instanceof Node
-          && ref.current.contains(event.target)) return
+        const target = event.target
+        if (!(target instanceof Node)) return
+        if (ref.current !== null && ref.current.contains(target)) return
+        if (isInsideTranscript(target) === false) return
         onClose()
       }
       const onKey = (event) => {
@@ -234,14 +240,25 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
         Math.max(VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN),
       )
 
-    // Docking, matching the compose panel: at rest the editor sticks to its bubble, and only once there is text does it
-    // snap to the nearer edge of the readable band so it stays usable.
+    // Docking, matching the compose panel EXACTLY: typing only moves the editor when it would otherwise be out of view.
+    //
+    // The compose panel's rule is `hasInput && !fullyVisible`. A first version here docked whenever there was text,
+    // which snapped the editor to a screen edge even when the bubble and the editor were both comfortably visible —
+    // jumping for no reason and losing the connection to the passage being annotated.
+    //
+    // So: if the anchored position is fully inside the readable band, stay there. Only when some part of it would sit
+    // outside the band does the editor glide to the nearer edge, where it can actually be used.
     const hasText = touched === true
-    const docks = rel !== null && rel.bubbleTop !== undefined && hasText
     const bandTop = rel === null || rel.bandTop === undefined ? 0 : rel.bandTop
     const bandBottom = rel === null || rel.bandBottom === undefined ? 0 : rel.bandBottom
+    const panelHeight = measured || rel?.gap || 0
+    const anchoredBottom = anchoredTop + panelHeight
+    const fullyVisible = rel !== null && rel.bubbleTop !== undefined
+      && anchoredTop >= bandTop - 1
+      && anchoredBottom <= bandBottom + 1
+    const docks = rel !== null && rel.bubbleTop !== undefined && hasText && fullyVisible === false
     const dockTop = bandTop
-    const dockBottom = Math.max(bandTop, bandBottom - (measured || rel?.gap || 0))
+    const dockBottom = Math.max(bandTop, bandBottom - panelHeight)
     const dockedEdge = docks === false
       ? null
       : Math.abs(anchoredTop - dockTop) <= Math.abs(dockBottom - anchoredTop) ? 'top' : 'bottom'

@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:64882679216d2308
+ * Artifact: sha256:274de0d4aa6a5868
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -2353,7 +2353,10 @@ function __dshQuoteChatFactory(hostRequire) {
       }, []);
       import_react5.default.useEffect(() => {
         const onDown = (event) => {
-          if (ref.current !== null && event.target instanceof Node && ref.current.contains(event.target)) return;
+          const target = event.target;
+          if (!(target instanceof Node)) return;
+          if (ref.current !== null && ref.current.contains(target)) return;
+          if (isInsideTranscript(target) === false) return;
           onClose();
         };
         const onKey = (event) => {
@@ -2379,11 +2382,14 @@ function __dshQuoteChatFactory(hostRequire) {
         Math.max(VIEWPORT_MARGIN3, window.innerHeight - height - VIEWPORT_MARGIN3)
       );
       const hasText = touched === true;
-      const docks = rel !== null && rel.bubbleTop !== void 0 && hasText;
       const bandTop = rel === null || rel.bandTop === void 0 ? 0 : rel.bandTop;
       const bandBottom = rel === null || rel.bandBottom === void 0 ? 0 : rel.bandBottom;
+      const panelHeight = measured || rel?.gap || 0;
+      const anchoredBottom = anchoredTop + panelHeight;
+      const fullyVisible = rel !== null && rel.bubbleTop !== void 0 && anchoredTop >= bandTop - 1 && anchoredBottom <= bandBottom + 1;
+      const docks = rel !== null && rel.bubbleTop !== void 0 && hasText && fullyVisible === false;
       const dockTop = bandTop;
-      const dockBottom = Math.max(bandTop, bandBottom - (measured || rel?.gap || 0));
+      const dockBottom = Math.max(bandTop, bandBottom - panelHeight);
       const dockedEdge = docks === false ? null : Math.abs(anchoredTop - dockTop) <= Math.abs(dockBottom - anchoredTop) ? "top" : "bottom";
       const clampedTop = docks === false ? anchoredTop : dockedEdge === "top" ? dockTop : Math.min(dockBottom, Math.max(bandTop, bandBottom - (measured || 0)));
       const commit = () => {
