@@ -128,6 +128,9 @@ export function createPopovers({
     const ref = React.useRef(null)
     const inputRef = React.useRef(null)
     const [comment, setComment] = React.useState('')
+    // Bumped on scroll and resize, purely to force a re-render so the placement is recomputed against live
+    // geometry. The value itself is never read.
+    const [, setViewportTick] = React.useState(0)
     const [size, setSize] = React.useState({ width: 0, height: 0 })
 
     // Measured on mount AND whenever the content changes height: typing grows the textarea, and a
@@ -151,6 +154,24 @@ export function createPopovers({
     // describing.
     React.useEffect(() => {
       inputRef.current?.focus({ preventScroll: true })
+    }, [])
+
+    // Re-place whenever anything that moves the text happens.
+    //
+    // The panel is position: fixed and its position is derived from the block's box. Scrolling the transcript
+    // or resizing the window moves that box; without this the panel stayed at the old viewport coordinate
+    // while the passage slid away — the reported "it does not stick to the text".
+    //
+    // Registered in the CAPTURE phase: the transcript scrolls an inner container, and a bubble-phase
+    // listener on document would never see that event.
+    React.useEffect(() => {
+      const reposition = () => setViewportTick((tick) => tick + 1)
+      window.addEventListener('scroll', reposition, true)
+      window.addEventListener('resize', reposition)
+      return () => {
+        window.removeEventListener('scroll', reposition, true)
+        window.removeEventListener('resize', reposition)
+      }
     }, [])
 
     // Only Enter and the confirm button commit; EVERY other dismissal cancels.
@@ -203,10 +224,19 @@ export function createPopovers({
     // the range put the panel over that paragraph's earlier lines. `source.block` is the element the
     // selection started in, resolved with `closest(BLOCK_SELECTOR)`.
     // The snapshot taken when the selection was read, not a live measurement at render time.
-    const blockBox = source.blockRect ?? source.rect?.passage ?? source.rect
+    // The LIVE box, not the snapshot. The snapshot is what made scrolling leave the panel behind and made
+    // the resting place depend on the drag direction: it captured one rectangle at read time, from whichever
+    // end of the range the gesture started at. The element's own box has neither problem.
+    //
+    // The snapshot stays as a fallback for when the block has been re-rendered out of the document, where a
+    // live measurement would read zero.
+    const liveBlock = source.block
+    const blockBox = (liveBlock !== undefined && liveBlock !== null && liveBlock.isConnected === true)
+      ? liveBlock.getBoundingClientRect()
+      : (source.blockRect ?? source.rect?.passage ?? source.rect)
     const resting = anchorAboveSelection
       ? anchorAboveSelection(blockBox, { width, height })
-      : placeNear(passageBox, { width, height })
+      : placeNear(source.rect?.passage ?? source.rect, { width, height })
 
     // Once the user has typed something, the panel glides to the nearer edge of the band. The
     // resting position is kept as the "no input yet" answer, so clearing the text puts it back.

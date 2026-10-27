@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:74d219420cf62846
+ * Artifact: sha256:7666fff8589b1f57
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -1756,6 +1756,7 @@ function __dshQuoteChatFactory(hostRequire) {
       const ref = import_react3.default.useRef(null);
       const inputRef = import_react3.default.useRef(null);
       const [comment, setComment] = import_react3.default.useState("");
+      const [, setViewportTick] = import_react3.default.useState(0);
       const [size, setSize] = import_react3.default.useState({ width: 0, height: 0 });
       import_react3.default.useLayoutEffect(() => {
         const element = ref.current;
@@ -1767,6 +1768,15 @@ function __dshQuoteChatFactory(hostRequire) {
       });
       import_react3.default.useEffect(() => {
         inputRef.current?.focus({ preventScroll: true });
+      }, []);
+      import_react3.default.useEffect(() => {
+        const reposition = () => setViewportTick((tick) => tick + 1);
+        window.addEventListener("scroll", reposition, true);
+        window.addEventListener("resize", reposition);
+        return () => {
+          window.removeEventListener("scroll", reposition, true);
+          window.removeEventListener("resize", reposition);
+        };
       }, []);
       import_react3.default.useEffect(() => {
         const onDown = (event) => {
@@ -1785,8 +1795,9 @@ function __dshQuoteChatFactory(hostRequire) {
       }, [onCancel]);
       const width = size.width || 420;
       const height = size.height || 170;
-      const blockBox = source.blockRect ?? source.rect?.passage ?? source.rect;
-      const resting = anchorAboveSelection ? anchorAboveSelection(blockBox, { width, height }) : placeNear(passageBox, { width, height });
+      const liveBlock = source.block;
+      const blockBox = liveBlock !== void 0 && liveBlock !== null && liveBlock.isConnected === true ? liveBlock.getBoundingClientRect() : source.blockRect ?? source.rect?.passage ?? source.rect;
+      const resting = anchorAboveSelection ? anchorAboveSelection(blockBox, { width, height }) : placeNear(source.rect?.passage ?? source.rect, { width, height });
       const hasInput = comment.trim() !== "";
       const docked = hasInput && snapPosition ? snapPosition(resting.top, { width, height }) : null;
       const target = docked ?? { left: resting.left, top: resting.top };
@@ -3345,7 +3356,8 @@ function __dshQuoteChatFactory(hostRequire) {
         anchor: tableAnchor(flow, table)
       };
     }
-    const block = startElement.closest(BLOCK_SELECTOR) ?? flow;
+    const rangeStartElement = elementOf(range.startContainer) ?? startElement;
+    const block = rangeStartElement.closest(BLOCK_SELECTOR) ?? flow;
     return {
       kind: "text",
       text: text.trim(),

@@ -146,7 +146,15 @@ export function readSelection(pointer) {
       anchor: tableAnchor(flow, table),
     }
   }
-  const block = startElement.closest(BLOCK_SELECTOR) ?? flow
+  // The block is resolved from the RANGE's start, which is always the earlier end in document order. Using
+  // the selection anchor made the placement depend on the drag's direction: dragging upwards anchors in the
+  // lower paragraph, so the panel was placed above that one and landed on top of the upper paragraph — over
+  // the selected text.
+  //
+  // The panel goes above the TOPMOST block the selection touches, which is what `range.startContainer`
+  // identifies regardless of how the gesture was made.
+  const rangeStartElement = elementOf(range.startContainer) ?? startElement
+  const block = rangeStartElement.closest(BLOCK_SELECTOR) ?? flow
   return {
     kind: 'text',
     text: text.trim(),
