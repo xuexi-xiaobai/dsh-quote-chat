@@ -446,19 +446,7 @@ export function createLayout() {
     // Keeping the side and letting the chrome cover the panel is the required behaviour anyway: the panel must
     // be under the header and the composer, so being partially covered is correct, while flipping is not.
     const above = blockBox.top - gap - size.height
-
-    // Never let the panel extend into the composer.
-    //
-    // The panel's bottom edge tracks the block's top edge, so when the block slides behind the composer the panel
-    // follows it in — and the composer (sticky, above the panel in paint order) then covers the panel's own controls,
-    // making it unusable. Reported as "the panel overlaps the chat box".
-    //
-    // Clamping the bottom to `band.bottom` keeps it in the readable area. This never pushes the panel over the block it
-    // annotates: the clamp only engages once `blockBox.top` is already below `band.bottom`, and the clamped bottom sits
-    // a gap above that line, so it stays above the block.
-    const maxTop = band.bottom - gap - size.height
-    const top = Math.round(Math.min(above, maxTop))
-    return { left, top, edge: 'above' }
+    return { left, top: Math.round(above), edge: 'above' }
   }
 
   /**
@@ -538,6 +526,9 @@ export function createLayout() {
         // Everything the panel needs to place its own bottom edge.
         bubbleTop,
         gap: PANEL_BUBBLE_GAP,
+        // The bubble's bottom edge, so the panel can sit BELOW it when there is no room above. Without this the panel
+        // was clamped against the top of the band and covered the very bubble it belongs to.
+        bubbleBottom: bubble.bottom - rect.top + scroller.scrollTop,
         bandTop: bandTop + ANCHOR_INSET,
         bandBottom: bandBottom - ANCHOR_INSET,
       },

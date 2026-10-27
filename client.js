@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:d4d8990307603991
+ * Artifact: sha256:6e92af2f08d9b8e5
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -986,9 +986,7 @@ function __dshQuoteChatFactory(hostRequire) {
       const band = readableBand();
       const left = Math.max(margin, Math.round((viewportWidth - size.width) / 2));
       const above = blockBox.top - gap - size.height;
-      const maxTop = band.bottom - gap - size.height;
-      const top = Math.round(Math.min(above, maxTop));
-      return { left, top, edge: "above" };
+      return { left, top: Math.round(above), edge: "above" };
     }
     function snapPosition(restingTop, size, options = {}) {
       const gap = options.gap ?? 8;
@@ -1031,6 +1029,9 @@ function __dshQuoteChatFactory(hostRequire) {
           // Everything the panel needs to place its own bottom edge.
           bubbleTop,
           gap: PANEL_BUBBLE_GAP,
+          // The bubble's bottom edge, so the panel can sit BELOW it when there is no room above. Without this the panel
+          // was clamped against the top of the band and covered the very bubble it belongs to.
+          bubbleBottom: bubble.bottom - rect.top + scroller.scrollTop,
           bandTop: bandTop + ANCHOR_INSET,
           bandBottom: bandBottom - ANCHOR_INSET
         }
@@ -1316,6 +1317,9 @@ function __dshQuoteChatFactory(hostRequire) {
     /* Smooth glide between the resting place and the docked slots. */
     transition:top .26s cubic-bezier(.22,.61,.36,1),left .26s cubic-bezier(.22,.61,.36,1)}
   .qc-compose[data-docked="false"]{transition:none}
+  /* The gutter bubble's editor docks the same way the compose panel does, so it gets the same glide. */
+  .qc-bubble-panel[data-docked="false"]{transition:none}
+  .qc-bubble-panel{transition:top .26s cubic-bezier(.22,.61,.36,1),right .26s cubic-bezier(.22,.61,.36,1),left .26s cubic-bezier(.22,.61,.36,1)}
   .qc-compose textarea{width:100%;box-sizing:border-box;resize:none;min-height:2.8em;max-height:9em;
     font:inherit;line-height:1.5;padding:9px 11px;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);
     background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);outline:none}
@@ -2328,6 +2332,7 @@ function __dshQuoteChatFactory(hostRequire) {
     function BubblePanel(props) {
       const { annotation, anchor, labels, onSave, onDelete, onClose, inFlow = false, rel = null } = props;
       const [text, setText] = import_react5.default.useState(annotation.comment);
+      const [touched, setTouched] = import_react5.default.useState(false);
       const [flash, setFlash] = import_react5.default.useState("");
       const ref = import_react5.default.useRef(null);
       const areaRef = import_react5.default.useRef(null);
@@ -2362,13 +2367,23 @@ function __dshQuoteChatFactory(hostRequire) {
         Math.max(VIEWPORT_MARGIN3, window.innerWidth - width - VIEWPORT_MARGIN3)
       );
       const measured = height > 0 ? height : 0;
-      const top = rel !== null ? rel.bubbleTop === void 0 ? rel.top : Math.min(
-        Math.max(rel.bandTop, rel.bubbleTop - rel.gap - (measured || rel.gap)),
-        Math.max(rel.bandTop, rel.bandBottom - (measured || rel.gap))
-      ) : inFlow ? -(height + BUBBLE_CLEARANCE) : Math.min(
+      const anchoredTopBase = rel !== null ? rel.bubbleTop === void 0 ? rel.top : rel.bubbleTop - rel.gap - (measured || rel.gap) : inFlow ? -(height + BUBBLE_CLEARANCE) : Math.min(
         Math.max(VIEWPORT_MARGIN3, anchor.top),
         Math.max(VIEWPORT_MARGIN3, window.innerHeight - height - VIEWPORT_MARGIN3)
       );
+      const bandTopForAnchor = rel === null || rel.bandTop === void 0 ? 0 : rel.bandTop;
+      const bandBottomForAnchor = rel === null || rel.bandBottom === void 0 ? 0 : rel.bandBottom;
+      const fitsAbove = rel === null || rel.bubbleTop === void 0 || anchoredTopBase >= bandTopForAnchor;
+      const anchoredTop = fitsAbove === true || rel === null || rel.bubbleBottom === void 0 ? anchoredTopBase : Math.min(rel.bubbleBottom + rel.gap, Math.max(bandTopForAnchor, bandBottomForAnchor - (measured || 0)));
+      const hasText = touched === true;
+      const docks = rel !== null && rel.bubbleTop !== void 0 && hasText;
+      const bandTop = rel === null || rel.bandTop === void 0 ? 0 : rel.bandTop;
+      const bandBottom = rel === null || rel.bandBottom === void 0 ? 0 : rel.bandBottom;
+      const dockTop = bandTop;
+      const dockBottom = Math.max(bandTop, bandBottom - (measured || rel?.gap || 0));
+      const dockedEdge = docks === false ? null : Math.abs(anchoredTop - dockTop) <= Math.abs(dockBottom - anchoredTop) ? "top" : "bottom";
+      const top = docks === false ? anchoredTop : dockedEdge === "top" ? dockTop : dockBottom;
+      const clampedTop = rel !== null ? Math.min(Math.max(top, bandTop), Math.max(bandTop, bandBottom - (measured || 0))) : top;
       const commit = () => {
         setFlash(labels.saved);
         setTimeout(() => onSave(text), 160);
@@ -2385,13 +2400,26 @@ function __dshQuoteChatFactory(hostRequire) {
           "aria-label": labels.edit,
           style: rightEdge !== null ? {
             right: `${rightEdge}px`,
-            top: `${top}px`,
+            top: `${clampedTop}px`,
             visibility: size.width === 0 ? "hidden" : "visible"
           } : {
             left: `${left}px`,
-            top: `${top}px`,
+            top: `${clampedTop}px`,
             visibility: size.width === 0 ? "hidden" : "visible"
-          }
+          },
+          // Same docking marker the compose panel uses, so the stylesheet can animate a move only when one is happening.
+          "data-docked": dockedEdge === null ? "false" : dockedEdge,
+          // Placement inputs, exposed so a probe can explain a wrong position instead of guessing at it.
+          "data-qc-geom": rel === null ? "no-rel" : JSON.stringify({
+            bubbleTop: rel.bubbleTop,
+            bubbleBottom: rel.bubbleBottom,
+            bandTop: rel.bandTop,
+            bandBottom: rel.bandBottom,
+            measured,
+            top,
+            clampedTop,
+            dockedEdge
+          })
         },
         // No passage preview and no jump button: the passage is already lit in the
         // transcript behind this panel, which is a better answer than a truncated
@@ -2402,7 +2430,10 @@ function __dshQuoteChatFactory(hostRequire) {
           value: text,
           placeholder: labels.bubblePlaceholder,
           spellCheck: false,
-          onChange: (event) => setText(event.target.value),
+          onChange: (event) => {
+            setTouched(event.target.value.trim() !== "");
+            setText(event.target.value);
+          },
           onKeyDown: (event) => {
             if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
               event.preventDefault();
@@ -2429,7 +2460,7 @@ function __dshQuoteChatFactory(hostRequire) {
         ),
         flash === "" ? null : h4("span", {
           className: "qc-bp-done",
-          style: { left: `${left}px`, top: `${top + height + 6}px` }
+          style: { left: `${left}px`, top: `${clampedTop + height + 6}px` }
         }, flash)
       );
     }
@@ -2460,6 +2491,33 @@ function __dshQuoteChatFactory(hostRequire) {
       const { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove } = props;
       const [positions, setPositions] = import_react5.default.useState([]);
       const [editing, setEditing] = import_react5.default.useState(null);
+      const [bubbleTick, setBubbleTick] = import_react5.default.useState(0);
+      const editingId = editing === null ? null : editing.id;
+      import_react5.default.useEffect(() => {
+        if (editingId === null || editingId === void 0) return void 0;
+        let frame = 0;
+        let primed = false;
+        let lastKey = null;
+        const watch = () => {
+          frame = window.requestAnimationFrame(watch);
+          const bubble = document.querySelector(`.qc-marker[data-qc-for="${editingId}"]`);
+          if (bubble === null) return;
+          const box = bubble.getBoundingClientRect();
+          const key = `${Math.round(box.top)}:${Math.round(box.left)}`;
+          if (primed === false) {
+            primed = true;
+            lastKey = key;
+            return;
+          }
+          if (key === lastKey) return;
+          lastKey = key;
+          setBubbleTick((tick) => tick + 1);
+        };
+        frame = window.requestAnimationFrame(watch);
+        return () => {
+          if (frame !== 0) window.cancelAnimationFrame(frame);
+        };
+      }, [editingId]);
       import_react5.default.useEffect(() => {
         if (typeof document === "undefined") return void 0;
         let frame = 0;

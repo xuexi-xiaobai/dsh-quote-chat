@@ -24,7 +24,7 @@ if (url === undefined) {
   process.exit(2)
 }
 
-const browser = await openBrowser()
+const browser = await openBrowser({ video: true })
 const { read, dragSelect, press, page, waitFor, collapseRightSidebar, click, reload } = browser
 
 /** Panel, block and composer geometry. */
@@ -34,17 +34,37 @@ const sample = () => read(() => {
   if (panel === null || block === null) return null
   const panelBox = panel.getBoundingClientRect()
   const blockBox = block.getBoundingClientRect()
-  const editors = [...document.querySelectorAll('[contenteditable="true"]')]
+  const editable = [...document.querySelectorAll('[contenteditable="true"]')]
     .filter((element) => element.getBoundingClientRect().height > 0)
-  const composerTop = editors.length === 0
-    ? null : Math.round(editors[editors.length - 1].getBoundingClientRect().top)
+    .pop() ?? null
+
+  // The composer's OUTER box, not its editable.
+  //
+  // An earlier version of this probe measured the editable's top edge, and so did the placement code. Both therefore
+  // reported "no overlap" while the panel was visibly sitting on the chat box: the box starts above the input, and the
+  // padding above the input is part of what a person sees. The boundary is found the same way the product finds it —
+  // climb from the editable to the highest ancestor that does not contain the flow.
+  let surface = editable
+  if (editable !== null) {
+    const flow = document.querySelector('[data-slot="conversation.chat.flow"]')
+    for (let node = editable.parentElement; node !== null; node = node.parentElement) {
+      if (node === document.body) break
+      if (flow !== null && node.contains(flow)) break
+      surface = node
+    }
+  }
+
+  const surfaceBox = surface === null ? null : surface.getBoundingClientRect()
+  const editableBox = editable === null ? null : editable.getBoundingClientRect()
   return {
     panelTop: Math.round(panelBox.top),
     panelBottom: Math.round(panelBox.bottom),
     blockTop: Math.round(blockBox.top),
-    composerTop,
-    // Positive means the panel reaches BELOW the composer's top edge.
-    intoComposer: composerTop === null ? null : Math.round(panelBox.bottom) - composerTop,
+    // The real boundary: the top of the chat box as drawn.
+    composerBoxTop: surfaceBox === null ? null : Math.round(surfaceBox.top),
+    composerEditableTop: editableBox === null ? null : Math.round(editableBox.top),
+    // Positive means the panel reaches BELOW the chat box's top edge.
+    intoComposer: surfaceBox === null ? null : Math.round(panelBox.bottom) - Math.round(surfaceBox.top),
     // Positive means the panel's bottom is below the block's top: it covers the text it annotates.
     overBlock: Math.round(panelBox.bottom) - Math.round(blockBox.top),
   }
@@ -117,8 +137,10 @@ try {
 
       const start = await sample()
       console.log(`\n  start: panel ${start.panelTop}..${start.panelBottom}`
-        + `  block ${start.blockTop}  composer top ${start.composerTop}`)
-      console.log(`         into composer ${start.intoComposer}px   over block ${start.overBlock}px`)
+        + `  block ${start.blockTop}`)
+      console.log(`         chat box top ${start.composerBoxTop}`
+        + ` (input top ${start.composerEditableTop})`
+        + `   into composer ${start.intoComposer}px   over block ${start.overBlock}px`)
 
       // Scroll the passage down toward (and behind) the composer, sampling as it goes. Enough steps to carry the
       // block's top edge PAST the composer: 10 steps of 45px only reached top 502 against a composer at 545, so the
@@ -137,11 +159,11 @@ try {
         if (state !== null) rows.push({ step, ...state })
       }
 
-      console.log('\n   step  blockTop  panelTop..Bottom  composerTop  intoComposer  overBlock')
+      console.log('\n   step  blockTop  panelTop..Bottom  boxTop  intoComposer  overBlock')
       for (const row of rows) {
         console.log(`   ${String(row.step).padStart(4)}  ${String(row.blockTop).padStart(8)}`
           + `  ${String(row.panelTop).padStart(6)}..${String(row.panelBottom).padEnd(6)}`
-          + `  ${String(row.composerTop).padStart(11)}`
+          + `  ${String(row.composerBoxTop).padStart(6)}`
           + `  ${String(row.intoComposer).padStart(12)}`
           + `  ${String(row.overBlock).padStart(9)}`)
       }
@@ -176,5 +198,12 @@ try {
     }
   }
 } finally {
-  await browser.close()
+  const recording = await browser.close()
+  if (recording !== null && recording !== undefined && recording.video !== null && recording.video !== undefined) {
+    console.log(`\n  recording: ${recording.video}`)
+    console.log(`  ${recording.frames} frames over ${recording.seconds}s`
+      + ` (captured ${recording.capturedFps}fps), muxed at ${recording.fps}fps`)
+  } else {
+    console.log('\n  no recording produced')
+  }
 }

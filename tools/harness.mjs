@@ -212,7 +212,7 @@ export async function openBrowser(options = {}) {
       const current = page.url()
       const samePage = current.startsWith('http') && current.split('?')[0] === url.split('?')[0]
       if (samePage) {
-        if (!recordingStarted && options.video !== undefined && options.video !== false) {
+        if (!recordingStarted && options.video !== undefined && options.video !== false && options.video !== 'manual') {
           recordingStarted = true
           await beginRecording()
         }
@@ -223,10 +223,97 @@ export async function openBrowser(options = {}) {
     // Recording starts AFTER the first navigation commits. Starting it before meant the CDP session was
     // created against the initial about:blank document, and a cross-document navigation invalidated it:
     // every capture then failed with "Target page, context or browser has been closed".
-    if (!recordingStarted && options.video !== undefined && options.video !== false) {
+    //
+    // `video: 'manual'` keeps the recorder off until the probe asks for it, so setup (opening a conversation,
+    // selecting a passage, creating an annotation) is not recorded and — measured — does not disturb the
+    // interactions it performs. Recording begins with `startRecording()` and covers only the behaviour under test.
+    if (!recordingStarted && options.video !== undefined && options.video !== false && options.video !== 'manual') {
       recordingStarted = true
       await beginRecording()
     }
+  }
+
+  /** Begin recording on demand; used with `video: 'manual'`. */
+  const startRecording = async (settings = {}) => {
+    if (recordingStarted === true) return
+    recordingStarted = true
+    await beginRecording(settings)
+  }
+
+  /**
+   * Remove every annotation and empty the composer, so a run starts from a clean conversation.
+   *
+   * The composer keeps a chip for every annotation added, and the chips are part of the persisted draft: they pile up
+   * across runs until the composer is a wall of chips, the transcript is full of markers, and a probe's own markers can
+   * no longer be told apart from the leftovers. That is not cosmetic — it changes what the probes measure, and it was
+   * the source of several confusing results.
+   *
+   * Deleting goes through the plugin's own gutter editor (`.qc-bp-delete`), and the composer is emptied with a real
+   * Backspace on a selection, exactly as `tools/reset-session.mjs` does — the same paths the tests exercise, so the
+   * cleanup cannot mask a bug.
+   *
+   * @returns how many annotations were deleted and how many passes cleared the draft.
+   */
+  const resetAnnotations = async () => {
+    let deleted = 0
+    for (let guard = 0; guard < 30; guard += 1) {
+      const present = await read(() => document.querySelectorAll('.qc-marker').length)
+      if (present === 0) break
+      const clicked = await read(() => {
+        const marker = document.querySelector('.qc-marker')
+        if (marker === null) return false
+        marker.click()
+        return true
+      })
+      if (clicked === false) break
+      const opened = await waitFor("document.querySelector('.qc-bubble-panel .qc-bp-delete') !== null",
+        { timeoutMs: 4000 })
+      if (opened === null) break
+      const removed = await read(() => {
+        const button = document.querySelector('.qc-bubble-panel .qc-bp-delete')
+        if (button === null) return false
+        button.click()
+        return true
+      })
+      if (removed === false) break
+      await waitFor(`document.querySelectorAll('.qc-marker').length === ${present - 1}`, { timeoutMs: 4000 })
+      deleted += 1
+    }
+
+    let cleared = 0
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const state = await read(() => {
+        const editors = [...document.querySelectorAll('[contenteditable="true"]')]
+        const composer = editors[editors.length - 1]
+        if (composer === undefined) return { hasEditor: false, chips: 0, text: null }
+        const text = (composer.innerText ?? '').trim()
+        composer.focus()
+        const selection = window.getSelection()
+        const range = document.createRange()
+        range.selectNodeContents(composer)
+        selection.removeAllRanges()
+        selection.addRange(range)
+        return {
+          hasEditor: true,
+          chips: document.querySelectorAll('[data-composer-chip="quote-chat"]').length,
+          text,
+        }
+      })
+      if (state.hasEditor === false) break
+      if (state.text === '' && state.chips === 0) break
+      await press('Backspace')
+      await waitFor('document.querySelectorAll(\'[data-composer-chip="quote-chat"]\').length === 0',
+        { timeoutMs: 4000 }).catch(() => {})
+      if (state.text === '' && state.chips === 0) break
+      cleared += 1
+    }
+
+    const final = await read(() => ({
+      markers: document.querySelectorAll('.qc-marker').length,
+      chips: document.querySelectorAll('[data-composer-chip="quote-chat"]').length,
+      draft: (document.querySelector('[contenteditable="true"]')?.innerText ?? '').trim().length,
+    }))
+    return { deleted, cleared, ...final }
   }
 
   /**
@@ -699,12 +786,24 @@ export async function openBrowser(options = {}) {
    */
   const reload = async () => {
     if (attached === false) return
+    // A reload invalidates the recorder's CDP session ("Target page, context or browser has been closed"), so an
+    // active recording must be stopped and started again around the navigation. Without this the run produced zero
+    // frames and reported "no recording produced" while everything else worked.
+    const wasRecording = recordingStarted === true
+    if (wasRecording) {
+      await stopRecording().catch(() => null)
+      recordingStarted = false
+    }
     await page.reload({ waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(400)
+    if (wasRecording) {
+      recordingStarted = true
+      await beginRecording()
+    }
   }
 
   return {
-    page, context, goto, reload, waitFor, read, count, click, tripleClick, hover, type, press,
+    page, context, goto, reload, startRecording, resetAnnotations, waitFor, read, count, click, tripleClick, hover, type, press,
     moveAway, rightClickAt, clickAt, dragSelect, setAnimationRate, textOf, pluginErrors, errors, close, prepareSession, collapseRightSidebar,
   }
 }

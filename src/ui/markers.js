@@ -146,6 +146,13 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
   function BubblePanel(props) {
     const { annotation, anchor, labels, onSave, onDelete, onClose, inFlow = false, rel = null } = props
     const [text, setText] = React.useState(annotation.comment)
+    // Whether the USER has edited the text yet.
+    //
+    // The editor opens pre-filled with the existing comment, so "there is text" is true from the first paint and cannot
+    // mean "the user is typing". Using it that way docked the box immediately on open and it never sat beside its bubble
+    // — the whole point of anchoring. This flag is what the docking rule keys on, and it resets when the text is
+    // emptied, so clearing the box returns the editor to the bubble exactly as the compose panel does.
+    const [touched, setTouched] = React.useState(false)
     const [flash, setFlash] = React.useState('')
     const ref = React.useRef(null)
     const areaRef = React.useRef(null)
@@ -209,19 +216,49 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
     // Bottom edge sits a fixed gap above the bubble, measured against the panel's OWN
     // height. Until it has measured, the anchor's assumption is used.
     const measured = height > 0 ? height : 0
-    const top = rel !== null
+    const anchoredTopBase = rel !== null
       ? (rel.bubbleTop === undefined
         ? rel.top
-        : Math.min(
-          Math.max(rel.bandTop, rel.bubbleTop - rel.gap - (measured || rel.gap)),
-          Math.max(rel.bandTop, rel.bandBottom - (measured || rel.gap)),
-        ))
+        : rel.bubbleTop - rel.gap - (measured || rel.gap))
       : inFlow
       ? -(height + BUBBLE_CLEARANCE)
       : Math.min(
         Math.max(VIEWPORT_MARGIN, anchor.top),
         Math.max(VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN),
       )
+    // At rest the panel hangs above its bubble; when there is no room above, it hangs BELOW. Going below keeps it
+    // attached to the bubble instead of being clamped onto the top of the band, where it covered the bubble itself.
+    const bandTopForAnchor = rel === null || rel.bandTop === undefined ? 0 : rel.bandTop
+    const bandBottomForAnchor = rel === null || rel.bandBottom === undefined ? 0 : rel.bandBottom
+    const fitsAbove = rel === null || rel.bubbleTop === undefined
+      || anchoredTopBase >= bandTopForAnchor
+    const anchoredTop = fitsAbove === true || rel === null || rel.bubbleBottom === undefined
+      ? anchoredTopBase
+      : Math.min(rel.bubbleBottom + rel.gap, Math.max(bandTopForAnchor, bandBottomForAnchor - (measured || 0)))
+
+    // Docking, matching the compose panel: the panel sticks to its bubble at rest, and only snaps to the nearer edge of
+    // the readable band once there is text in it.
+    //
+    // The compose panel works this way ("only moves when you type"), and the bubble editor must feel the same. Without
+    // it the editor could sit off the bottom of the screen after a scroll with no way to reach its buttons; with it, the
+    // moment the user types the box moves somewhere it can be used.
+    //
+    // `docked` is null at rest, so no transition is applied and the first paint does not animate from the origin.
+    const hasText = touched === true
+    const docks = rel !== null && rel.bubbleTop !== undefined && hasText
+    const bandTop = rel === null || rel.bandTop === undefined ? 0 : rel.bandTop
+    const bandBottom = rel === null || rel.bandBottom === undefined ? 0 : rel.bandBottom
+    const dockTop = bandTop
+    const dockBottom = Math.max(bandTop, bandBottom - (measured || rel?.gap || 0))
+    const dockedEdge = docks === false
+      ? null
+      : Math.abs(anchoredTop - dockTop) <= Math.abs(dockBottom - anchoredTop) ? 'top' : 'bottom'
+    const top = docks === false
+      ? anchoredTop
+      : dockedEdge === 'top' ? dockTop : dockBottom
+    const clampedTop = rel !== null
+      ? Math.min(Math.max(top, bandTop), Math.max(bandTop, bandBottom - (measured || 0)))
+      : top
     /**
      * Save, with a visible acknowledgement.
      *
@@ -247,14 +284,24 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
         // whatever width the panel turns out to have.
         ? {
           right: `${rightEdge}px`,
-          top: `${top}px`,
+          top: `${clampedTop}px`,
           visibility: size.width === 0 ? 'hidden' : 'visible',
         }
         : {
           left: `${left}px`,
-          top: `${top}px`,
+          top: `${clampedTop}px`,
           visibility: size.width === 0 ? 'hidden' : 'visible',
         },
+      // Same docking marker the compose panel uses, so the stylesheet can animate a move only when one is happening.
+      'data-docked': dockedEdge === null ? 'false' : dockedEdge,
+      // Placement inputs, exposed so a probe can explain a wrong position instead of guessing at it.
+      'data-qc-geom': rel === null
+        ? 'no-rel'
+        : JSON.stringify({
+          bubbleTop: rel.bubbleTop, bubbleBottom: rel.bubbleBottom,
+          bandTop: rel.bandTop, bandBottom: rel.bandBottom,
+          measured, top, clampedTop, dockedEdge,
+        }),
     },
     // No passage preview and no jump button: the passage is already lit in the
     // transcript behind this panel, which is a better answer than a truncated
@@ -265,7 +312,12 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
       value: text,
       placeholder: labels.bubblePlaceholder,
       spellCheck: false,
-      onChange: (event) => setText(event.target.value),
+      onChange: (event) => {
+        // Cleared text returns the editor to its bubble, exactly as the compose panel does. Keeping the flag set would
+        // leave an empty box pinned to the band's edge for no reason.
+        setTouched(event.target.value.trim() !== '')
+        setText(event.target.value)
+      },
       onKeyDown: (event) => {
         if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
           event.preventDefault()
@@ -292,7 +344,7 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
       ? null
       : h('span', {
         className: 'qc-bp-done',
-        style: { left: `${left}px`, top: `${top + height + 6}px` },
+        style: { left: `${left}px`, top: `${clampedTop + height + 6}px` },
       }, flash),
     )
   }
@@ -374,6 +426,43 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
     const { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove } = props
     const [positions, setPositions] = React.useState([])
     const [editing, setEditing] = React.useState(null)
+
+    // Keep the open editor on its bubble while the transcript scrolls.
+    //
+    // Its position is a CONTAINER coordinate derived from the bubble's box, computed when `editing` is set. Scrolling
+    // moves the editor with the content but never recomputes it, so a box that opened low drifted out of the readable
+    // area entirely — measured: from 84..232 to 624..772, i.e. 253px past the chat box's top edge, with its buttons
+    // unreachable.
+    //
+    // The watcher lives HERE, not inside BubblePanel: `rel` is derived in this component, so only a re-render of this
+    // one recomputes the placement. Comparing the bubble's own box each frame and bumping a tick is enough.
+    const [bubbleTick, setBubbleTick] = React.useState(0)
+    const editingId = editing === null ? null : editing.id
+    React.useEffect(() => {
+      if (editingId === null || editingId === undefined) return undefined
+      let frame = 0
+      let primed = false
+      let lastKey = null
+      const watch = () => {
+        frame = window.requestAnimationFrame(watch)
+        const bubble = document.querySelector(`.qc-marker[data-qc-for="${editingId}"]`)
+        if (bubble === null) return
+        const box = bubble.getBoundingClientRect()
+        const key = `${Math.round(box.top)}:${Math.round(box.left)}`
+        if (primed === false) {
+          primed = true
+          lastKey = key
+          return
+        }
+        if (key === lastKey) return
+        lastKey = key
+        setBubbleTick((tick) => tick + 1)
+      }
+      frame = window.requestAnimationFrame(watch)
+      return () => {
+        if (frame !== 0) window.cancelAnimationFrame(frame)
+      }
+    }, [editingId])
 
     React.useEffect(() => {
       if (typeof document === 'undefined') return undefined
