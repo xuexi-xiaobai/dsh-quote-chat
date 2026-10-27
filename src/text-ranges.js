@@ -23,7 +23,51 @@
 import { elementOf, cssEscape } from './dom.js'
 
 /** The chat flow container: a selection outside it is not an answer passage. */
-    export const FLOW_SELECTOR = '[data-slot="conversation.chat.flow"]'
+export const FLOW_SELECTOR = '[data-slot="conversation.chat.flow"]'
+
+/**
+ * Selectors for the chat flow, most specific first.
+ *
+ * The web build marks the flow with `data-slot`. The desktop build does not necessarily carry that attribute — its
+ * layout comes from a different set of plugins — so a missing data-slot must not disable the whole plugin. The
+ * fallbacks are structural rather than generated class names: the flow is the scrollable element that holds the
+ * message rows, and its rows are marked with `data-message-id` in both builds.
+ *
+ * Order matters: the most specific match wins, and the structural ones are only tried when nothing better is found.
+ */
+export const FLOW_SELECTORS = [
+  '[data-slot="conversation.chat.flow"]',
+  '[data-slot="conversation.chat"]',
+  '[data-message-id]',
+  '[data-chat-flow]',
+]
+
+/**
+ * Find the chat flow element.
+ *
+ * Walks {@link FLOW_SELECTORS} in order and returns the first match that is not inside a sidebar tab and that either
+ * renders a box or contains rows that do. When the last selector matches a message ROW rather than the container, the
+ * row's nearest scrollable ancestor is used instead, because the flow is the scroller.
+ *
+ * @returns the flow element, or null when no chat is mounted.
+ */
+export function findFlowElement() {
+  if (typeof document === 'undefined') return null
+  for (const selector of FLOW_SELECTORS) {
+    const matches = [...document.querySelectorAll(selector)]
+      .filter((element) => element.closest('[data-sidebar-right-tab]') === null)
+    if (matches.length === 0) continue
+    // A row match (data-message-id) is not the flow: climb to the element that scrolls it.
+    const first = matches[0]
+    if (selector === '[data-message-id]') {
+      for (let node = first.parentElement; node !== null; node = node.parentElement) {
+        if (node.scrollHeight > node.clientHeight + 8) return node
+      }
+    }
+    return first
+  }
+  return null
+}
 
 /**
  * Block-level elements a bubble can use as its containing block.

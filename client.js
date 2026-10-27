@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:174a005d3f19acb9
+ * Artifact: sha256:83d11c4fa9c60955
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -583,6 +583,27 @@ function __dshQuoteChatFactory(hostRequire) {
 
   // src/text-ranges.js
   var FLOW_SELECTOR = '[data-slot="conversation.chat.flow"]';
+  var FLOW_SELECTORS = [
+    '[data-slot="conversation.chat.flow"]',
+    '[data-slot="conversation.chat"]',
+    "[data-message-id]",
+    "[data-chat-flow]"
+  ];
+  function findFlowElement() {
+    if (typeof document === "undefined") return null;
+    for (const selector of FLOW_SELECTORS) {
+      const matches = [...document.querySelectorAll(selector)].filter((element) => element.closest("[data-sidebar-right-tab]") === null);
+      if (matches.length === 0) continue;
+      const first = matches[0];
+      if (selector === "[data-message-id]") {
+        for (let node = first.parentElement; node !== null; node = node.parentElement) {
+          if (node.scrollHeight > node.clientHeight + 8) return node;
+        }
+      }
+      return first;
+    }
+    return null;
+  }
   var BLOCK_SELECTOR = "p, li, h1, h2, h3, h4, h5, h6, pre, blockquote, table, figure";
   function rangeAt(root, offset, length) {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -758,13 +779,16 @@ function __dshQuoteChatFactory(hostRequire) {
     const containerCache = /* @__PURE__ */ new WeakMap();
     function findFlow() {
       if (typeof document === "undefined") return null;
-      let fallback = null;
-      for (const element of document.querySelectorAll(FLOW_SELECTOR)) {
-        if (element.closest(SIDEBAR_TAB_SELECTOR) !== null) continue;
-        if (element.getClientRects().length > 0 || hasBoxedChild(element)) return element;
-        if (fallback === null) fallback = element;
+      for (const selector of FLOW_SELECTORS) {
+        let fallback = null;
+        for (const element of document.querySelectorAll(selector)) {
+          if (element.closest(SIDEBAR_TAB_SELECTOR) !== null) continue;
+          if (element.getClientRects().length > 0 || hasBoxedChild(element)) return element;
+          if (fallback === null) fallback = element;
+        }
+        if (fallback !== null) return fallback;
       }
-      return fallback;
+      return findFlowElement();
     }
     function hasBoxedChild(element) {
       if (typeof element.getClientRects === "function" && element.getClientRects().length > 0) return true;
@@ -862,14 +886,49 @@ function __dshQuoteChatFactory(hostRequire) {
       const left = Math.min(Math.max(ANCHOR_INSET, localLeft), maxLeft);
       return { scroller, position: { top, left } };
     }
+    function firstPinnedTopBar() {
+      const viewportWidth = typeof window === "undefined" ? 0 : window.innerWidth;
+      let best = null;
+      let bestBottom = 0;
+      let seen = 0;
+      for (const element of document.querySelectorAll("body *")) {
+        if (seen >= 400) break;
+        seen += 1;
+        const style = typeof getComputedStyle === "function" ? getComputedStyle(element) : null;
+        if (style === null) continue;
+        if (style.position !== "fixed" && style.position !== "sticky") continue;
+        if (style.visibility === "hidden" || style.display === "none") continue;
+        const box = element.getBoundingClientRect();
+        if (box.height < 24 || box.height > 160) continue;
+        if (box.top > 2) continue;
+        if (box.width < viewportWidth * 0.4) continue;
+        if (box.bottom > bestBottom) {
+          best = element;
+          bestBottom = box.bottom;
+        }
+      }
+      return best;
+    }
     function readableBand() {
       const viewportHeight = typeof window === "undefined" ? 0 : window.innerHeight;
       let top = 0;
       if (typeof document !== "undefined") {
-        const header = document.querySelector("header") ?? document.querySelector('[data-slot="conversation.chat.header"]');
+        const header = document.querySelector('[data-slot="conversation.chat.header"]') ?? document.querySelector("header") ?? firstPinnedTopBar();
         if (header !== null) {
           const box = header.getBoundingClientRect();
           if (box.height > 0 && box.top <= 0) top = Math.max(0, box.bottom);
+        }
+        if (top === 0) {
+          const flow = findFlow();
+          if (flow !== null) {
+            for (let node = flow; node !== null; node = node.parentElement) {
+              if (node === document.body || node === document.documentElement) break;
+              if (node.scrollHeight <= node.clientHeight + 8) continue;
+              const box = node.getBoundingClientRect();
+              if (box.height > 0 && box.top > 0) top = Math.round(box.top);
+              break;
+            }
+          }
         }
       }
       let bottom = viewportHeight;
@@ -1685,13 +1744,12 @@ function __dshQuoteChatFactory(hostRequire) {
   var ANCHOR_GAP = 8;
   function findScroller() {
     if (typeof document === "undefined") return null;
-    const flow = document.querySelector('[data-slot="conversation.chat.flow"]');
+    const flow = findFlowElement();
     if (flow === null) return null;
-    for (const element of document.querySelectorAll("*")) {
-      if (element.scrollHeight <= element.clientHeight + 8) continue;
-      if (!element.contains(flow)) continue;
-      if (element === document.body || element === document.documentElement) continue;
-      return element;
+    for (let node = flow; node !== null; node = node.parentElement) {
+      if (node === document.body || node === document.documentElement) break;
+      if (node.scrollHeight <= node.clientHeight + 8) continue;
+      if (node === flow || node.contains(flow)) return node;
     }
     return null;
   }

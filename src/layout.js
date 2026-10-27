@@ -69,7 +69,7 @@ const ANCHOR_INSET = 8
 /** Gap between the bubble's top edge and the panel's bottom edge, in px. */
 const PANEL_BUBBLE_GAP = 10
 
-import { FLOW_SELECTOR } from './text-ranges.js'
+import { FLOW_SELECTORS, findFlowElement } from './text-ranges.js'
 
 /** Surfaces that must never be mistaken for the transcript. */
 const SIDEBAR_TAB_SELECTOR = '[data-sidebar-right-tab]'
@@ -124,21 +124,29 @@ export function createLayout() {
 
   /**
    * The chat flow anchor, excluding anything inside a sidebar tab.
+   *
+   * Tries every known selector, most specific first, so a build that lacks `data-slot` (the desktop build) still
+   * resolves the flow structurally instead of appearing to have no chat at all.
+   *
    * @returns the flow element, or null.
    */
   function findFlow() {
     if (typeof document === 'undefined') return null
-    let fallback = null
-    for (const element of document.querySelectorAll(FLOW_SELECTOR)) {
-      if (element.closest(SIDEBAR_TAB_SELECTOR) !== null) continue
-      // `display: contents` gives the anchor no box of its own, so measure the rows it
-      // contains instead.
-      if (element.getClientRects().length > 0 || hasBoxedChild(element)) return element
-      if (fallback === null) fallback = element
+    for (const selector of FLOW_SELECTORS) {
+      let fallback = null
+      for (const element of document.querySelectorAll(selector)) {
+        if (element.closest(SIDEBAR_TAB_SELECTOR) !== null) continue
+        // `display: contents` gives the anchor no box of its own, so measure the rows it
+        // contains instead.
+        if (element.getClientRects().length > 0 || hasBoxedChild(element)) return element
+        if (fallback === null) fallback = element
+      }
+      // An empty conversation legitimately has no rows yet; keep it rather than claiming the
+      // flow does not exist. Only fall through to the next selector when this one matched nothing.
+      if (fallback !== null) return fallback
     }
-    // An empty conversation legitimately has no rows yet; keep it rather than claiming the
-    // flow does not exist.
-    return fallback
+    // Nothing carried a known marker. Last resort: the scrollable box that holds the message rows.
+    return findFlowElement()
   }
 
   /**
@@ -329,16 +337,71 @@ export function createLayout() {
    *
    * @returns `{ top, bottom, height }` in viewport pixels.
    */
+  /**
+   * The topmost pinned bar in the document, when no marked header exists.
+   *
+   * The desktop build's chrome does not carry the same `data-slot` marker as the web build's, so the header has to be
+   * recognised by behaviour: an element pinned to the top of the viewport, spanning a large part of its width, and
+   * tall enough to be a bar rather than a border. Bounded to the first 400 elements, because this only runs when the
+   * marked lookups already failed.
+   *
+   * @returns the element, or null when nothing looks like a top bar.
+   */
+  function firstPinnedTopBar() {
+    const viewportWidth = typeof window === 'undefined' ? 0 : window.innerWidth
+    let best = null
+    let bestBottom = 0
+    let seen = 0
+    for (const element of document.querySelectorAll('body *')) {
+      if (seen >= 400) break
+      seen += 1
+      const style = typeof getComputedStyle === 'function' ? getComputedStyle(element) : null
+      if (style === null) continue
+      if (style.position !== 'fixed' && style.position !== 'sticky') continue
+      if (style.visibility === 'hidden' || style.display === 'none') continue
+      const box = element.getBoundingClientRect()
+      if (box.height < 24 || box.height > 160) continue
+      if (box.top > 2) continue
+      // Must be a bar across the page, not a narrow floating control.
+      if (box.width < viewportWidth * 0.4) continue
+      if (box.bottom > bestBottom) {
+        best = element
+        bestBottom = box.bottom
+      }
+    }
+    return best
+  }
+
   function readableBand() {
     const viewportHeight = typeof window === 'undefined' ? 0 : window.innerHeight
     let top = 0
     if (typeof document !== 'undefined') {
-      // The app's header: the first element that is fixed or sticky at the top of the page.
-      const header = document.querySelector('header')
-        ?? document.querySelector('[data-slot="conversation.chat.header"]')
+      // The app's header: the first element that is fixed or sticky at the top of the page, or carries a known
+      // marker. The marker comes first because the desktop build does not use the same data-slot attribute.
+      const header = document.querySelector('[data-slot="conversation.chat.header"]')
+        ?? document.querySelector('header')
+        ?? firstPinnedTopBar()
       if (header !== null) {
         const box = header.getBoundingClientRect()
         if (box.height > 0 && box.top <= 0) top = Math.max(0, box.bottom)
+      }
+      // Fallback: the transcript container's own top edge.
+      //
+      // When no header is recognised, the previous code left `top` at 0, so the docked position became `0 + gap` and
+      // the panel was drawn behind the chrome — a real overlap that looked like a z-index bug. The container's box
+      // starts exactly below the header, so it is a safe substitute: the panel can then never be docked above it.
+      if (top === 0) {
+        const flow = findFlow()
+        // The container may BE the flow, so start at the flow itself rather than at its parent.
+        if (flow !== null) {
+          for (let node = flow; node !== null; node = node.parentElement) {
+            if (node === document.body || node === document.documentElement) break
+            if (node.scrollHeight <= node.clientHeight + 8) continue
+            const box = node.getBoundingClientRect()
+            if (box.height > 0 && box.top > 0) top = Math.round(box.top)
+            break
+          }
+        }
       }
     }
     let bottom = viewportHeight

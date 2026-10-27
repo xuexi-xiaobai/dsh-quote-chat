@@ -23,6 +23,7 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
 import { IconAnnotate, IconSideChat, IconCheck } from '../icons.js'
+import { findFlowElement } from '../text-ranges.js'
 
 /** createElement, bound once. */
 const h = React.createElement
@@ -41,20 +42,22 @@ const ANCHOR_GAP = 8
  * panel is covered exactly as the text is. Measurement confirmed both behaviours for a child of this container,
  * which is why the panel needs no clip-path and no z-index trick.
  *
- * Located by what it does rather than by a class name, since the app's class names are generated: it is the
- * element that actually scrolls and contains the chat flow.
+ * Located by what it does rather than by a class name, since the app's class names are generated: it is the element
+ * that actually scrolls and contains the chat flow. The flow itself is resolved through the shared selector list, so
+ * this keeps working on a build that marks the transcript differently.
  *
  * @returns the scrolling element, or null when there is none.
  */
 function findScroller() {
   if (typeof document === 'undefined') return null
-  const flow = document.querySelector('[data-slot="conversation.chat.flow"]')
+  const flow = findFlowElement()
   if (flow === null) return null
-  for (const element of document.querySelectorAll('*')) {
-    if (element.scrollHeight <= element.clientHeight + 8) continue
-    if (!element.contains(flow)) continue
-    if (element === document.body || element === document.documentElement) continue
-    return element
+  // The flow may itself be the scroller, or sit inside one. Walk up from it first, which is both cheaper than
+  // scanning every element and bounded by the tree's depth.
+  for (let node = flow; node !== null; node = node.parentElement) {
+    if (node === document.body || node === document.documentElement) break
+    if (node.scrollHeight <= node.clientHeight + 8) continue
+    if (node === flow || node.contains(flow)) return node
   }
   return null
 }
