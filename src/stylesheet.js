@@ -268,17 +268,58 @@ export const STYLESHEET = `
    Both glyphs and the × are drawn by pseudo-elements and a positioned overlay
    keyed on the chip's own box. The chip's children are React's; nothing here
    writes into them. */
-/* The chip follows the app's theme instead of hard-coding a light grey.
-   --qc-chip-bg resolves to the app's own layer token, so dark mode is inherited
-   rather than guessed at; the fallbacks only apply outside the host. */
+/* The chip is a FIXED-SIZE token that sits ON the text's line, not beside it.
+
+   Measured before this revision, against the composer's own text:
+
+       composer text    font 15px, line-height 25px, colour rgb(15,17,21)
+       chip             font 12.5px, height 24px
+       chip background  rgb(255,255,255)
+       composer surface rgb(255,255,255)
+
+   Two things were wrong. The chip was 2.5px smaller than the prose it sits in, so it read as
+   a footnote rather than as another kind of word. And its background was EXACTLY the
+   composer's, so the only thing separating the two was a 1px hairline border — the token had
+   no body of its own.
+
+   The colours are now derived from the text colour rather than hard-coded or taken from a
+   layer token, because the layer tokens resolve to the SAME value as the composer surface and
+   therefore cannot express "slightly raised". Mixing the label colour into the surface by a
+   few percent gives a tint that tracks the theme by construction: in light mode it is a soft
+   grey, in dark mode a slightly lifted charcoal, and it is always visible against whatever the
+   composer uses.
+
+   The size follows the prose: em-based sizing against the inherited font-size, and a line-height
+   that matches the composer's so a line containing a chip is the same height as one without. */
 [data-composer-chip="quote-chat"]{display:inline-flex;align-items:center;
-  vertical-align:baseline;max-width:20em;padding:2px 9px 2px 7px;margin:0 1px;
+  justify-content:center;
+  box-sizing:border-box;
+  /* Fixed width: a token whose size changes with its own numbering re-wraps the line every time a chip is renumbered,
+     which showed up as the composer jumping while annotations were added. */
+  width:var(--qc-chip-w, 6.6em);min-width:var(--qc-chip-w, 6.6em);
+  /* Height tracks the line, not a pixel value: 1.45em against an inherited 15px gives the 21-22px the composer's own
+     line box occupies, so a chip never makes its line taller than a plain one. */
+  height:1.45em;
+  vertical-align:middle;
+  padding:0 .55em;margin:0 .4em;
   border-radius:999px;
-  border:1px solid var(--dsw-alias-border-l2, rgba(0,0,0,.08));
-  background:var(--qc-chip-bg, var(--dsw-alias-bg-layer-2, #f2f2f2));
-  color:var(--dsw-alias-label-primary, #181818);
-  font-size:12.5px;line-height:1.5;cursor:pointer;position:relative;
-  transition:background .14s ease}
+  border:1px solid color-mix(in srgb, currentColor 16%, transparent);
+  /* A tint of the label colour over the surface, so it is distinct from the composer in BOTH themes. */
+  background:color-mix(in srgb, currentColor 9%, transparent);
+  color:inherit;
+  font-size:1em;line-height:1;font-weight:inherit;
+  cursor:pointer;position:relative;
+  user-select:none;
+  /* The chip's box must be hit-testable across its WHOLE area, not only where its glyphs happen to be.
+     Measured with elementsFromPoint at the chip's centre: the topmost element was the paragraph, so a press in the
+     middle of the chip fell through to the text and the drag never started. The box is painted by the background, so it
+     should catch the pointer everywhere — the label is drawn by a pseudo-element and a pseudo-element has no box of its
+     own to hit. */
+  pointer-events:auto;
+  transition:background .14s ease,border-color .14s ease}
+/* The children must not steal the press from the chip: they are decoration, and the chip is the handle. */
+[data-composer-chip="quote-chat"] > *,
+[data-composer-chip="quote-chat"] > * > *{pointer-events:none}
 [data-composer-chip="quote-chat"]:hover,
 [data-composer-chip="quote-chat"]:focus-within{
   background:var(--qc-chip-bg-hover, var(--dsw-alias-bg-layer-3, #e8e8e8));
@@ -300,14 +341,23 @@ export const STYLESHEET = `
    side the editor considered nearest (measured: text typed at the left edge
    arrived after the chip).
 
-   The glyph and the label are now hidden individually, by their own class, which
-   leaves the wrapper in flow. The chip keeps a real, zero-width text box with the
-   label in it, so selection, caret placement and click targeting all behave like
-   ordinary inline content. */
-[data-composer-chip="quote-chat"] .yAWgPa_marker{display:none}
+   The glyph and the label are now hidden individually, which leaves the wrapper in
+   flow. The chip keeps a real, zero-width text box with the label in it, so
+   selection, caret placement and click targeting all behave like ordinary inline
+   content.
+
+   They are selected STRUCTURALLY, not by class name. The host's classes here are
+   CSS-Module hashes ("yAWgPa_marker"), and those change with the host's build; an
+   earlier revision keyed on them and the moment they changed the marker came back:
+   the chip started rendering the host's "@" and its own label next to the plugin's,
+   which is the duplicated text that was reported.
+
+   The chip's DOM is always the same three levels: the decorator, one wrapper, then
+   the marker followed by the label. Selecting by position survives any renaming. */
+[data-composer-chip="quote-chat"] > span > span:first-child{display:none}
 /* The kind glyph, occupying the left slot. */
 [data-composer-chip="quote-chat"]::before{content:"";
-  flex:none;width:13px;height:13px;margin-right:6px;
+  flex:none;width:.92em;height:.92em;margin-right:.42em;
   background-color:currentColor;opacity:.75;
   -webkit-mask-image:var(--qc-glyph, var(--qc-glyph-text));
   mask-image:var(--qc-glyph, var(--qc-glyph-text));
@@ -327,11 +377,11 @@ export const STYLESHEET = `
  * editor's own rendering.
  */
 [data-composer-chip="quote-chat"]::after{content:attr(data-qc-label);
-  order:1;margin-left:0;font-size:12.5px;line-height:1.5;
-  color:var(--dsw-alias-label-primary, #181818);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  order:1;margin-left:0;font-size:1em;line-height:1;
+  color:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* The host's own label is hidden as a glyph — the ordinal above is the visible text — but it stays in the box at zero
    width so the chip still owns a text node. */
-[data-composer-chip="quote-chat"] .yAWgPa_label{
+[data-composer-chip="quote-chat"] > span > span:last-child{
   display:inline-block;width:0;height:0;overflow:hidden;
   font-size:0;line-height:0;vertical-align:baseline}
 
@@ -394,11 +444,13 @@ export const STYLESHEET = `
 .qc-chip-drag-grab::after{bottom:-2px}
 
 .qc-chip-drag-ghost{position:fixed;z-index:42;
-  max-width:16em;padding:2px 9px;
+  box-sizing:border-box;
+  max-width:16em;height:1.45em;padding:0 .55em;
+  display:inline-flex;align-items:center;justify-content:center;
   border-radius:999px;border:1px solid transparent;
-  background:var(--qc-chip-drag-bg, rgba(107,77,246,.14));
+  background:var(--qc-chip-drag-bg, rgba(107,77,246,.16));
   color:var(--dsw-alias-brand-primary, #6b4df6);
-  font-size:12.5px;line-height:1.5;white-space:nowrap;
+  font-size:15px;line-height:1;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis;
   transform:translate(12px,-50%);pointer-events:none;
   box-shadow:0 6px 18px rgba(0,0,0,.14)}

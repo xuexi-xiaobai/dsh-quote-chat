@@ -137,10 +137,11 @@ try {
     })
     await page.waitForTimeout(500)
 
-    const fromX = first.left + 10
-    const fromY = first.y
-    const toX = second.right + 20
-    const toY = second.y
+    // Move the LAST chip to the start of the line: a drop before every other chip, and always within the composer.
+    const fromX = second.left + 10
+    const fromY = second.y
+    const toX = first.left - 4
+    const toY = first.y
     await page.mouse.move(fromX, fromY)
     await page.mouse.down()
     await page.waitForTimeout(80)
@@ -159,7 +160,8 @@ try {
     // The bar must sit on a seam: within a couple of pixels of some chip's edge.
     const onSeam = during.grab === null ? false : start.list.some((chip) =>
       Math.abs(during.grab.left - chip.left) <= 3 || Math.abs(during.grab.left - chip.right) <= 3)
-    const ghostFollows = during.ghost === null ? false : during.ghost.left > first.left + 40
+    const ghostFollows = during.ghost === null
+      ? false : Math.abs(during.ghost.left - toX) <= 24
 
     await page.mouse.up()
     await page.waitForTimeout(400)
@@ -242,3 +244,5 @@ try {
 } finally {
   await browser.close()
 }
+
+

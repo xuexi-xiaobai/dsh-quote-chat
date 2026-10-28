@@ -33,42 +33,108 @@ const CHIP_SOURCE = 'quote-chat'
 const DRAG_THRESHOLD = 4
 
 /**
- * The chip order implied by a pointer position.
+ * Where a drop would land, as a TEXT OFFSET in the draft.
  *
- * Each chip contributes its horizontal midpoint; the drop index is how many of those midpoints sit to the left of the
- * pointer. Rows are ignored deliberately: chips live in a wrapping inline flow, and a two-row draft read row by row
- * would be ambiguous under the cursor. Comparing `x` alone keeps the answer monotonic in the direction the user is
- * dragging, which is what makes the grab bar move predictably.
+ * Counting chip slots (the earlier approach) could only ever place a chip between other chips: the draft
+ * "chip1 text" has one chip and therefore two slots, so dropping in the middle of "text" was not expressible at all.
+ * The user asked for exactly that — 【chip】text → text【chip】 — and it is not reachable through slot arithmetic.
  *
- * @param chips - the chip elements, in draft order.
+ * The host editor already knows where the caret would go for a pointer position, and a Lexical decorator is
+ * `contenteditable=false`, so `caretRangeFromPoint` reports the nearest legal text position on either side of it. That
+ * position, converted to an offset in the draft string, is the drop.
+ *
+ * @param root - the editable element.
  * @param clientX - pointer position.
- * @returns index in `[0, chips.length]` where a chip would be inserted.
+ * @param clientY - pointer position.
+ * @param draft - the draft text, so the DOM position can be turned into a string offset.
+ * @returns the offset in `draft` where the chip would be inserted, or null when the point is not over editable text.
  */
-export function dropIndexAt(chips, clientX) {
-  let index = 0
-  for (const chip of chips) {
-    const box = chip.getBoundingClientRect()
-    if (clientX > box.left + box.width / 2) index += 1
+export function dropOffsetAt(root, clientX, clientY, draft) {
+  if (typeof document === 'undefined' || root === null) return null
+  const range = document.caretRangeFromPoint?.(clientX, clientY)
+  if (range === undefined || range === null) return null
+  if (root.contains(range.startContainer) === false) return null
+
+  // Walk ELEMENT children, not text nodes.
+  //
+  // A chip is a decorator whose own subtree contains text ("@", "注释 1") that is not in the draft at all — the draft
+  // holds a single placeholder character for the whole thing. A text-node walk therefore counted five characters for
+  // every chip and the computed offset drifted further out of step with the draft with each one; measured, a drop aimed
+  // at the middle of "abcdefghij" landed after it, at "@注释 2abcdefghij@注释 1".
+  //
+  // Treating each chip as exactly one character is what the draft actually contains, so the arithmetic lines up.
+  const offsetOf = (node, within) => {
+    let offset = 0
+    let reached = false
+    const visit = (parent) => {
+      for (const child of parent.childNodes) {
+        if (child === node) {
+          reached = true
+          if (node.nodeType === Node.TEXT_NODE) {
+            offset += Math.min(within, node.data.length)
+            return true
+          }
+          // The caret landed ON an element. Inside a chip that still means one placeholder character, and the side the
+          // caret sits on decides whether the chip is counted or not.
+          if (node.nodeType === Node.ELEMENT_NODE && node.hasAttribute?.('data-composer-chip')) {
+            if (within > 0) offset += 1
+            return true
+          }
+          return true
+        }
+        if (child.nodeType === Node.TEXT_NODE) {
+          offset += child.data.length
+          continue
+        }
+        if (child.nodeType !== Node.ELEMENT_NODE) continue
+        // One placeholder character per chip, regardless of what it renders inside.
+        if (child.hasAttribute('data-composer-chip')) {
+          // The caret's own node may be INSIDE this chip; treat that as one character at the chip's position.
+          if (child.contains(node)) {
+            offset += 1
+            reached = true
+            return true
+          }
+          offset += 1
+          continue
+        }
+        // A line break in the DOM is a newline in the draft.
+        if (child.tagName === 'BR') {
+          offset += 1
+          continue
+        }
+        if (visit(child)) return true
+      }
+      return false
+    }
+    visit(root)
+    return reached ? offset : null
   }
-  return index
+
+  const computed = offsetOf(range.startContainer, range.startOffset)
+  if (computed === null) return null
+  return Math.max(0, Math.min(computed, draft.length))
 }
 
 /**
- * Rebuild a draft with one chip moved to a different slot.
+ * Rebuild a draft with one chip moved to a different position.
  *
  * Works on the draft TEXT plus its reference offsets, because that pair is exactly what `setDraft` accepts. The moved
- * chip's placeholder is cut out and re-inserted, and every reference offset is recomputed from the result — an
- * incremental shift is easy to get subtly wrong when the insertion point straddles the removal point, and recomputing
- * from the final string is cheap for the handful of chips a draft ever holds.
+ * chip's placeholder is cut out and re-inserted at a TEXT OFFSET, and every reference offset is recomputed from the
+ * result — an incremental shift is easy to get subtly wrong when the insertion point straddles the removal point, and
+ * recomputing from the final string is cheap for the handful of chips a draft ever holds.
  *
- * The neighbouring newlines that separate chips travel WITH their chip, so a move does not leave an empty paragraph
- * behind or glue two chips onto one line.
+ * A text offset rather than a chip slot is what makes a drop INSIDE prose possible: with slots, "chip text" has exactly
+ * two places a chip can go, so 【chip】text → text【chip】 could not be expressed at all.
+ *
+ * The newline that separates a chip from the text above it travels WITH the chip, so a move does not leave an empty
+ * paragraph behind. A trailing newline does not, or a chip dropped at the start of a line would push that line down.
  *
  * @param draft - the current draft text.
  * @param references - references in that draft, each with `offset` and `length`.
  * @param source - the chip source this plugin owns; other sources are carried along untouched.
  * @param ref - the annotation id of the chip being moved.
- * @param target - the slot, counted among this plugin's own chips only.
+ * @param target - the drop position, as an offset into `draft`.
  * @returns `{ text, references }` for `setDraft`, or null when the move is a no-op or the chip is missing.
  */
 export function moveChipInDraft(draft, references, source, ref, target) {
@@ -78,49 +144,72 @@ export function moveChipInDraft(draft, references, source, ref, target) {
     .sort((left, right) => left.offset - right.offset)
   const current = own.findIndex((item) => item.ref === ref)
   if (current < 0) return null
-  // `target` counts slots among the plugin's chips; clamp into range and ignore a drop that changes nothing.
-  const to = Math.max(0, Math.min(own.length, target))
-  const from = current
-  // Removing the chip first shifts every later slot left by one, so a target past the original position means "one
-  // further along" in the intermediate list.
-  const insertAt = to > from ? to - 1 : to
-  if (insertAt === from) return null
 
-  const chip = own[from]
-  // Take the placeholder, plus the line break that precedes it, so a moved chip carries its own line with it.
+  const chip = own[current]
+  // Take the placeholder, plus the line break that precedes it when the chip owns that line, so a moved chip carries its
+  // own line with it instead of leaving an empty paragraph behind.
   let start = chip.offset
   const stop = chip.offset + chip.length
-  if (start > 0 && draft[start - 1] === '\n') start -= 1
+  const ownsLeadingBreak = start > 0 && draft[start - 1] === '\n'
+  if (ownsLeadingBreak) start -= 1
   const chunk = draft.slice(start, stop)
 
-  // The draft without the chip; offsets after the cut move left.
   const removedLength = stop - start
   const rest = `${draft.slice(0, start)}${draft.slice(stop)}`
-  const survivors = own
-    .filter((item) => item.ref !== ref)
-    .map((item) => (item.offset >= stop ? { ...item, offset: item.offset - removedLength } : { ...item }))
 
-  // Where the chunk goes: before the chip that will hold the target slot, or at the end.
-  const anchorChip = insertAt < survivors.length ? survivors[insertAt] : null
-  const insertOffset = anchorChip === null ? rest.length : anchorChip.offset
-  const text = `${rest.slice(0, insertOffset)}${chunk}${rest.slice(insertOffset)}`
+  // The drop is a TEXT OFFSET in the original draft. Removing the chip may have shifted it left, so it is mapped onto
+  // the shortened string before the insertion; when the drop sits beyond the cut, it moves by exactly what was removed.
+  const clamped = Math.max(0, Math.min(target, draft.length))
+  const insertion = Math.max(0, Math.min(
+    clamped >= stop ? clamped - removedLength : clamped,
+    rest.length,
+  ))
+  const text = `${rest.slice(0, insertion)}${chunk}${rest.slice(insertion)}`
 
-  // Recompose the reference list from the final text, keeping the non-plugin references where they were.
+  // "Did anything change?" cannot be answered by comparing strings.
+  //
+  // Every chip is the SAME placeholder character, so swapping two chips leaves the text byte-identical — and the
+  // early-return below therefore rejected every reorder between chips that have nothing between them. Measured: moving
+  // the second chip to offset 0 returned null for all three test offsets, while the reference order had in fact changed.
+  // What must be compared is the ORDER of the references, which the rebuild below derives from the text.
   const movedIds = new Set(own.map((item) => item.ref))
   const rebuilt = []
   for (const item of references) {
     if (item.source === source && movedIds.has(item.ref)) continue
-    // Foreign references are re-anchored by measuring the same distance from their old position to their new one.
-    if (item.offset >= stop) rebuilt.push({ ...item, offset: item.offset + (text.length - draft.length) })
+    // A foreign reference (another plugin's chip) has no placeholder this module can search for, so it is carried by the
+    // same transformation its position underwent.
+    if (item.offset >= stop) rebuilt.push({ ...item, offset: item.offset - removedLength + chunk.length })
+    else if (item.offset > start) rebuilt.push({ ...item, offset: item.offset - chunk.length })
     else rebuilt.push({ ...item })
   }
-  // Plugin chips, in their new order, positioned by searching the rewritten text for their placeholder from a moving
-  // cursor: identical placeholders make a plain indexOf ambiguous, and the order is what disambiguates them.
-  const order = [...own]
-  const moved = order.splice(from, 1)[0]
-  order.splice(insertAt, 0, moved)
+  // This plugin's chips, placed by searching the rewritten text for their placeholder from a moving cursor. Every
+  // placeholder is the same character, so the ORDER is what assigns references to positions — and the order is decided by
+  // comparing the moved chip's new offset against each survivor's new offset.
+  const survivors = own
+    .filter((item) => item.ref !== ref)
+    .map((item) => ({
+      ...item,
+      offset: item.offset >= stop ? item.offset - removedLength + chunk.length
+        : item.offset > start ? item.offset - chunk.length : item.offset,
+    }))
+  const slots = [...survivors, { ...chip, offset: insertion }]
+    .sort((left, right) => {
+      if (left.offset !== right.offset) return left.offset - right.offset
+      // An equal offset means "this chip and another want the same place". The moved chip loses the tie only when it is
+      // moving FORWARD: dropping on a later chip's slot puts it after that chip, because it was carried past it.
+      if (left.ref === ref) return insertion > chip.offset ? 1 : -1
+      if (right.ref === ref) return insertion > chip.offset ? -1 : 1
+      return 0
+    })
+  // The draft did not change when the chip's slot is exactly where it already was.
+  //
+  // Compared by OFFSET, not by index among the chips: with a single chip the index is 0 both before and after any move,
+  // so an index comparison called every one-chip move a no-op — measured, dropping the only chip into the middle of a
+  // sentence returned null while the recomputed text was clearly different.
+  const slotNow = slots.findIndex((item) => item.ref === ref)
+  if (slots[slotNow].offset === chip.offset) return null
   let searchFrom = 0
-  for (const item of order) {
+  for (const item of slots) {
     const at = text.indexOf('\uFFFC', searchFrom)
     if (at < 0) break
     rebuilt.push({ ...item, offset: at })
@@ -159,6 +248,52 @@ export function attachChipDragging({ listChips, readDraft, setDraft, source, onM
       grab.setAttribute('aria-hidden', 'true')
       document.body.appendChild(grab)
     }
+  }
+
+  /**
+   * The caret's box at a pointer position, so the grab bar can stand where the chip would actually go.
+   *
+   * A range's `getBoundingClientRect()` is empty when it is collapsed inside a text node, so the range is widened by one
+   * character and its left edge taken. That is the same trick a text editor uses to draw its own caret.
+   */
+  const caretBoxAt = (root, clientX, clientY) => {
+    if (root === null || typeof document.caretRangeFromPoint !== 'function') return null
+    const range = document.caretRangeFromPoint(clientX, clientY)
+    if (range === null || range === undefined) return null
+    if (root.contains(range.startContainer) === false) return null
+    const box = range.getBoundingClientRect()
+    if (box.height > 0) {
+      return { left: box.left, top: box.top, height: box.height }
+    }
+    // Collapsed: take the neighbour character's box and use the edge the caret is nearest.
+    const widened = range.cloneRange()
+    const container = range.startContainer
+    if (container.nodeType === Node.TEXT_NODE && container.data.length > 0) {
+      const at = Math.min(range.startOffset, container.data.length - 1)
+      widened.setStart(container, at)
+      widened.setEnd(container, at + 1)
+      const charBox = widened.getBoundingClientRect()
+      if (charBox.height > 0) {
+        return {
+          left: range.startOffset <= at ? charBox.left : charBox.right,
+          top: charBox.top,
+          height: charBox.height,
+        }
+      }
+    }
+    return null
+  }
+
+  /** The chip nearest a pointer position, used only when no text caret could be resolved. */
+  const chipIndexNear = (chips, clientX) => {
+    let best = 0
+    let bestDistance = Infinity
+    for (let index = 0; index < chips.length; index += 1) {
+      const box = chips[index].getBoundingClientRect()
+      const distance = Math.abs(clientX - (box.left + box.width / 2))
+      if (distance < bestDistance) { bestDistance = distance; best = index }
+    }
+    return best
   }
 
   /**
@@ -235,9 +370,22 @@ export function attachChipDragging({ listChips, readDraft, setDraft, source, onM
     event.preventDefault()
     ghost.style.left = `${Math.round(event.clientX)}px`
     ghost.style.top = `${Math.round(event.clientY)}px`
-    const chips = listChips()
-    dragging.slot = dropIndexAt(chips, event.clientX)
-    placeGrab(chips, dragging.slot)
+    // The drop is resolved as a TEXT position, so the grab bar can sit in the middle of a word rather than only at a
+    // seam between two chips. `root` is resolved per move: the Host can re-create the editable.
+    const root = dragging.element.closest('[contenteditable="true"]')
+      ?? document.querySelector('[contenteditable="true"]')
+    const draftNow = readDraft().draft ?? ''
+    const offset = dropOffsetAt(root, event.clientX, event.clientY, draftNow)
+    if (offset !== null) dragging.offset = offset
+    const caret = offset === null ? null : caretBoxAt(root, event.clientX, event.clientY)
+    if (caret === null) {
+      const chips = listChips()
+      placeGrab(chips, chipIndexNear(chips, event.clientX))
+    } else {
+      grab.style.left = `${Math.round(caret.left)}px`
+      grab.style.top = `${Math.round(caret.top)}px`
+      grab.style.height = `${Math.round(caret.height)}px`
+    }
   }
 
   const finish = (commit) => {
@@ -245,7 +393,7 @@ export function attachChipDragging({ listChips, readDraft, setDraft, source, onM
     if (state === null) return
     if (state.active && commit) {
       const live = readDraft()
-      const result = moveChipInDraft(live.draft, live.occurrences, source, state.ref, state.slot)
+      const result = moveChipInDraft(live.draft, live.occurrences, source, state.ref, state.offset ?? 0)
       if (result !== null && typeof setDraft === 'function') {
         setDraft(result)
         if (typeof onMoved === 'function') onMoved()

@@ -76,10 +76,20 @@ export function chipLabel(annotation, labels) {
  * A chip's `offset` is measured in the final draft text, so every insertion rebuilds the text
  * and re-computes the existing references from the same string the composer will parse.
  *
- * No separator is inserted beyond a single break: an empty draft becomes just the chip, and a
- * draft the user already ended with a newline keeps that newline as the only break. Adding
- * `\n\n` here used to leave a blank paragraph above the first chip, which is where the stray
- * empty line in the composer came from.
+ * ## One line, unless the user made a new one
+ *
+ * An earlier revision always inserted a line break first, so every chip after the first landed on
+ * its own line. Two things were wrong with that:
+ *
+ *   - the user could not put two chips on one line at all, and
+ *   - the editor renders a new paragraph with a leading space, so each extra chip also arrived
+ *     preceded by a stray space (measured: chips at x 456 and x 464, and the draft read
+ *     "@注释 1  @注释 2" with two spaces).
+ *
+ * Chips are now appended WITH NO SEPARATOR. They sit next to each other in the same line, and a
+ * newline is only ever present because the user typed one. The 6px margins the stylesheet gives
+ * the chip provide the visual gap, which is the right place for it: a space in the draft would
+ * become part of the message the model reads and would have to be stripped again at submit time.
  *
  * @param draft - current draft text.
  * @param existing - references already in that draft.
@@ -88,7 +98,9 @@ export function chipLabel(annotation, labels) {
  * @returns the complete snapshot for the Host's `setDraft`.
  */
 export function withAppendedChip(draft, existing, addition, reference) {
-  const base = draft === '' || draft.endsWith('\n') ? draft : `${draft}\n`
+  // A draft the user ended with a newline is respected as-is: the chip starts that new line, which is what they asked
+  // for by pressing Enter. Anything else is appended in place.
+  const base = draft
   return {
     text: `${base}${addition}`,
     references: [...existing, { ...reference, offset: base.length }],
@@ -123,11 +135,13 @@ export function withoutChip(draft, references, source, ref) {
   // one break then goes with it, preferring the one before when both exist.
   const brokenBefore = start > 0 && draft[start - 1] === '\n'
   const brokenAfter = stop < draft.length && draft[stop] === '\n'
-  const ownsLine = (start === 0 || brokenBefore) && (stop === draft.length || brokenAfter)
-  if (ownsLine) {
-    if (brokenBefore) start -= 1
-    else if (brokenAfter) stop += 1
-  }
+  // Only a chip that sits ALONE between two breaks owns its line.
+  //
+  // The earlier rule also accepted "at the start or end of the draft", which was right when every chip was appended on
+  // its own line but is wrong now that chips share a line: removing the first of two chips on one line would have taken
+  // the line break of the text above it with it, pulling that text down onto the chip's line.
+  const ownsLine = brokenBefore && brokenAfter
+  if (ownsLine) start -= 1
   const removed = draft.slice(start, stop)
   const nextText = `${draft.slice(0, start)}${draft.slice(stop)}`
   // Everything after the cut moves left by the removed length.
