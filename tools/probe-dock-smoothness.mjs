@@ -257,31 +257,59 @@ try {
       const returnRows = []
       let flippedAt = null
       let topsBeforeFlip = null
-      for (let step = 1; step <= 45; step += 1) {
-        const row = await stepAndSample(selector, -45)
-        if (row === null) break
-        returnRows.push({ step, ...row })
-        if (row.docked === 'false') { flippedAt = row; break }
-        topsBeforeFlip = row.top
-      }
-
       let glideTops = []
-      if (flippedAt !== null) {
-        // Poll on animation frames for ~400ms, which is longer than the 260ms transition.
-        glideTops = await read((sel) => new Promise((resolve) => {
-          const seen = []
+      for (let step = 1; step <= 45; step += 1) {
+        // Each step scrolls AND captures a frame burst in ONE page interaction.
+        //
+        // Scrolling first and then polling was too late: the dock flip and its 260ms glide both happen inside the first
+        // two frames after the scroll, so by the time a separate read arrived the animation had already finished and
+        // every sample showed the destination — which the probe reported as "teleport" even when the glide ran.
+        const captured = await read(({ sel, amount }) => new Promise((resolve) => {
+          const scroller = document.querySelector('.wSkVaW_scrollBody')
+          if (scroller === null) { resolve(null); return }
+          scroller.style.scrollBehavior = 'auto'
+          scroller.scrollTop += amount
+          void scroller.offsetHeight
+          const tops = []
           let frames = 0
+          let sawAnchored = false
           const tick = () => {
             const panel = document.querySelector(sel)
-            if (panel !== null) seen.push(Math.round(panel.getBoundingClientRect().top))
+            if (panel !== null) {
+              const docked = panel.getAttribute('data-docked')
+              tops.push(Math.round(panel.getBoundingClientRect().top))
+              if (docked === 'false') sawAnchored = true
+            }
             frames += 1
-            if (frames >= 26) { resolve(seen); return }
+            if (frames >= 24) { resolve({ tops, sawAnchored }); return }
             requestAnimationFrame(tick)
           }
           requestAnimationFrame(tick)
-        }), selector)
+        }), { sel: selector, amount: -45 })
+        if (captured === null) break
+        const row = await sample(selector)
+        if (row === null) break
+        returnRows.push({ step, ...row })
+        if (row.docked === 'false') {
+          flippedAt = row
+          glideTops = captured.tops
+          break
+        }
+        topsBeforeFlip = row.top
       }
-      const distinctGlide = [...new Set(glideTops)].filter((top) => top !== topsBeforeFlip)
+      // A glide must have painted INTERMEDIATE positions between where the panel was docked and where it ends up. The
+      // count is judged against the distance travelled: a 40px move over 260ms legitimately yields a handful of distinct
+      // positions, and demanding a fixed number everywhere failed a perfectly smooth short glide.
+      //
+      // Only frames captured AFTER the flip belongs to the glide: the burst starts on the same frame that the scroll
+      // lands, so its first entries still show the docked position.
+      const flipIndex = glideTops.findIndex((top) => top !== topsBeforeFlip)
+      const glideOnly = flipIndex === -1 ? [] : glideTops.slice(flipIndex)
+      const distinctGlide = [...new Set(glideOnly)]
+      const travel = glideOnly.length === 0
+        ? 0 : Math.abs(glideOnly[glideOnly.length - 1] - glideOnly[0])
+      const requiredDistinct = travel < 40 ? 2 : 4
+      const glideOk = distinctGlide.length >= requiredDistinct
 
       console.log('\n  phase B: scrolling back until the passage returns')
       console.log('   step  docked  top')
@@ -305,9 +333,11 @@ try {
       const edgeSpread = edgeErrors.length === 0 ? null : Math.max(...edgeErrors) - Math.min(...edgeErrors)
       const trackingOk = pinned.length > 0 && edgeSpread !== null && edgeSpread <= 2
       const flagOk = settled?.docked !== null
-      const glideOk = distinctGlide.length >= 3
+
       const ok = trackingOk && flagOk && glideOk
       console.log(`     tracking spread: ${edgeSpread === null ? 'n/a' : `${edgeSpread}px`}  (must be <= 2px)`)
+      console.log(`     glide travel: ${travel}px, distinct positions: ${distinctGlide.length}`
+        + `  (need >= ${requiredDistinct} for this distance)`)
       console.log(`\n     ${ok ? 'OK: instant tracking, smooth return' : 'NOT OK'}`)
       process.exitCode = ok ? 0 : 1
 

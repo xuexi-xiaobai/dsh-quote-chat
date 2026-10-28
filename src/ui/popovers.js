@@ -1,4 +1,4 @@
-﻿/**
+/**
  * The two floating surfaces over a selection: the action pair and the comment editor.
  *
  * ## Why these are a factory
@@ -24,6 +24,7 @@ import React from 'react'
 import { createPortal } from 'react-dom'
 import { IconAnnotate, IconSideChat, IconCheck } from '../icons.js'
 import { findFlowElement, isInsideTranscript } from '../text-ranges.js'
+import { panelMaxWidth } from '../layout.js'
 
 /** createElement, bound once. */
 const h = React.createElement
@@ -242,6 +243,7 @@ export function createPopovers({
       let lastTop = null
       let lastLeft = null
       let lastHeight = null
+      let lastWidth = null
 
       const watch = () => {
         frame = window.requestAnimationFrame(watch)
@@ -250,6 +252,11 @@ export function createPopovers({
         const top = Math.round(box.top)
         const left = Math.round(box.left)
         const height = Math.round(box.height)
+        // WIDTH matters as much as the rest. A sidebar narrowing the column re-wraps the paragraph — its width changes,
+        // and therefore where the panel has to sit — while its top can stay put. Comparing only top/left/height missed
+        // that entirely, so the panel kept its old placement until some unrelated scroll forced another pass. That is
+        // the reported "it does not follow, and only scrolling or a refresh fixes it".
+        const width = Math.round(box.width)
         // The first reading only records the baseline: the render that mounted the panel already placed it against
         // this box, so re-rendering here would be wasted work.
         if (primed === false) {
@@ -257,12 +264,14 @@ export function createPopovers({
           lastTop = top
           lastLeft = left
           lastHeight = height
+          lastWidth = width
           return
         }
-        if (top === lastTop && left === lastLeft && height === lastHeight) return
+        if (top === lastTop && left === lastLeft && height === lastHeight && width === lastWidth) return
         lastTop = top
         lastLeft = left
         lastHeight = height
+        lastWidth = width
         setViewportTick((tick) => tick + 1)
       }
 
@@ -311,7 +320,15 @@ export function createPopovers({
     // content space at the very end. Keeping the helpers unchanged matters: they were measured and corrected
     // against real behaviour (above the BLOCK's top edge, never flipping sides), and rewriting them in container
     // coordinates would risk reintroducing faults that took several rounds to find.
-    const width = size.width || 420
+    // The panel's width follows the TEXT COLUMN, not the viewport.
+    //
+    // It was `min(420px, 92vw)` in the stylesheet, which knows nothing about the transcript column. A sidebar sliding in
+    // narrows the column to less than that, the panel overhangs it, and the sidebar paints over the panel's controls.
+    //
+    // `panelMaxWidth` reads the column's live box, so the panel shrinks with it. The measured width also feeds the
+    // placement maths below, which keeps the panel inside the column instead of straddling the boundary.
+    const columnLimit = panelMaxWidth(findFlowElement())
+    const width = columnLimit === null ? (size.width || 420) : Math.min(size.width || 420, columnLimit)
     // The first paint has no measurement; 170 is a rough guess that survives one frame only. Every
     // later render uses the real height, which is what the placement needs to be exact.
     const height = size.height || 170
@@ -414,6 +431,9 @@ export function createPopovers({
         style: {
           left: `${target.left}px`,
           top: `${target.top}px`,
+          // Capped by the text column when it can be measured. The stylesheet's `min(420px, 92vw)` is a viewport rule:
+          // with a sidebar open the column can be narrower than that, and the panel then overhangs it.
+          width: columnLimit === null ? undefined : `${Math.round(width)}px`,
           // Absolute inside the transcript's scroll container, so the panel shares the text's layer. The container
           // clips it at its top edge and the composer covers it at the bottom, exactly as happens to text — no
           // clip-path, no z-index trick, and no scroll listener needed for the resting position.

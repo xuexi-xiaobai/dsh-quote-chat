@@ -1,4 +1,4 @@
-﻿/**
+/**
  * The gutter: numbered markers beside annotated passages, and the comment editor they open.
  *
  * ## How the marker is placed
@@ -29,7 +29,8 @@ import React from 'react'
 import { createPortal } from 'react-dom'
 import { CHIP_SOURCE } from '../chip-draft.js'
 import { elementOf } from '../dom.js'
-import { resolveAnchor, BLOCK_SELECTOR, isInsideTranscript } from '../text-ranges.js'
+import { resolveAnchor, BLOCK_SELECTOR, isInsideTranscript, findFlowElement } from '../text-ranges.js'
+import { panelMaxWidth, liveColumnBox } from '../layout.js'
 
 /** createElement, bound once. */
 const h = React.createElement
@@ -190,7 +191,13 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
       }
     }, [onClose])
 
-    const width = size.width || 320
+    // The editor's width follows the TEXT COLUMN, not the viewport, for the same reason as the compose panel: the
+    // stylesheet sizes it against the viewport, so a sidebar narrowing the column leaves the editor overhanging it and
+    // the sidebar paints over the editor's buttons. An over-wide absolutely-positioned box inside the scroller can also
+    // widen its scrollable area, which reflows the text, which moves the box, which changes the overflow again — the
+    // jitter seen while a divider is dragged.
+    const columnLimit = panelMaxWidth(findFlowElement())
+    const width = columnLimit === null ? (size.width || 320) : Math.min(size.width || 320, columnLimit)
     const height = size.height || 200
     // Two placement modes.
     //
@@ -319,11 +326,16 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
         ? {
           right: `${rightEdge}px`,
           top: `${clampedTop}px`,
+          // Capped by the text column. The stylesheet's own `min(320px, 80vw)` is a viewport rule and knows nothing
+          // about the column, so it is overridden here rather than removed — the class-based width still applies when
+          // the column cannot be measured.
+          width: columnLimit === null ? undefined : `${Math.round(width)}px`,
           visibility: size.width === 0 ? 'hidden' : 'visible',
         }
         : {
           left: `${left}px`,
           top: `${clampedTop}px`,
+          width: columnLimit === null ? undefined : `${Math.round(width)}px`,
           visibility: size.width === 0 ? 'hidden' : 'visible',
         },
       // The docked slot, exposed for the stylesheet and for probes. The glide is done with WAAPI above.
@@ -462,6 +474,12 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
     //
     // The watcher lives HERE, not inside BubblePanel: `rel` is derived in this component, so only a re-render of this
     // one recomputes the placement. Comparing the bubble's own box each frame and bumping a tick is enough.
+    //
+    // The key includes the COLUMN's width, not just the bubble's position. A sidebar narrowing the column re-wraps the
+    // text and can leave the bubble's own top/left unchanged while the editor's placement is now wrong — and an editor
+    // whose width is capped by the column has to be re-sized too. Without this the editor sat at its old offsets until
+    // some unrelated scroll forced a pass, which is the reported "it does not follow, and only scrolling or a refresh
+    // fixes it".
     const [bubbleTick, setBubbleTick] = React.useState(0)
     const editingId = editing === null ? null : editing.id
     React.useEffect(() => {
@@ -474,7 +492,9 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
         const bubble = document.querySelector(`.qc-marker[data-qc-for="${editingId}"]`)
         if (bubble === null) return
         const box = bubble.getBoundingClientRect()
-        const key = `${Math.round(box.top)}:${Math.round(box.left)}`
+        const column = liveColumnBox(findFlowElement())
+        const columnWidth = column === null ? -1 : Math.round(column.width)
+        const key = `${Math.round(box.top)}:${Math.round(box.left)}:${columnWidth}`
         if (primed === false) {
           primed = true
           lastKey = key
@@ -811,4 +831,5 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
 
   return { MarkerLayer: MarkerLayer }
 }
+
 

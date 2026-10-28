@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:8680512e8d841e46
+ * Artifact: sha256:ebf9e1e645abd937
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -790,6 +790,8 @@ function __dshQuoteChatFactory(hostRequire) {
   // src/layout.js
   var ANCHOR_INSET = 8;
   var PANEL_BUBBLE_GAP = 10;
+  var PANEL_COLUMN_INSET = 8;
+  var PANEL_MIN_WIDTH = 240;
   var SIDEBAR_TAB_SELECTOR = "[data-sidebar-right-tab]";
   var COMPOSER_SELECTORS2 = [
     '[data-slot="conversation.composer.dock"]',
@@ -813,6 +815,54 @@ function __dshQuoteChatFactory(hostRequire) {
       }
     }
     return null;
+  }
+  function liveColumnBox(flow) {
+    if (flow === null || flow === void 0) return null;
+    let widest = null;
+    const consider = (element) => {
+      const box = element.getBoundingClientRect();
+      if (box.width === 0 || box.height === 0) return;
+      if (widest === null || box.width > widest.width) widest = box;
+    };
+    for (const child of flow.querySelectorAll("[data-chat-node-key]")) consider(child);
+    if (widest === null) {
+      for (const child of flow.querySelectorAll("*")) {
+        if (child.closest(SIDEBAR_TAB_SELECTOR) !== null) continue;
+        consider(child);
+      }
+    }
+    return widest;
+  }
+  function localScrollerOf(flow) {
+    if (flow === null || flow === void 0) return null;
+    let node = flow.parentElement;
+    while (node !== null && node !== document.body) {
+      const style = window.getComputedStyle(node);
+      if (/(auto|scroll|overlay)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 8) return node;
+      node = node.parentElement;
+    }
+    return null;
+  }
+  function livePanelColumn() {
+    if (typeof document === "undefined") return null;
+    const flow = findFlowElement();
+    if (flow === null || flow === void 0) return null;
+    const scroller = localScrollerOf(flow);
+    const target = scroller ?? flow.parentElement;
+    if (target === null || target === void 0) return null;
+    const box = target.getBoundingClientRect();
+    if (box.width <= 0) return null;
+    return { left: Math.round(box.left), width: Math.round(box.width), right: Math.round(box.right) };
+  }
+  function panelMaxWidth(flow) {
+    const scroller = localScrollerOf(flow);
+    const column = liveColumnBox(flow);
+    const available = scroller !== null && scroller !== void 0 && scroller.clientWidth > 0 ? scroller.clientWidth : column === null ? null : column.width;
+    if (available === null || available === void 0 || available <= 0) return null;
+    const viewport = typeof window === "undefined" ? 0 : window.innerWidth;
+    const room = Math.floor(available) - 2 * PANEL_COLUMN_INSET;
+    const floor = Math.min(PANEL_MIN_WIDTH, Math.max(160, Math.floor(viewport * 0.5)));
+    return Math.max(floor, room);
   }
   function createLayout() {
     const columnCache = /* @__PURE__ */ new WeakMap();
@@ -984,7 +1034,11 @@ function __dshQuoteChatFactory(hostRequire) {
       const margin = options.margin ?? 8;
       const viewportWidth = typeof window === "undefined" ? 0 : window.innerWidth;
       const band = readableBand();
-      const left = Math.max(margin, Math.round((viewportWidth - size.width) / 2));
+      const column = livePanelColumn();
+      const left = column === null ? Math.max(margin, Math.round((viewportWidth - size.width) / 2)) : Math.min(
+        Math.round(column.left + Math.max(margin, (column.width - size.width) / 2)),
+        Math.max(column.left + margin, column.right - size.width - margin)
+      );
       const above = blockBox.top - gap - size.height;
       return { left, top: Math.round(above), edge: "above" };
     }
@@ -997,8 +1051,11 @@ function __dshQuoteChatFactory(hostRequire) {
       const bottom = Math.max(band.top + gap, band.bottom - gap - size.height);
       const toTop = Math.abs(restingTop - top);
       const toBottom = Math.abs(bottom - restingTop);
+      const column = livePanelColumn();
+      const centred = column === null ? Math.max(margin, Math.round((viewportWidth - size.width) / 2)) : Math.round(column.left + Math.max(margin, (column.width - size.width) / 2));
+      const left = column === null ? centred : Math.min(centred, Math.max(column.left + margin, column.right - size.width - margin));
       return {
-        left: Math.max(margin, Math.round((viewportWidth - size.width) / 2)),
+        left,
         top: toTop <= toBottom ? top : bottom,
         edge: toTop <= toBottom ? "top" : "bottom"
       };
@@ -1910,6 +1967,7 @@ function __dshQuoteChatFactory(hostRequire) {
         let lastTop = null;
         let lastLeft = null;
         let lastHeight = null;
+        let lastWidth = null;
         const watch = () => {
           frame = window.requestAnimationFrame(watch);
           if (block === null || block === void 0 || block.isConnected !== true) return;
@@ -1917,17 +1975,20 @@ function __dshQuoteChatFactory(hostRequire) {
           const top = Math.round(box.top);
           const left = Math.round(box.left);
           const height2 = Math.round(box.height);
+          const width2 = Math.round(box.width);
           if (primed === false) {
             primed = true;
             lastTop = top;
             lastLeft = left;
             lastHeight = height2;
+            lastWidth = width2;
             return;
           }
-          if (top === lastTop && left === lastLeft && height2 === lastHeight) return;
+          if (top === lastTop && left === lastLeft && height2 === lastHeight && width2 === lastWidth) return;
           lastTop = top;
           lastLeft = left;
           lastHeight = height2;
+          lastWidth = width2;
           setViewportTick((tick) => tick + 1);
         };
         frame = window.requestAnimationFrame(watch);
@@ -1953,7 +2014,8 @@ function __dshQuoteChatFactory(hostRequire) {
           document.removeEventListener("keydown", onKey, true);
         };
       }, [onCancel]);
-      const width = size.width || 420;
+      const columnLimit = panelMaxWidth(findFlowElement());
+      const width = columnLimit === null ? size.width || 420 : Math.min(size.width || 420, columnLimit);
       const height = size.height || 170;
       const liveBlock = source.block;
       const blockBox = liveBlock !== void 0 && liveBlock !== null && liveBlock.isConnected === true ? liveBlock.getBoundingClientRect() : source.blockRect ?? source.rect?.passage ?? source.rect;
@@ -2003,6 +2065,9 @@ function __dshQuoteChatFactory(hostRequire) {
             style: {
               left: `${target.left}px`,
               top: `${target.top}px`,
+              // Capped by the text column when it can be measured. The stylesheet's `min(420px, 92vw)` is a viewport rule:
+              // with a sidebar open the column can be narrower than that, and the panel then overhangs it.
+              width: columnLimit === null ? void 0 : `${Math.round(width)}px`,
               // Absolute inside the transcript's scroll container, so the panel shares the text's layer. The container
               // clips it at its top edge and the composer covers it at the bottom, exactly as happens to text — no
               // clip-path, no z-index trick, and no scroll listener needed for the resting position.
@@ -2393,7 +2458,8 @@ function __dshQuoteChatFactory(hostRequire) {
           document.removeEventListener("keydown", onKey, true);
         };
       }, [onClose]);
-      const width = size.width || 320;
+      const columnLimit = panelMaxWidth(findFlowElement());
+      const width = columnLimit === null ? size.width || 320 : Math.min(size.width || 320, columnLimit);
       const height = size.height || 200;
       const rightEdge = rel !== null && rel.right !== void 0 ? rel.right : null;
       const left = rel !== null ? rel.left : inFlow ? Math.max(0, anchor.width - width) : Math.min(
@@ -2453,10 +2519,15 @@ function __dshQuoteChatFactory(hostRequire) {
           style: rightEdge !== null ? {
             right: `${rightEdge}px`,
             top: `${clampedTop}px`,
+            // Capped by the text column. The stylesheet's own `min(320px, 80vw)` is a viewport rule and knows nothing
+            // about the column, so it is overridden here rather than removed — the class-based width still applies when
+            // the column cannot be measured.
+            width: columnLimit === null ? void 0 : `${Math.round(width)}px`,
             visibility: size.width === 0 ? "hidden" : "visible"
           } : {
             left: `${left}px`,
             top: `${clampedTop}px`,
+            width: columnLimit === null ? void 0 : `${Math.round(width)}px`,
             visibility: size.width === 0 ? "hidden" : "visible"
           },
           // The docked slot, exposed for the stylesheet and for probes. The glide is done with WAAPI above.
@@ -2544,7 +2615,9 @@ function __dshQuoteChatFactory(hostRequire) {
           const bubble = document.querySelector(`.qc-marker[data-qc-for="${editingId}"]`);
           if (bubble === null) return;
           const box = bubble.getBoundingClientRect();
-          const key = `${Math.round(box.top)}:${Math.round(box.left)}`;
+          const column = liveColumnBox(findFlowElement());
+          const columnWidth = column === null ? -1 : Math.round(column.width);
+          const key = `${Math.round(box.top)}:${Math.round(box.left)}:${columnWidth}`;
           if (primed === false) {
             primed = true;
             lastKey = key;

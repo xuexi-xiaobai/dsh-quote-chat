@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Shared browser harness for the acceptance suites, driven directly by Playwright.
  *
  * ## Why this exists
@@ -248,6 +248,7 @@ export async function openBrowser(options = {}) {
    */
   const seedAnnotation = async (options = {}) => {
     const comment = options.comment ?? '测试注释'
+    const verbose = options.verbose === true
     const before = await read(() => document.querySelectorAll('.qc-marker').length)
     for (const offset of [600, 300, 900, 0, 1200, 1500, 450, 750]) {
       const seeded = await read((target) => {
@@ -274,17 +275,26 @@ export async function openBrowser(options = {}) {
         candidate.setAttribute('data-qc-seed', '1')
         return true
       }, offset)
-      if (seeded === false) continue
+      if (seeded === false) {
+        if (verbose) console.log(`    seed: no candidate at offset ${offset}`)
+        continue
+      }
 
       await page.locator('[data-qc-seed="1"]').first()
         .click({ clickCount: 3, timeout: 4000 }).catch(() => {})
       await page.waitForTimeout(200)
       const selected = await read(() => (window.getSelection() ?? '').toString().trim().length)
-      if (selected === 0) continue
+      if (selected === 0) {
+        if (verbose) console.log(`    seed: empty selection at offset ${offset}`)
+        continue
+      }
 
       const toolbar = await waitFor('document.querySelectorAll(\'.qc-popup button\').length === 2',
         { timeoutMs: 4000 })
-      if (toolbar === null) continue
+      if (toolbar === null) {
+        if (verbose) console.log(`    seed: no toolbar at offset ${offset} (selected ${selected} chars)`)
+        continue
+      }
       await click('.qc-popup button:first-child')
       const compose = await waitFor('document.querySelector(\'.qc-compose\') !== null', { timeoutMs: 4000 })
       if (compose === null) continue

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Layout: where the transcript is, how much of it is readable, where a surface goes.
  *
  * Three things live here because they answer one question each and depend on each other in one
@@ -69,6 +69,18 @@ const ANCHOR_INSET = 8
 /** Gap between the bubble's top edge and the panel's bottom edge, in px. */
 const PANEL_BUBBLE_GAP = 10
 
+/** Room kept between a panel's edge and the text column's edge, on each side, in px. */
+const PANEL_COLUMN_INSET = 8
+
+/**
+ * The narrowest a comment panel may become before it stops shrinking.
+ *
+ * Below this it is no longer a usable editor — the textarea's own padding and the button row consume the space. When the
+ * column is narrower than this plus the insets the panel keeps this width and the column clips it instead, which is the
+ * lesser evil: a clipped panel can still be typed in, a 60px-wide one cannot.
+ */
+const PANEL_MIN_WIDTH = 240
+
 import { FLOW_SELECTORS, findFlowElement } from './text-ranges.js'
 
 /** Surfaces that must never be mistaken for the transcript. */
@@ -115,6 +127,112 @@ export function composerContainer() {
  * Create one layout helper set.
  * @returns the lookups, measurements and placements.
  */
+/**
+ * The text column's CURRENT box, with no caching and no layout instance.
+ *
+ * `flowColumnBox` lives inside the layout instance and caches against the flow element, revalidating only when the
+ * measured element disconnects. That is right for a static layout, but a sidebar sliding in narrows the column WITHOUT
+ * replacing its elements, so the cache kept serving the pre-squeeze width. During a pane drag the width is needed every
+ * frame, and a stale answer is exactly the "the panel does not follow the text" symptom.
+ *
+ * Exported at module level so the panels can call it directly: they hold the flow element themselves and never see the
+ * layout instance.
+ *
+ * @param flow - the chat flow element, or null.
+ * @returns the column's box, or null when nothing measurable is found.
+ */
+export function liveColumnBox(flow) {
+  if (flow === null || flow === undefined) return null
+  let widest = null
+  const consider = (element) => {
+    const box = element.getBoundingClientRect()
+    if (box.width === 0 || box.height === 0) return
+    if (widest === null || box.width > widest.width) widest = box
+  }
+  for (const child of flow.querySelectorAll('[data-chat-node-key]')) consider(child)
+  if (widest === null) {
+    for (const child of flow.querySelectorAll('*')) {
+      if (child.closest(SIDEBAR_TAB_SELECTOR) !== null) continue
+      consider(child)
+    }
+  }
+  return widest
+}
+
+/**
+ * The widest a comment panel may be in the current layout.
+ *
+ * The panels were sized against the VIEWPORT (`min(420px, 92vw)`), which ignores the transcript column. Once a sidebar
+ * narrows the column below the panel's width, the panel overhangs it and the sidebar paints over the panel's controls.
+ *
+ * An over-wide absolutely-positioned panel inside the scroll container can also widen the container's scrollable area,
+ * which reflows the text, which moves the panel, which changes the overflow again — a feedback loop that reads as the
+ * panel jittering while a divider is dragged.
+ *
+ * @param flow - the chat flow element, or null.
+ * @returns the maximum width in pixels, or null when the column cannot be measured.
+ */
+/**
+ * The nearest scrollable ancestor of the flow, at module level.
+ *
+ * `scrollContainerOf` lives inside the layout instance, which the panels never see. This is the same walk without the
+ * per-instance caches: it runs once per rendered frame, and the climb is two or three parents.
+ *
+ * @param flow - the chat flow element, or null.
+ * @returns the scrolling element, or null.
+ */
+export function localScrollerOf(flow) {
+  if (flow === null || flow === undefined) return null
+  let node = flow.parentElement
+  while (node !== null && node !== document.body) {
+    const style = window.getComputedStyle(node)
+    if (/(auto|scroll|overlay)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 8) return node
+    node = node.parentElement
+  }
+  return null
+}
+
+/**
+ * The transcript pane's box, which is the area a panel may occupy.
+ *
+ * Distinct from the text column: prose is centred inside the pane, so the pane is the space available while the text
+ * column is where the words happen to sit. Panels need the former — capping them at the paragraph width made them
+ * narrower than the room they had.
+ *
+ * @returns `{ left, width, right }` in viewport pixels, or null.
+ */
+export function livePanelColumn() {
+  if (typeof document === 'undefined') return null
+  const flow = findFlowElement()
+  if (flow === null || flow === undefined) return null
+  const scroller = localScrollerOf(flow)
+  const target = scroller ?? flow.parentElement
+  if (target === null || target === undefined) return null
+  const box = target.getBoundingClientRect()
+  if (box.width <= 0) return null
+  return { left: Math.round(box.left), width: Math.round(box.width), right: Math.round(box.right) }
+}
+
+export function panelMaxWidth(flow) {
+  // Prefer the space the transcript actually HAS, not the width of the widest paragraph.
+  //
+  // The widest row is a poor proxy: prose is centred inside the pane, so a measured 353px paragraph sat inside a 424px
+  // column. Capping the panel at the PARAGRAPH's width made the panel slightly narrower than the space available, so a
+  // squeeze never changed anything and the panel still had room to be covered. The scroll container's client width is
+  // the space the panel may occupy.
+  const scroller = localScrollerOf(flow)
+  const column = liveColumnBox(flow)
+  const available = scroller !== null && scroller !== undefined && scroller.clientWidth > 0
+    ? scroller.clientWidth
+    : (column === null ? null : column.width)
+  if (available === null || available === undefined || available <= 0) return null
+  const viewport = typeof window === 'undefined' ? 0 : window.innerWidth
+  // An inset on each side, so the panel never sits exactly on the edge where a 1px rounding error overflows it.
+  const room = Math.floor(available) - 2 * PANEL_COLUMN_INSET
+  const floor = Math.min(PANEL_MIN_WIDTH, Math.max(160, Math.floor(viewport * 0.5)))
+  return Math.max(floor, room)
+}
+
 export function createLayout() {
   /** Cached text-column box per flow element. */
   const columnCache = new WeakMap()
@@ -434,7 +552,23 @@ export function createLayout() {
     const viewportWidth = typeof window === 'undefined' ? 0 : window.innerWidth
     const band = readableBand()
 
-    const left = Math.max(margin, Math.round((viewportWidth - size.width) / 2))
+    // Centred in the TRANSCRIPT, not in the viewport.
+    //
+    // Centring in the viewport ignored the sidebars completely: with the right sidebar open the panel's left edge was
+    // still computed from `window.innerWidth`, so a 401px panel inside a 424px column ended up 137px past the column's
+    // right edge — painted over the sidebar. The column's own box is the only correct anchor.
+    const column = livePanelColumn()
+    // Round to whole pixels AND clamp inside the column. Without the clamp the centring arithmetic could push the right
+    // edge past the column on a narrow pane, which painted the panel over the sidebar.
+    //
+    // Note the panel is centred ONCE per column width: the placement must be stable frame to frame, or a WAAPI glide
+    // started on a dock-state change is restarted every frame by the moving target and never animates.
+    const left = column === null
+      ? Math.max(margin, Math.round((viewportWidth - size.width) / 2))
+      : Math.min(
+        Math.round(column.left + Math.max(margin, (column.width - size.width) / 2)),
+        Math.max(column.left + margin, column.right - size.width - margin),
+      )
 
     // ALWAYS above the block, never below.
     //
@@ -470,8 +604,17 @@ export function createLayout() {
     // Distance to each docked slot from where it rests now.
     const toTop = Math.abs(restingTop - top)
     const toBottom = Math.abs(bottom - restingTop)
+    // Same column-relative centring as the resting place: a docked panel must not jump sideways into a sidebar when it
+    // starts gliding, and the sidebar can be on either side.
+    const column = livePanelColumn()
+    const centred = column === null
+      ? Math.max(margin, Math.round((viewportWidth - size.width) / 2))
+      : Math.round(column.left + Math.max(margin, (column.width - size.width) / 2))
+    const left = column === null
+      ? centred
+      : Math.min(centred, Math.max(column.left + margin, column.right - size.width - margin))
     return {
-      left: Math.max(margin, Math.round((viewportWidth - size.width) / 2)),
+      left,
       top: toTop <= toBottom ? top : bottom,
       edge: toTop <= toBottom ? 'top' : 'bottom',
     }
@@ -625,3 +768,6 @@ export function createLayout() {
     columnElement,
   }
 }
+
+
+
