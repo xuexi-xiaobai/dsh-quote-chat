@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The gutter: numbered markers beside annotated passages, and the comment editor they open.
  *
  * ## How the marker is placed
@@ -30,7 +30,7 @@ import { createPortal } from 'react-dom'
 import { CHIP_SOURCE } from '../chip-draft.js'
 import { elementOf } from '../dom.js'
 import { resolveAnchor, BLOCK_SELECTOR, isInsideTranscript, findFlowElement } from '../text-ranges.js'
-import { panelMaxWidth, liveColumnBox } from '../layout.js'
+import { panelMaxWidth, localScrollerOf } from '../layout.js'
 
 /** createElement, bound once. */
 const h = React.createElement
@@ -487,13 +487,20 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
       let frame = 0
       let primed = false
       let lastKey = null
+      // Resolved ONCE for the life of this watcher: the transcript's scroller does not change identity while a comment
+      // editor is open, and re-resolving it per frame was part of the dragging jank.
+      const scroller = localScrollerOf(findFlowElement())
       const watch = () => {
         frame = window.requestAnimationFrame(watch)
         const bubble = document.querySelector(`.qc-marker[data-qc-for="${editingId}"]`)
         if (bubble === null) return
         const box = bubble.getBoundingClientRect()
-        const column = liveColumnBox(findFlowElement())
-        const columnWidth = column === null ? -1 : Math.round(column.width)
+        // Read the pane's width with `clientWidth`, which is a cached integer — not by resolving the flow and walking it.
+        //
+        // The previous version called `findFlowElement()` (a querySelectorAll over several selectors) plus
+        // `liveColumnBox()` — which used to walk all 214 chat rows, 2.1ms per call — on EVERY animation frame, for as
+        // long as the editor was open. That was the dragging jank.
+        const columnWidth = scroller === null || scroller === undefined ? -1 : scroller.clientWidth
         const key = `${Math.round(box.top)}:${Math.round(box.left)}:${columnWidth}`
         if (primed === false) {
           primed = true
@@ -831,5 +838,6 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
 
   return { MarkerLayer: MarkerLayer }
 }
+
 
 

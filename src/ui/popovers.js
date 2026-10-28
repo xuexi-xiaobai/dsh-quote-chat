@@ -153,11 +153,69 @@ export function createPopovers({
    * confirm pair.
    * @param props - the source, labels, and handlers.
    */
+/**
+ * The compose panel contents, memoised.
+ *
+ * The panel re-renders on EVERY animation frame while the transcript reflows: a pane drag re-wraps the text, the block
+ * box changes, and the placement has to follow. Rebuilding the textarea, the hint string and the button row on all of
+ * those frames was pure waste — none of it depends on the position, only on the comment and the labels.
+ *
+ * The callbacks are stabilised by the caller so this memo actually holds.
+ */
+const ComposeBody = React.memo(function ComposeBody(props) {
+  const { comment, inputRef, labels, onCancel, onChange, onConfirm, source } = props
+  return h(React.Fragment, null,
+    source.kind === 'table'
+      ? null
+      : h('textarea', {
+        ref: inputRef,
+        value: comment,
+        rows: 2,
+        placeholder: labels.placeholder,
+        onChange,
+        onKeyDown: (event) => {
+          if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent?.isComposing) {
+            event.preventDefault()
+            onConfirm(comment)
+          }
+        },
+      }),
+    h('div', { className: 'qc-compose-row' },
+      h('span', { className: 'qc-compose-hint' },
+        source.kind === 'table'
+          ? labels.table.replace('{rows}', String(source.rows ?? 0))
+          : `${labels.selected.replace('{count}', String(source.previewText.length))} · ${labels.hint}`),
+      h('button', { type: 'button', className: 'qc-compose-cancel', onClick: onCancel }, labels.cancel),
+      h('button', {
+        type: 'button',
+        className: 'qc-compose-confirm',
+        title: labels.confirm,
+        'aria-label': labels.confirm,
+        onClick: () => onConfirm(source.kind === 'table' ? '' : comment),
+      }, h(IconCheck, null), h('span', { className: 'qc-compose-confirm-text' }, labels.confirm)),
+    ),
+  )
+})
+
   function ComposerPopover(props) {
     const { source, labels, onConfirm, onCancel } = props
     const ref = React.useRef(null)
     const inputRef = React.useRef(null)
     const [comment, setComment] = React.useState('')
+    // Stable callbacks, so the memoised body does not re-render merely because this component did.
+    //
+    // The panel re-renders on every animation frame during a reflow; without these, `onChange` would be a new function
+    // identity each time and `ComposeBody` would rebuild the textarea and buttons anyway, which is exactly the cost this
+    // is meant to remove.
+    const onChangeComment = React.useCallback((event) => {
+      setComment(event.target.value)
+    }, [])
+    const onCancelStable = React.useCallback(() => {
+      onCancel()
+    }, [onCancel])
+    const onConfirmStable = React.useCallback((text) => {
+      onConfirm(text)
+    }, [onConfirm])
     // Bumped on scroll and resize, purely to force a re-render so the placement is recomputed against live
     // geometry. The value itself is never read.
     const [, setViewportTick] = React.useState(0)
@@ -447,35 +505,15 @@ export function createPopovers({
           }
         },
       },
-      source.kind === 'table'
-        ? null
-        : h('textarea', {
-          ref: inputRef,
-          value: comment,
-          rows: 2,
-          placeholder: labels.placeholder,
-          onChange: (event) => setComment(event.target.value),
-          onKeyDown: (event) => {
-            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent?.isComposing) {
-              event.preventDefault()
-              onConfirm(comment)
-            }
-          },
-        }),
-      h('div', { className: 'qc-compose-row' },
-        h('span', { className: 'qc-compose-hint' },
-          source.kind === 'table'
-            ? labels.table.replace('{rows}', String(source.rows ?? 0))
-            : `${labels.selected.replace('{count}', String(source.previewText.length))} · ${labels.hint}`),
-        h('button', { type: 'button', className: 'qc-compose-cancel', onClick: onCancel }, labels.cancel),
-        h('button', {
-          type: 'button',
-          className: 'qc-compose-confirm',
-          title: labels.confirm,
-          'aria-label': labels.confirm,
-          onClick: () => onConfirm(source.kind === 'table' ? '' : comment),
-        }, h(IconCheck, null), h('span', { className: 'qc-compose-confirm-text' }, labels.confirm)),
-      ),
+      h(ComposeBody, {
+        comment,
+        inputRef,
+        labels,
+        onCancel: onCancelStable,
+        onChange: onChangeComment,
+        onConfirm: onConfirmStable,
+        source,
+      }, `qc-compose-body-${source.kind}`),
       ),
       // Inside the transcript's scroll container, so the panel is covered and clipped exactly as the text is.
       // Falls back to `body` when there is no container, where `position: fixed` and viewport coordinates apply.
@@ -485,5 +523,7 @@ export function createPopovers({
 
   return { ActionPopup, ComposerPopover }
 }
+
+
 
 

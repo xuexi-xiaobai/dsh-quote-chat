@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Layout: where the transcript is, how much of it is readable, where a surface goes.
  *
  * Three things live here because they answer one question each and depend on each other in one
@@ -86,6 +86,23 @@ import { FLOW_SELECTORS, findFlowElement } from './text-ranges.js'
 /** Surfaces that must never be mistaken for the transcript. */
 const SIDEBAR_TAB_SELECTOR = '[data-sidebar-right-tab]'
 
+/**
+ * Memoised result of the last `panelMaxWidth` call, keyed by the pane's client width.
+ *
+ * Both panels ask for the limit on every render, and during a divider drag they render on the same frames. Reading the
+ * pane's client width is cheap (a cached integer), but recomputing the limit for an unchanged width is wasted work on
+ * every one of those frames.
+ */
+const widthCache = { width: -1, limit: null }
+
+/**
+ * Memoised scroll container per flow element, for the module-level helpers.
+ *
+ * `localScrollerOf` climbs ancestors and consults `getComputedStyle`, which forces a style recalculation. It runs on
+ * every panel render, so the answer is remembered while the flow and its container are still connected.
+ */
+const scrollerCache = { flow: null, scroller: null }
+
 /** Candidate composer docks, most specific first. */
 const COMPOSER_SELECTORS = [
   '[data-slot="conversation.composer.dock"]',
@@ -143,20 +160,16 @@ export function composerContainer() {
  */
 export function liveColumnBox(flow) {
   if (flow === null || flow === undefined) return null
-  let widest = null
-  const consider = (element) => {
-    const box = element.getBoundingClientRect()
-    if (box.width === 0 || box.height === 0) return
-    if (widest === null || box.width > widest.width) widest = box
+  // `display: contents` gives an empty rect, so an empty result means "look at the parent".
+  const own = flow.getBoundingClientRect()
+  if (own.width > 0 && own.height > 0) return own
+  let node = flow.parentElement
+  for (let depth = 0; node !== null && depth < 4; depth += 1) {
+    const box = node.getBoundingClientRect()
+    if (box.width > 0 && box.height > 0) return box
+    node = node.parentElement
   }
-  for (const child of flow.querySelectorAll('[data-chat-node-key]')) consider(child)
-  if (widest === null) {
-    for (const child of flow.querySelectorAll('*')) {
-      if (child.closest(SIDEBAR_TAB_SELECTOR) !== null) continue
-      consider(child)
-    }
-  }
-  return widest
+  return null
 }
 
 /**
@@ -183,10 +196,22 @@ export function liveColumnBox(flow) {
  */
 export function localScrollerOf(flow) {
   if (flow === null || flow === undefined) return null
+  // The scroller does not change identity while this flow is mounted, and this runs on every panel render.
+  if (scrollerCache.flow === flow && scrollerCache.scroller !== null
+    && scrollerCache.scroller.isConnected === true) return scrollerCache.scroller
   let node = flow.parentElement
+  // A cheap structural test first: the transcript's scroller is the ancestor whose scrollHeight exceeds its client
+  // height. `getComputedStyle` forces a style recalculation and this runs per frame, so it is only consulted once a
+  // candidate has been found by the cheap check.
   while (node !== null && node !== document.body) {
-    const style = window.getComputedStyle(node)
-    if (/(auto|scroll|overlay)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 8) return node
+    if (node.scrollHeight > node.clientHeight + 8 && node.clientHeight > 0) {
+      const overflowY = window.getComputedStyle(node).overflowY
+      if (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') {
+        scrollerCache.flow = flow
+        scrollerCache.scroller = node
+        return node
+      }
+    }
     node = node.parentElement
   }
   return null
@@ -212,25 +237,39 @@ export function livePanelColumn() {
   if (box.width <= 0) return null
   return { left: Math.round(box.left), width: Math.round(box.width), right: Math.round(box.right) }
 }
-
+/**
+ * The widest a comment panel may be in the current layout.
+ *
+ * The panels were sized against the VIEWPORT (`min(420px, 92vw)`), which ignores the transcript column. Once a sidebar
+ * narrows the column below the panel's width, the panel overhangs it and the sidebar paints over the panel's controls.
+ *
+ * @param flow - the chat flow element, or null.
+ * @returns the maximum width in pixels, or null when the column cannot be measured.
+ */
 export function panelMaxWidth(flow) {
-  // Prefer the space the transcript actually HAS, not the width of the widest paragraph.
-  //
   // The widest row is a poor proxy: prose is centred inside the pane, so a measured 353px paragraph sat inside a 424px
   // column. Capping the panel at the PARAGRAPH's width made the panel slightly narrower than the space available, so a
   // squeeze never changed anything and the panel still had room to be covered. The scroll container's client width is
   // the space the panel may occupy.
+  //
+  // Cached: both panels ask for this on every render, and during a divider drag they render on the same frames. The
+  // cache key is the pane's own clientWidth, which is already a cached integer.
   const scroller = localScrollerOf(flow)
-  const column = liveColumnBox(flow)
   const available = scroller !== null && scroller !== undefined && scroller.clientWidth > 0
     ? scroller.clientWidth
-    : (column === null ? null : column.width)
-  if (available === null || available === undefined || available <= 0) return null
+    : null
+  const column = available === null ? liveColumnBox(flow) : null
+  const width = available ?? (column === null ? null : column.width)
+  if (width === null || width === undefined || width <= 0) return null
+  if (widthCache.width === width) return widthCache.limit
   const viewport = typeof window === 'undefined' ? 0 : window.innerWidth
   // An inset on each side, so the panel never sits exactly on the edge where a 1px rounding error overflows it.
-  const room = Math.floor(available) - 2 * PANEL_COLUMN_INSET
+  const room = Math.floor(width) - 2 * PANEL_COLUMN_INSET
   const floor = Math.min(PANEL_MIN_WIDTH, Math.max(160, Math.floor(viewport * 0.5)))
-  return Math.max(floor, room)
+  const limit = Math.max(floor, room)
+  widthCache.width = width
+  widthCache.limit = limit
+  return limit
 }
 
 export function createLayout() {

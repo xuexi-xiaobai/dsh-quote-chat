@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:ebf9e1e645abd937
+ * Artifact: sha256:c8bff8ae0c960479
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -793,6 +793,8 @@ function __dshQuoteChatFactory(hostRequire) {
   var PANEL_COLUMN_INSET = 8;
   var PANEL_MIN_WIDTH = 240;
   var SIDEBAR_TAB_SELECTOR = "[data-sidebar-right-tab]";
+  var widthCache = { width: -1, limit: null };
+  var scrollerCache = { flow: null, scroller: null };
   var COMPOSER_SELECTORS2 = [
     '[data-slot="conversation.composer.dock"]',
     '[data-slot="conversation.input.dock"]',
@@ -818,27 +820,29 @@ function __dshQuoteChatFactory(hostRequire) {
   }
   function liveColumnBox(flow) {
     if (flow === null || flow === void 0) return null;
-    let widest = null;
-    const consider = (element) => {
-      const box = element.getBoundingClientRect();
-      if (box.width === 0 || box.height === 0) return;
-      if (widest === null || box.width > widest.width) widest = box;
-    };
-    for (const child of flow.querySelectorAll("[data-chat-node-key]")) consider(child);
-    if (widest === null) {
-      for (const child of flow.querySelectorAll("*")) {
-        if (child.closest(SIDEBAR_TAB_SELECTOR) !== null) continue;
-        consider(child);
-      }
+    const own = flow.getBoundingClientRect();
+    if (own.width > 0 && own.height > 0) return own;
+    let node = flow.parentElement;
+    for (let depth = 0; node !== null && depth < 4; depth += 1) {
+      const box = node.getBoundingClientRect();
+      if (box.width > 0 && box.height > 0) return box;
+      node = node.parentElement;
     }
-    return widest;
+    return null;
   }
   function localScrollerOf(flow) {
     if (flow === null || flow === void 0) return null;
+    if (scrollerCache.flow === flow && scrollerCache.scroller !== null && scrollerCache.scroller.isConnected === true) return scrollerCache.scroller;
     let node = flow.parentElement;
     while (node !== null && node !== document.body) {
-      const style = window.getComputedStyle(node);
-      if (/(auto|scroll|overlay)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 8) return node;
+      if (node.scrollHeight > node.clientHeight + 8 && node.clientHeight > 0) {
+        const overflowY = window.getComputedStyle(node).overflowY;
+        if (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") {
+          scrollerCache.flow = flow;
+          scrollerCache.scroller = node;
+          return node;
+        }
+      }
       node = node.parentElement;
     }
     return null;
@@ -856,13 +860,18 @@ function __dshQuoteChatFactory(hostRequire) {
   }
   function panelMaxWidth(flow) {
     const scroller = localScrollerOf(flow);
-    const column = liveColumnBox(flow);
-    const available = scroller !== null && scroller !== void 0 && scroller.clientWidth > 0 ? scroller.clientWidth : column === null ? null : column.width;
-    if (available === null || available === void 0 || available <= 0) return null;
+    const available = scroller !== null && scroller !== void 0 && scroller.clientWidth > 0 ? scroller.clientWidth : null;
+    const column = available === null ? liveColumnBox(flow) : null;
+    const width = available ?? (column === null ? null : column.width);
+    if (width === null || width === void 0 || width <= 0) return null;
+    if (widthCache.width === width) return widthCache.limit;
     const viewport = typeof window === "undefined" ? 0 : window.innerWidth;
-    const room = Math.floor(available) - 2 * PANEL_COLUMN_INSET;
+    const room = Math.floor(width) - 2 * PANEL_COLUMN_INSET;
     const floor = Math.min(PANEL_MIN_WIDTH, Math.max(160, Math.floor(viewport * 0.5)));
-    return Math.max(floor, room);
+    const limit = Math.max(floor, room);
+    widthCache.width = width;
+    widthCache.limit = limit;
+    return limit;
   }
   function createLayout() {
     const columnCache = /* @__PURE__ */ new WeakMap();
@@ -1931,11 +1940,57 @@ function __dshQuoteChatFactory(hostRequire) {
         anchored === null ? document.body : anchored.scroller
       );
     }
+    const ComposeBody = import_react3.default.memo(function ComposeBody2(props) {
+      const { comment, inputRef, labels, onCancel, onChange, onConfirm, source } = props;
+      return h2(
+        import_react3.default.Fragment,
+        null,
+        source.kind === "table" ? null : h2("textarea", {
+          ref: inputRef,
+          value: comment,
+          rows: 2,
+          placeholder: labels.placeholder,
+          onChange,
+          onKeyDown: (event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent?.isComposing) {
+              event.preventDefault();
+              onConfirm(comment);
+            }
+          }
+        }),
+        h2(
+          "div",
+          { className: "qc-compose-row" },
+          h2(
+            "span",
+            { className: "qc-compose-hint" },
+            source.kind === "table" ? labels.table.replace("{rows}", String(source.rows ?? 0)) : `${labels.selected.replace("{count}", String(source.previewText.length))} · ${labels.hint}`
+          ),
+          h2("button", { type: "button", className: "qc-compose-cancel", onClick: onCancel }, labels.cancel),
+          h2("button", {
+            type: "button",
+            className: "qc-compose-confirm",
+            title: labels.confirm,
+            "aria-label": labels.confirm,
+            onClick: () => onConfirm(source.kind === "table" ? "" : comment)
+          }, h2(IconCheck, null), h2("span", { className: "qc-compose-confirm-text" }, labels.confirm))
+        )
+      );
+    });
     function ComposerPopover2(props) {
       const { source, labels, onConfirm, onCancel } = props;
       const ref = import_react3.default.useRef(null);
       const inputRef = import_react3.default.useRef(null);
       const [comment, setComment] = import_react3.default.useState("");
+      const onChangeComment = import_react3.default.useCallback((event) => {
+        setComment(event.target.value);
+      }, []);
+      const onCancelStable = import_react3.default.useCallback(() => {
+        onCancel();
+      }, [onCancel]);
+      const onConfirmStable = import_react3.default.useCallback((text) => {
+        onConfirm(text);
+      }, [onConfirm]);
       const [, setViewportTick] = import_react3.default.useState(0);
       const [size, setSize] = import_react3.default.useState({ width: 0, height: 0 });
       const scrollerRef = import_react3.default.useRef(void 0);
@@ -2081,36 +2136,15 @@ function __dshQuoteChatFactory(hostRequire) {
               }
             }
           },
-          source.kind === "table" ? null : h2("textarea", {
-            ref: inputRef,
-            value: comment,
-            rows: 2,
-            placeholder: labels.placeholder,
-            onChange: (event) => setComment(event.target.value),
-            onKeyDown: (event) => {
-              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent?.isComposing) {
-                event.preventDefault();
-                onConfirm(comment);
-              }
-            }
-          }),
-          h2(
-            "div",
-            { className: "qc-compose-row" },
-            h2(
-              "span",
-              { className: "qc-compose-hint" },
-              source.kind === "table" ? labels.table.replace("{rows}", String(source.rows ?? 0)) : `${labels.selected.replace("{count}", String(source.previewText.length))} · ${labels.hint}`
-            ),
-            h2("button", { type: "button", className: "qc-compose-cancel", onClick: onCancel }, labels.cancel),
-            h2("button", {
-              type: "button",
-              className: "qc-compose-confirm",
-              title: labels.confirm,
-              "aria-label": labels.confirm,
-              onClick: () => onConfirm(source.kind === "table" ? "" : comment)
-            }, h2(IconCheck, null), h2("span", { className: "qc-compose-confirm-text" }, labels.confirm))
-          )
+          h2(ComposeBody, {
+            comment,
+            inputRef,
+            labels,
+            onCancel: onCancelStable,
+            onChange: onChangeComment,
+            onConfirm: onConfirmStable,
+            source
+          }, `qc-compose-body-${source.kind}`)
         ),
         // Inside the transcript's scroll container, so the panel is covered and clipped exactly as the text is.
         // Falls back to `body` when there is no container, where `position: fixed` and viewport coordinates apply.
@@ -2610,13 +2644,13 @@ function __dshQuoteChatFactory(hostRequire) {
         let frame = 0;
         let primed = false;
         let lastKey = null;
+        const scroller = localScrollerOf(findFlowElement());
         const watch = () => {
           frame = window.requestAnimationFrame(watch);
           const bubble = document.querySelector(`.qc-marker[data-qc-for="${editingId}"]`);
           if (bubble === null) return;
           const box = bubble.getBoundingClientRect();
-          const column = liveColumnBox(findFlowElement());
-          const columnWidth = column === null ? -1 : Math.round(column.width);
+          const columnWidth = scroller === null || scroller === void 0 ? -1 : scroller.clientWidth;
           const key = `${Math.round(box.top)}:${Math.round(box.left)}:${columnWidth}`;
           if (primed === false) {
             primed = true;
