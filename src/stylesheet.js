@@ -292,27 +292,41 @@ export const STYLESHEET = `
    The size follows the prose: em-based sizing against the inherited font-size, and a line-height
    that matches the composer's so a line containing a chip is the same height as one without. */
 [data-composer-chip="quote-chat"]{display:inline-flex;align-items:center;
-  justify-content:center;
+  /* Left-aligned, not centred. A fixed width plus centring leaves whatever the label does not use split into two equal
+     gaps, and since the icon and the label have different visual weights the result reads as slack rather than as
+     breathing room: measured, 32px of unused space on each side of a two-character label. Anchoring the content to the
+     start keeps one consistent inset and lets a longer ordinal grow into the free space instead of shifting the icon. */
+  justify-content:flex-start;gap:0;
   box-sizing:border-box;
-  /* Fixed width: a token whose size changes with its own numbering re-wraps the line every time a chip is renumbered,
-     which showed up as the composer jumping while annotations were added. */
-  width:var(--qc-chip-w, 6.6em);min-width:var(--qc-chip-w, 6.6em);
-  /* Height tracks the line, not a pixel value: 1.45em against an inherited 15px gives the 21-22px the composer's own
+  /* Auto width, with a floor.
+     A hard width was the wrong instrument: the label's own width changes with its ordinal (measured at 15px,
+     "注释 1" is 42.45px but "注释 10" is 50.78px), so any fixed value either clips the common case or leaves a gap in
+     the other. Clipping is what happened — a 79.5px box against 79.05px of content, and a flex item may shrink, so the
+     label rendered as "注...".
+     An auto width lets the chip be exactly as wide as its contents. The min-width keeps a uniform look while the
+     ordinals are single digits, and the small amount it grows at 10 is one 8px step, invisible in a line of prose. */
+  width:auto;min-width:var(--qc-chip-w, 5.3em);
+  /* Height tracks the line, not a pixel value: 1.42em against an inherited 15px gives the 21.3px the composer's own
      line box occupies, so a chip never makes its line taller than a plain one. */
-  height:1.45em;
+  height:1.42em;
   /* The middle value aligns the box's centre with the parent's x-height midpoint, which is NOT the optical centre of a
      line of CJK text: measured, the chip's centre sat 2.3px below the text's and its bottom edge landed exactly on the
      paragraph's, so it read as hanging off the line rather than sitting in it.
      A small em-based lift corrects it, and being em-based it survives a font-size change. */
   vertical-align:middle;
-  transform:translateY(-.09em);
-  padding:0 .55em;margin:0 .4em;
+  transform:translateY(-.085em);
+  padding:0 .5em;margin:0 .3em;
   border-radius:999px;
-  border:1px solid color-mix(in srgb, currentColor 16%, transparent);
-  /* A tint of the label colour over the surface, so it is distinct from the composer in BOTH themes. */
-  background:color-mix(in srgb, currentColor 9%, transparent);
-  color:inherit;
-  font-size:1em;line-height:1;font-weight:inherit;
+  /* Derived from the ACCENT, not from a background layer.
+     The Host's --dsw-alias-bg-layer-1/2/3 all resolve to #fff, the composer's own colour, so a layer token cannot express
+     "slightly raised": that is exactly why the chip used to have no body of its own. Mixing the accent into the surface
+     gives a tint that is distinct in light mode and, with the dark-mode values below, in dark mode too. */
+  border:1px solid color-mix(in srgb, var(--qc-accent, #4176e6) 26%, transparent);
+  background:color-mix(in srgb, var(--qc-accent, #4176e6) 7%, var(--qc-surface, #fff));
+  /* The label uses the accent pressed darker: pure #4176e6 does not carry enough contrast as body text. */
+  color:color-mix(in srgb, var(--qc-accent, #4176e6) 78%, var(--qc-ink, #0f1115));
+  font-size:1em;line-height:1;font-weight:500;
+  font-variant-numeric:tabular-nums;
   cursor:pointer;position:relative;
   user-select:none;
   /* The chip's box must be hit-testable across its WHOLE area, not only where its glyphs happen to be.
@@ -321,14 +335,22 @@ export const STYLESHEET = `
      should catch the pointer everywhere — the label is drawn by a pseudo-element and a pseudo-element has no box of its
      own to hit. */
   pointer-events:auto;
-  transition:background .14s ease,border-color .14s ease}
+  transition:background .12s ease,border-color .12s ease}
 /* The children must not steal the press from the chip: they are decoration, and the chip is the handle. */
 [data-composer-chip="quote-chat"] > *,
 [data-composer-chip="quote-chat"] > * > *{pointer-events:none}
 [data-composer-chip="quote-chat"]:hover,
 [data-composer-chip="quote-chat"]:focus-within{
-  background:var(--qc-chip-bg-hover, var(--dsw-alias-bg-layer-3, #e8e8e8));
-  border-color:var(--dsw-alias-border-l3, rgba(0,0,0,.16))}
+  background:color-mix(in srgb, var(--qc-accent, #4176e6) 12%, var(--qc-surface, #fff));
+  border-color:color-mix(in srgb, var(--qc-accent, #4176e6) 40%, transparent)}
+/* Dark mode: one recipe, two variable sets. The accent and surface are the only things that change. */
+@media (prefers-color-scheme: dark){
+  [data-composer-chip="quote-chat"]{
+    --qc-accent:#5b8cf0;
+    --qc-surface:#1b1d21;
+    --qc-ink:#e7e9ee;
+  }
+}
 /* The host's marker glyph is the first child; it is hidden and replaced by a
    CSS glyph so the node's contents are never touched.
 
@@ -360,10 +382,24 @@ export const STYLESHEET = `
    The chip's DOM is always the same three levels: the decorator, one wrapper, then
    the marker followed by the label. Selecting by position survives any renaming. */
 [data-composer-chip="quote-chat"] > span > span:first-child{display:none}
-/* The kind glyph, occupying the left slot. */
+/* The kind glyph, occupying the left slot.
+
+   TWO things are set here, and getting either wrong makes the icon look small next to the label.
+
+   1. The BOX is 1.12em, not 0.92em. The label's ink is about 20px tall at a 15px font size, and a 0.92em box was only
+      9px of visible geometry, so the icon read as a bullet rather than as a mark of equal weight.
+
+   2. The ARTWORK fills its viewBox. The previous icon drew a 12x10 rectangle inside a 16x16 canvas, so even at full box
+      size it occupied 62% of the height. The rect now spans 1..15 vertically, and the box size was chosen to match the
+      measured ink height rather than guessed. */
 [data-composer-chip="quote-chat"]::before{content:"";
-  flex:none;width:.92em;height:.92em;margin-right:.42em;
-  background-color:currentColor;opacity:.75;
+  flex:none;width:1.12em;height:1.12em;
+  /* The ONLY spacing between the icon and the label. It used to be the flex gap on the parent, which also applied
+     around the host's wrapper span — and that wrapper, though emptied by the rules below, still occupied 8px of
+     flex space. The visible gap measured 17px: 4.5 + 8 + 4.5. Spending the spacing here instead of on the gap
+     gives exactly one gap, next to nothing else. */
+  margin-right:.32em;
+  background-color:color-mix(in srgb, var(--qc-accent, #4176e6) 100%, transparent);
   -webkit-mask-image:var(--qc-glyph, var(--qc-glyph-text));
   mask-image:var(--qc-glyph, var(--qc-glyph-text));
   -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
@@ -383,18 +419,42 @@ export const STYLESHEET = `
  */
 [data-composer-chip="quote-chat"]::after{content:attr(data-qc-label);
   order:1;margin-left:0;font-size:1em;line-height:1;
-  color:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-/* The host's own label is hidden as a glyph — the ordinal above is the visible text — but it stays in the box at zero
-   width so the chip still owns a text node. */
+  color:inherit;font-variant-numeric:tabular-nums;
+  /* Never shrink, never ellipsise.
+     A flex item may shrink by default, and the label did: inside a fixed-width box it was squeezed to 40.9px against
+     its natural 42.45px and the browser rendered "注..." — the ellipsis was the visible symptom of a squeeze, not of a
+     genuinely long label. With auto width there is nothing to squeeze against, and flex none keeps it that way if
+     the chip is ever placed in a constrained line. */
+  flex:none;
+  white-space:nowrap}
+/* The host's own label is hidden as a glyph — the ordinal above is the visible text — but it stays in the box so the
+   chip still owns a text node.
+
+   Two levels are involved and BOTH must leave the flex flow:
+
+   1. The decorator's single wrapper span (a direct child). It is the one that occupies space: measured, 8px wide and
+      0 tall while its own contents are hidden. A zero-width flex item with a gap still costs the gap on both sides,
+      so the icon and the label sat 17px apart: 4.5 + 8 + 4.5.
+
+   2. The label span inside that wrapper, for the same reason.
+
+   position:absolute removes each from the flow instead of merely shrinking it. They keep their text nodes, which is
+   all the editor needs them for. */
+[data-composer-chip="quote-chat"] > span,
 [data-composer-chip="quote-chat"] > span > span:last-child{
-  display:inline-block;width:0;height:0;overflow:hidden;
+  position:absolute;width:0;height:0;overflow:hidden;
   font-size:0;line-height:0;vertical-align:baseline}
 
-/* Glyph: a rounded rectangle with a quote stroke inside it — the same "quoted
-   text" mark the reference shows. Table chips get a grid glyph. */
+/* Glyph: a rounded rectangle holding two lines of text — a passage, abstracted.
+
+   The artwork fills the canvas on purpose. viewBox is 16x16 and the rect runs from 1 to 15 in BOTH axes, so the drawn
+   geometry is the full box; an icon that draws a small shape inside a large canvas renders visually smaller than its
+   CSS size claims, which is what made the previous glyph look like a dot next to the label.
+
+   Table chips get a grid glyph, drawn to the same footprint. */
 :root{
-  --qc-glyph-text:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='2' y='3' width='12' height='10' rx='2.5' fill='none' stroke='black' stroke-width='1.4'/><path d='M5.6 6.6h4.8M5.6 9.2h3' stroke='black' stroke-width='1.3' stroke-linecap='round'/></svg>");
-  --qc-glyph-table:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='2' y='3.2' width='12' height='9.6' rx='1.8' fill='none' stroke='black' stroke-width='1.3'/><path d='M2 6.4h12M2 9.6h12M6.2 3.2v9.6' stroke='black' stroke-width='1.1'/></svg>");
+  --qc-glyph-text:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='1.1' y='1.1' width='13.8' height='13.8' rx='3.4' fill='none' stroke='black' stroke-width='1.7'/><path d='M4.6 6.1h6.4M4.6 9.9h4.2' stroke='black' stroke-width='1.6' stroke-linecap='round'/></svg>");
+  --qc-glyph-table:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='1.1' y='1.9' width='13.8' height='12.2' rx='2.6' fill='none' stroke='black' stroke-width='1.7'/><path d='M1.1 5.9h13.8M1.1 10h13.8M5.9 1.9v12.2' stroke='black' stroke-width='1.35'/></svg>");
 }
 [data-composer-chip="quote-chat"][data-qc-kind="table"]{--qc-glyph:var(--qc-glyph-table)}
 

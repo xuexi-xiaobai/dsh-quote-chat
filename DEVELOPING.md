@@ -150,6 +150,71 @@ Details and the reasoning behind them: `docs/test-script-lessons.md`.
   module. Whole-package scanning is the right granularity for claims like "there is exactly one
   whitespace definition"; a direct import is used when a test targets a single unit.
 
+## Working discipline
+
+Six rules, each earned by a mistake actually made on this package. Every one of them cost real
+time or shipped a defect, so they are read out loud before starting a task rather than recalled
+after something breaks.
+
+### 1. Restate these rules before acting
+
+State them at the start of the work, not in the summary afterwards. The point is to catch the
+violation *before* the tool call, and a rule recited at the end has already failed at that.
+
+### 2. Do not run the whole suite
+
+Pick the probe that exercises the change. Run everything only at a milestone. This is repeated
+here because it was broken repeatedly: after a chip change, panel probes were run, and their
+failures were read as regressions when the two features share no code.
+
+### 3. Never change product code to make a probe pass
+
+If a probe disagrees with the code, decide which of the two is wrong — in writing, with a
+measurement — and fix that one. A probe that is wrong gets its *assertion* corrected, with a
+comment saying what the old assertion assumed.
+
+There is a real example of the failure mode: `needsRescue` in `popovers.js` was modified so an
+offscreen probe would turn green. That change had nothing to do with the task in hand and was
+reverted. The tell is a diff that touches a subsystem the task never mentioned.
+
+### 4. Say when a measurement is not comparable
+
+Numbers gathered against different fixtures cannot be compared to each other. A 214-row
+conversation and a 29-row one differ by 7× in reflow cost; the same code measured 24.7ms and
+33.5ms on the two, and the second was briefly read as a regression.
+
+Check the fixture before quoting a number: `rows`, `scrollHeight`, and which conversation is
+open. If the fixture changed, report the comparison as unavailable rather than as a result.
+
+### 5. One frame of skew is not a defect
+
+`getBoundingClientRect()` on a panel reflects the render that already happened; the block
+around it reflects the layout that just changed. Comparing them inside one frame produces
+phantom movement.
+
+Before calling something jitter, prove it survives settling: sweep the geometry, return to the
+starting state, and check the element lands where it started. If it does, the "jitter" was the
+sampling.
+
+### 6. A green probe is not proof; the absence of a probe is not innocence
+
+Two failures in one session came from probes that were technically passing:
+
+- A chip-ordinal probe compared `data-qc-label`, which is renumbered on every move — it could
+  never observe a reorder.
+- A drag probe compared a contiguous string that the successful drop had itself split.
+
+Both were tests of the right thing measuring the wrong quantity. When an assertion and the
+observed behaviour disagree, print the raw values and look at them before touching either.
+
+### Two facts about the substrate, worth restating
+
+- **The chip is the Host's node.** A Lexical decorator with `contenteditable="false"` and
+  `draggable="false"`; its DOM is not ours to move. Drag is an overlay plus a draft rewrite.
+- **The Host's class names are CSS-Module hashes** (`yAWgPa_marker`). Keying a rule on one works
+  until the Host's build changes, and then the marker reappears beside the plugin's own label.
+  Select structurally, or by an attribute this plugin sets.
+
 ## Acceptance
 
 ```sh
