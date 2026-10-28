@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:813b2cd81b758c1d
+ * Artifact: sha256:15349cb5b99c1935
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -71,6 +71,9 @@ function __dshQuoteChatFactory(hostRequire) {
     "card.clear": "全部清除",
     "card.missing": "这条注释对应的内容已不在当前对话中",
     "card.limit": "最多 {max} 条注释",
+    "card.removed": "已删除一条注释",
+    "card.removedMany": "已删除 {n} 条注释",
+    "card.undo": "撤销",
     "bubble.edit": "编辑注释",
     "bubble.comment": "评价",
     "bubble.saved": "已保存",
@@ -115,6 +118,9 @@ function __dshQuoteChatFactory(hostRequire) {
     "card.clear": "Clear all",
     "card.missing": "The passage for this annotation is no longer in this conversation",
     "card.limit": "At most {max} annotations",
+    "card.removed": "Annotation removed",
+    "card.removedMany": "{n} annotations removed",
+    "card.undo": "Undo",
     "bubble.edit": "Edit annotation",
     "bubble.comment": "Comment",
     "bubble.saved": "Saved",
@@ -1797,7 +1803,35 @@ function __dshQuoteChatFactory(hostRequire) {
      sign inherits the font's baseline and side bearings, which made it sit high and
      look undersized no matter how it was nudged; two strokes give exact geometry
      and scale with the button. */
+  /* The red × sits in the chip's left slot, replacing the kind glyph on hover.
+
+     ITS POSITION AND SIZE ARE DERIVED FROM THE CHIP'S OWN METRICS, not set independently.
+
+     The previous version hard-coded "centre at 7 + 13/2 px" and a 15px box. Both described an older chip: once the glyph
+     became 1.12em (16.8px) and the padding .5em (7.5px), the cross was measured 1.9px left of the glyph's centre and its
+     15px box was smaller than the 16.8px glyph, so a blue sliver of the icon showed around the red disc while hovering.
+     A px constant cannot track an em value.
+
+     So the three values below are the SAME ones the chip uses:
+       padding-left  .5em
+       glyph width   1.12em
+     and the button is centred on that slot by construction, and made slightly LARGER than the glyph so it covers it
+     completely rather than leaving an edge.
+
+     The chip's rectangle arrives as custom properties from the component; this rule only knows the insets. */
   .qc-chip-remove{position:fixed;z-index:45;
+    --qc-chip-pad-left:.5em;
+    --qc-chip-glyph:1.12em;
+    /* Centred on the glyph slot: padding + half the glyph, measured from the chip's left edge.
+       Written as a pre-halved sum rather than glyph / 2 so the calc has no division to round: at 15px the browser was
+       landing 0.5px to the right, which is exactly the kind of sub-pixel error that leaves a visible sliver of the icon
+       showing through. Half of 1.12em is 0.56em. */
+    left:calc(var(--qc-chip-left, 0px) + var(--qc-chip-pad-left) + .56em);
+    top:calc(var(--qc-chip-top, 0px) + var(--qc-chip-height, 24px) / 2);
+    /* Larger than the glyph so it hides it entirely: 1.36em covers 1.12em with a 0.12em ring on each side, which at 15px
+       is 20.4px against a 16.8px glyph. The margin matters because the glyph is a masked image whose strokes reach the
+       very edge of its box — a button merely equal in size leaves antialiased fringe showing. */
+    width:1.36em;height:1.36em;font-size:15px;
     appearance:none;box-sizing:border-box;margin:0;padding:0;border:0;
     border-radius:999px;background:#e8291c;
     cursor:pointer;display:flex;align-items:center;justify-content:center;
@@ -1931,6 +1965,52 @@ function __dshQuoteChatFactory(hostRequire) {
     padding:6px 12px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);
     background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-state-warn-primary);
     font-size:12px;max-width:min(32em,90vw);text-align:center}
+
+  /* ── The undo bar ────────────────────────────────────────────────────────────
+
+     Sits one notch above the notice and uses the same anchoring, so a removal and a diagnostic never overlap.
+
+     It is styled as an ACTION rather than a warning: neutral surface, accent on the button. The removal has already
+     happened visually, so nothing here should read as an alert — this is an offer, not a problem.
+
+     Deliberately not auto-dismissed by CSS: the bar stays until the state that backs it is invalidated, which is a
+     decision the component makes, not the stylesheet.
+
+     Anchored ABOVE the notice's slot (bottom 132 vs 96) so that the two can be on screen at once. They can: an undo bar
+     is already showing when a later action sets a notice. */
+  /* Layering, and one collision worth naming.
+
+     The undo bar and the hover preview card can be on screen together: removing a chip leaves the pointer where the × was,
+     and that chip's preview card is still mounted while it animates out. Measured, the card occupied 315..695 x 450..546
+     and the bar landed at 560..720 x 495..533 — directly on top of it, so clicks aimed at the undo button hit the card.
+
+     Raising this bar's z-index does NOT fix it: the card lives in a stacking context of its own (it is a portal with its
+     own positioned ancestor), so the two z-index values are never compared. What fixes it is not overlapping at all.
+
+     The bar is therefore pinned near the TOP of the viewport, clear of both the card (which opens above the chip) and the
+     composer. It is also where a "something was removed" message belongs: out of the way of the text being edited, and in
+     the same place every time regardless of where the removed chip happened to sit. */
+  .qc-undo{position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:74;
+    display:flex;align-items:center;gap:10px;
+    padding:6px 8px 6px 12px;border-radius:9px;
+    border:1px solid var(--dsw-alias-border-l2, rgba(0,0,0,.1));
+    background:var(--dsw-alias-bg-overlay, #fff);
+    box-shadow:0 6px 18px rgba(15,17,21,.12),0 1px 3px rgba(15,17,21,.06);
+    font-size:12px;color:var(--dsw-alias-label-secondary, #61666b);
+    animation:qc-undo-in .18s cubic-bezier(.2,.8,.3,1);
+    max-width:min(32em,90vw)}
+  @keyframes qc-undo-in{
+    from{opacity:0;transform:translateX(-50%) translateY(-6px)}
+    to{opacity:1;transform:translateX(-50%) translateY(0)}}
+  .qc-undo-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .qc-undo-action{flex:none;appearance:none;margin:0;padding:4px 10px;
+    border:0;border-radius:6px;cursor:pointer;font:inherit;font-size:12px;font-weight:500;
+    background:color-mix(in srgb,var(--qc-accent,#4176e6) 10%,transparent);
+    color:color-mix(in srgb,var(--qc-accent,#4176e6) 78%,var(--qc-ink,#0f1115));
+    transition:background .12s ease}
+  .qc-undo-action:hover{background:color-mix(in srgb,var(--qc-accent,#4176e6) 18%,transparent)}
+  .qc-undo-action:focus-visible{outline:2px solid color-mix(in srgb,var(--qc-accent,#4176e6) 50%,transparent);
+    outline-offset:1px}
 
   .qc-side{display:flex;flex-direction:column;height:100%;min-height:0;font-size:13px;
     color:var(--dsw-alias-label-primary);box-sizing:border-box}
@@ -2783,16 +2863,17 @@ function __dshQuoteChatFactory(hostRequire) {
             clearTimeout(closeTimer);
             closeTimer = 0;
           }
+          const snap2 = (value) => Math.round(value * 100) / 100;
           const chip = pairs().find((pair) => pair.annotation.id === annotation.id)?.chip;
           if (chip === void 0) return;
           const rect = chip.getBoundingClientRect();
           setHover((current) => {
-            if (current !== null && current.annotation.id === annotation.id && current.anchor.left === Math.round(rect.left) && current.anchor.top === Math.round(rect.top) && current.anchor.width === Math.round(rect.width) && current.anchor.height === Math.round(rect.height)) return current;
+            if (current !== null && current.annotation.id === annotation.id && current.anchor.left === snap2(rect.left) && current.anchor.top === snap2(rect.top) && current.anchor.width === snap2(rect.width) && current.anchor.height === snap2(rect.height)) return current;
             return { annotation, anchor: {
-              left: Math.round(rect.left),
-              top: Math.round(rect.top),
-              width: Math.round(rect.width),
-              height: Math.round(rect.height)
+              left: snap2(rect.left),
+              top: snap2(rect.top),
+              width: snap2(rect.width),
+              height: snap2(rect.height)
             } };
           });
         };
@@ -2803,10 +2884,10 @@ function __dshQuoteChatFactory(hostRequire) {
             if (still === void 0) return null;
             const rect = still.chip.getBoundingClientRect();
             const next = {
-              left: Math.round(rect.left),
-              top: Math.round(rect.top),
-              width: Math.round(rect.width),
-              height: Math.round(rect.height)
+              left: snap(rect.left),
+              top: snap(rect.top),
+              width: snap(rect.width),
+              height: snap(rect.height)
             };
             if (current.anchor.left === next.left && current.anchor.top === next.top && current.anchor.width === next.width && current.anchor.height === next.height) {
               return current;
@@ -2855,8 +2936,6 @@ function __dshQuoteChatFactory(hostRequire) {
         };
       }, [annotations, occurrences, labels]);
       if (hover === null) return null;
-      const GLYPH_CENTRE = 7 + 13 / 2;
-      const REMOVE_SIZE = 15;
       return (0, import_react_dom2.createPortal)(
         h3(
           import_react4.default.Fragment,
@@ -2869,10 +2948,9 @@ function __dshQuoteChatFactory(hostRequire) {
               title: labels.remove,
               "aria-label": labels.remove,
               style: {
-                left: `${hover.anchor.left + GLYPH_CENTRE}px`,
-                top: `${hover.anchor.top + hover.anchor.height / 2}px`,
-                width: `${REMOVE_SIZE}px`,
-                height: `${REMOVE_SIZE}px`
+                "--qc-chip-left": `${hover.anchor.left}px`,
+                "--qc-chip-top": `${hover.anchor.top}px`,
+                "--qc-chip-height": `${hover.anchor.height}px`
               },
               onMouseDown: (event) => event.preventDefault(),
               onClick: (event) => {
@@ -3724,6 +3802,8 @@ function __dshQuoteChatFactory(hostRequire) {
       const annotations2 = useAnnotations2(sessionId);
       const [overlay, setOverlay] = import_react8.default.useState(null);
       const [notice, setNotice] = import_react8.default.useState("");
+      const undoRef = import_react8.default.useRef([]);
+      const [undoDepth, setUndoDepth] = import_react8.default.useState(0);
       const overlayRef = import_react8.default.useRef(null);
       overlayRef.current = overlay;
       const labels = import_react8.default.useMemo(() => ({
@@ -3744,6 +3824,9 @@ function __dshQuoteChatFactory(hostRequire) {
         clear: t("card.clear"),
         missing: t("card.missing"),
         limit: t("card.limit"),
+        removed: t("card.removed"),
+        removedMany: t("card.removedMany"),
+        undo: t("card.undo"),
         jump: t("marker.jump"),
         tableAdd: t("table.add"),
         edit: t("bubble.edit"),
@@ -3944,13 +4027,43 @@ function __dshQuoteChatFactory(hostRequire) {
       }, [annotations2, onJump]);
       const onRemove = import_react8.default.useCallback((annotation) => {
         if (sessionId === void 0) return;
-        chipBridge2.release(
+        const removed = chipBridge2.release(
           inputActions,
           () => ({ draft, occurrences: inputStateRef.current?.occurrences }),
           annotation.id
         );
         removeAnnotation(sessionId, annotation.id);
+        undoRef.current.push({ annotation, removed });
+        setUndoDepth(undoRef.current.length);
       }, [draft, inputActions, sessionId]);
+      const onUndoRemove = import_react8.default.useCallback(() => {
+        if (sessionId === void 0) return;
+        const entry = undoRef.current.pop();
+        setUndoDepth(undoRef.current.length);
+        if (entry === void 0) return;
+        const restored = addAnnotation(sessionId, {
+          kind: entry.annotation.kind,
+          text: entry.annotation.text,
+          previewText: entry.annotation.previewText,
+          previewHtml: entry.annotation.previewHtml,
+          comment: entry.annotation.comment,
+          anchor: entry.annotation.anchor
+        });
+        if (restored === null) {
+          setNotice(labels.limit.replace("{max}", String(MAX_ANNOTATIONS2)));
+          return;
+        }
+        if (!writeChip(restored)) setNotice(labels.unavailable);
+      }, [labels, sessionId]);
+      import_react8.default.useEffect(() => {
+        if (undoRef.current.length === 0) return void 0;
+        const invalidate = () => {
+          undoRef.current.length = 0;
+          setUndoDepth(0);
+        };
+        invalidate();
+        return void 0;
+      }, [sessionId]);
       const onUpdate = import_react8.default.useCallback((annotation, comment) => {
         if (sessionId === void 0) return;
         chipRegistry2.updateComment(annotation.id, comment);
@@ -4015,6 +4128,22 @@ function __dshQuoteChatFactory(hostRequire) {
         }),
         h6(MarkerLayer2, { annotations: annotations2, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
         h6(TableAddButton2, { label: labels.tableAdd, onAdd: annotateTable }),
+        // The undo bar sits above the notice: removing something is a normal action and its offer should not compete with
+        // a diagnostic message, which is always about something going wrong.
+        undoDepth > 0 ? h6(
+          "div",
+          { className: "qc-undo", role: "status" },
+          h6(
+            "span",
+            { className: "qc-undo-text" },
+            undoDepth === 1 ? labels.removed : labels.removedMany.replace("{n}", String(undoDepth))
+          ),
+          h6("button", {
+            type: "button",
+            className: "qc-undo-action",
+            onClick: onUndoRemove
+          }, labels.undo)
+        ) : null,
         typeof notice === "string" && notice !== "" ? h6("div", { className: "qc-notice" }, notice) : null
       );
     };

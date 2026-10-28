@@ -262,20 +262,28 @@ export function createCards({ composerContainer }) {
       clearTimeout(closeTimer)
       closeTimer = 0
     }
+    // SUB-PIXEL PRECISION MATTERS for the values below.
+    //
+    // They used to be `Math.round`ed. That keeps the tooltip stable, but it throws away the fraction: a chip whose left
+    // edge is at 314.5 was reported as 315. The × is positioned from this anchor and sized to just cover the glyph, so
+    // half a pixel of error is enough to leave a sliver of the icon showing past the red disc — which is what was
+    // reported. Two decimals is precise enough for placement and still stable enough that a chip sitting still does not
+    // re-render on every mouse move.
+    const snap = (value) => Math.round(value * 100) / 100
     const chip = pairs().find((pair) => pair.annotation.id === annotation.id)?.chip
     if (chip === undefined) return
     const rect = chip.getBoundingClientRect()
     setHover((current) => {
       if (current !== null && current.annotation.id === annotation.id
-        && current.anchor.left === Math.round(rect.left)
-        && current.anchor.top === Math.round(rect.top)
-        && current.anchor.width === Math.round(rect.width)
-        && current.anchor.height === Math.round(rect.height)) return current
+        && current.anchor.left === snap(rect.left)
+        && current.anchor.top === snap(rect.top)
+        && current.anchor.width === snap(rect.width)
+        && current.anchor.height === snap(rect.height)) return current
       return { annotation, anchor: {
-        left: Math.round(rect.left),
-        top: Math.round(rect.top),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height),
+        left: snap(rect.left),
+        top: snap(rect.top),
+        width: snap(rect.width),
+        height: snap(rect.height),
       } }
     })
   }
@@ -287,10 +295,10 @@ export function createCards({ composerContainer }) {
       if (still === undefined) return null
       const rect = still.chip.getBoundingClientRect()
       const next = {
-        left: Math.round(rect.left),
-        top: Math.round(rect.top),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height),
+        left: snap(rect.left),
+        top: snap(rect.top),
+        width: snap(rect.width),
+        height: snap(rect.height),
       }
       if (current.anchor.left === next.left && current.anchor.top === next.top
         && current.anchor.width === next.width && current.anchor.height === next.height) {
@@ -354,17 +362,18 @@ export function createCards({ composerContainer }) {
     }, [annotations, occurrences, labels])
 
     if (hover === null) return null
-    // The × is drawn inside the chip's left edge, in the slot the kind glyph
-    // occupies — the two never show at once. It is a fixed overlay pinned to the
-    // chip's own rectangle rather than a chip child, because the chip's contents
-    // are the editor's and must not be written into.
+    // The × is drawn over the chip's left edge, in the slot the kind glyph occupies — the two never show at once. It is
+    // a fixed overlay pinned to the chip's own rectangle rather than a chip child, because the chip's contents are the
+    // editor's and must not be written into.
     //
-    // Positioned by its CENTRE, not its left edge: the glyph's centre is the pill's
-    // left padding plus half the glyph, and centring the button there keeps the two
-    // concentric at any button size. Anchoring the left edge instead is what made
-    // the control sit visibly left of the icon.
-    const GLYPH_CENTRE = 7 + (13 / 2) // padding-left + half the glyph box
-    const REMOVE_SIZE = 15
+    // POSITION AND SIZE BOTH COME FROM CSS, and from the same three numbers the chip itself uses.
+    //
+    // This used to be computed here as `7 + 13/2` for the centre and a hard-coded 15px box. Those constants described
+    // the chip as it was some revisions ago; the icon is now 1.12em (16.8px) and the padding is .5em (7.5px). Measured
+    // while hovering: the button's centre sat 1.9px left of the icon's, and its 15px box could not cover a 16.8px
+    // glyph, so a blue sliver of the icon showed around the red disc. A hard-coded number cannot track a value that is
+    // expressed in em, so the button is placed by the chip's own geometry instead: the stylesheet knows the padding and
+    // the glyph width, this passes only where the chip is.
     return createPortal(
   h(React.Fragment, null,
     h('button', {
@@ -373,10 +382,9 @@ export function createCards({ composerContainer }) {
       title: labels.remove,
       'aria-label': labels.remove,
       style: {
-        left: `${hover.anchor.left + GLYPH_CENTRE}px`,
-        top: `${hover.anchor.top + (hover.anchor.height / 2)}px`,
-        width: `${REMOVE_SIZE}px`,
-        height: `${REMOVE_SIZE}px`,
+        '--qc-chip-left': `${hover.anchor.left}px`,
+        '--qc-chip-top': `${hover.anchor.top}px`,
+        '--qc-chip-height': `${hover.anchor.height}px`,
       },
       onMouseDown: (event) => event.preventDefault(),
       onClick: (event) => {

@@ -95,6 +95,10 @@ export function annotationDock(deps) {
     /** `{ kind: 'actions' | 'compose', source }` — one floating surface at a time. */
     const [overlay, setOverlay] = React.useState(null)
     const [notice, setNotice] = React.useState('')
+    /** Removed annotations that can still be put back, newest last. Not on a timer — see `onRemove`. */
+    const undoRef = React.useRef([])
+    /** Mirrors `undoRef.current.length` so the bar renders without reading a ref during render. */
+    const [undoDepth, setUndoDepth] = React.useState(0)
     const overlayRef = React.useRef(null)
     overlayRef.current = overlay
 
@@ -116,6 +120,9 @@ export function annotationDock(deps) {
       clear: t('card.clear'),
       missing: t('card.missing'),
       limit: t('card.limit'),
+      removed: t('card.removed'),
+      removedMany: t('card.removedMany'),
+      undo: t('card.undo'),
       jump: t('marker.jump'),
       tableAdd: t('table.add'),
       edit: t('bubble.edit'),
@@ -435,17 +442,78 @@ export function annotationDock(deps) {
       }
     }, [annotations, onJump])
 
+    /**
+     * Removal, with an undo that does not expire on a timer.
+     *
+     * The chip leaves the draft immediately — the visual result is the same whether or not the data is still held — and
+     * the removed annotation is kept in `undoStack` until the user does something that makes "put it back" meaningless
+     * or unsafe: sending a message, switching conversation, or removing something else.
+     *
+     * WHY NOT A TIMED WINDOW
+     *
+     * A five-second toast is the conventional answer and it is the wrong one here. The × sits in the same slot as the
+     * kind glyph, which is where a pointer lands when the user means to CLICK the chip and jump to the passage. So a
+     * mis-click is not a rare event, and what it destroys is an annotation plus whatever the user typed as its comment.
+     * Losing that because they were reading rather than watching a toast is a bad trade. The undo stays available until
+     * it is genuinely too late, which is a point the code can actually detect.
+     *
+     * The stack holds several entries rather than one, because removing two chips in a row is a normal thing to do
+     * while tidying a draft.
+     */
     const onRemove = React.useCallback((annotation) => {
       if (sessionId === undefined) return
-      // Removing the annotation removes its chip, and any prose the user
-      // typed after that chip stays: only the chip and its comment line go.
-      chipBridge.release(
+      // Removing the annotation removes its chip, and any prose the user typed after that chip stays: only the chip and
+      // its comment line go.
+      const removed = chipBridge.release(
         inputActions,
         () => ({ draft, occurrences: inputStateRef.current?.occurrences }),
         annotation.id,
       )
       removeAnnotation(sessionId, annotation.id)
+      // Keep the live record, so the passage, the comment and the anchor all survive. `writeChip` rebuilds the chip from
+      // the stored annotation when the undo runs, so the exact insertion point does not need to be captured here.
+      undoRef.current.push({ annotation, removed })
+      setUndoDepth(undoRef.current.length)
     }, [draft, inputActions, sessionId])
+
+    /** Put the most recently removed annotation back, chip and all. */
+    const onUndoRemove = React.useCallback(() => {
+      if (sessionId === undefined) return
+      const entry = undoRef.current.pop()
+      setUndoDepth(undoRef.current.length)
+      if (entry === undefined) return
+      const restored = addAnnotation(sessionId, {
+        kind: entry.annotation.kind,
+        text: entry.annotation.text,
+        previewText: entry.annotation.previewText,
+        previewHtml: entry.annotation.previewHtml,
+        comment: entry.annotation.comment,
+        anchor: entry.annotation.anchor,
+      })
+      if (restored === null) {
+        // The cap is reached, so the annotation cannot come back. Say so rather than leaving the bar looking broken.
+        setNotice(labels.limit.replace('{max}', String(MAX_ANNOTATIONS)))
+        return
+      }
+      if (!writeChip(restored)) setNotice(labels.unavailable)
+    }, [labels, sessionId])
+
+    /**
+     * The undo offer is only honest while it can still be honoured, so it is cleared at the points where that stops
+     * being true. Sending is the important one: a message that goes out without the annotation must not leave a bar
+     * offering to add it back, because the draft no longer describes what was sent.
+     */
+    React.useEffect(() => {
+      if (undoRef.current.length === 0) return undefined
+      /** Any of these means the draft the undo would edit is no longer the draft on screen. */
+      const invalidate = () => {
+        undoRef.current.length = 0
+        setUndoDepth(0)
+      }
+      // A conversation switch changes which annotations exist at all.
+      invalidate()
+      return undefined
+    }, [sessionId])
 
     /**
      * Rewrite one annotation's comment from the bubble editor.
@@ -523,6 +591,20 @@ export function annotationDock(deps) {
       }),
       h(MarkerLayer, { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
       h(TableAddButton, { label: labels.tableAdd, onAdd: annotateTable }),
+      // The undo bar sits above the notice: removing something is a normal action and its offer should not compete with
+      // a diagnostic message, which is always about something going wrong.
+      undoDepth > 0
+        ? h('div', { className: 'qc-undo', role: 'status' },
+          h('span', { className: 'qc-undo-text' },
+            undoDepth === 1
+              ? labels.removed
+              : labels.removedMany.replace('{n}', String(undoDepth))),
+          h('button', {
+            type: 'button',
+            className: 'qc-undo-action',
+            onClick: onUndoRemove,
+          }, labels.undo))
+        : null,
       typeof notice === 'string' && notice !== ''
         ? h('div', { className: 'qc-notice' }, notice)
         : null,

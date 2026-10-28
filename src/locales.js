@@ -32,6 +32,9 @@
       'card.clear': '全部清除',
       'card.missing': '这条注释对应的内容已不在当前对话中',
       'card.limit': '最多 {max} 条注释',
+      'card.removed': '已删除一条注释',
+      'card.removedMany': '已删除 {n} 条注释',
+      'card.undo': '撤销',
 
       'bubble.edit': '编辑注释',
       'bubble.comment': '评价',
@@ -84,6 +87,9 @@
       'card.clear': 'Clear all',
       'card.missing': 'The passage for this annotation is no longer in this conversation',
       'card.limit': 'At most {max} annotations',
+      'card.removed': 'Annotation removed',
+      'card.removedMany': '{n} annotations removed',
+      'card.undo': 'Undo',
 
       'bubble.edit': 'Edit annotation',
       'bubble.comment': 'Comment',
