@@ -202,6 +202,27 @@ const ComposeBody = React.memo(function ComposeBody(props) {
     const ref = React.useRef(null)
     const inputRef = React.useRef(null)
     const [comment, setComment] = React.useState('')
+    /** Whether the panel was docked on the previous render; the hysteresis in the placement reads it. */
+    const dockedRef = React.useRef(null)
+    /**
+     * The edge the panel docked to, kept until it is anchored again.
+     *
+     * Re-deciding "nearest edge" every frame let the choice flip from top to bottom while the anchor block slid around
+     * during a drag, which moved the panel by the whole height of the readable band.
+     */
+    const dockedEdgeRef = React.useRef(null)
+    /**
+     * The anchor block's top on the previous render.
+     *
+     * A block that moved since last frame means a reflow is in progress (a pane drag re-wraps the text above the
+     * passage). Dock transitions are frozen for as long as that lasts, so the panel cannot flicker between anchored and
+     * docked while the content underneath it is being shoved around.
+     */
+    const previousBlockRef = React.useRef(null)
+    /** The latched `top` of the docked slot, so a docked panel does not chase the chrome being re-measured around it. */
+    const dockedSlotRef = React.useRef(null)
+    /** The container's scroll offset on the previous render, so a scroll can be told from a reflow. */
+    const previousScrollTopRef = React.useRef(null)
     // Stable callbacks, so the memoised body does not re-render merely because this component did.
     //
     // The panel re-renders on every animation frame during a reflow; without these, `onChange` would be a new function
@@ -248,6 +269,20 @@ const ComposeBody = React.memo(function ComposeBody(props) {
       if (scroller === null) return
       if (getComputedStyle(scroller).position === 'static') {
         scroller.style.position = 'relative'
+      }
+      // Disable scroll anchoring on the transcript while this panel is open.
+      //
+      // Re-wrapping the text during a pane drag changes the content height above the scroll position, and Chrome's scroll
+      // anchoring then adjusts `scrollTop` to keep the visible content still. Measured across one width sweep: scrollTop
+      // 893 -> 1441 -> 943. The panel sits at a fixed offset INSIDE this container, so every one of those adjustments
+      // carried it up or down the viewport — up to 80px — while its dock state never changed. That is the up-and-down
+      // wobble that was reported, and it is not the panel moving at all: it is the page scrolling by itself.
+      //
+      // Restoring the previous value on unmount keeps the rest of the transcript's behaviour untouched.
+      const previousAnchor = scroller.style.overflowAnchor
+      scroller.style.overflowAnchor = 'none'
+      return () => {
+        scroller.style.overflowAnchor = previousAnchor
       }
     }, [scroller])
 
@@ -429,11 +464,90 @@ const ComposeBody = React.memo(function ComposeBody(props) {
     // Clearing the text restores the resting position, unchanged from before.
     const hasInput = comment.trim() !== ''
     const restingBottom = resting.top + height
-    const fullyVisible = resting.top >= scrollerBox.top - 1 && restingBottom <= scrollerBox.bottom + 1
-    const needsRescue = hasInput && !fullyVisible
-    const docked = needsRescue && snapPosition
-      ? snapPosition(resting.top, { width, height })
-      : null
+
+    // HYSTERESIS, not a single threshold.
+    //
+    // Re-wrapping while a pane boundary is dragged moves the ANCHOR BLOCK itself: measured, the block's top travelled
+    // 148px as the column narrowed and widened again. That pushed the panel across the visibility threshold, which
+    // docked it to the bottom edge, and the next frame pushed it back — the panel visibly oscillated up and down even
+    // though the user never touched it. A single threshold cannot be stable there: the boundary is crossed by the
+    // content moving under the panel, not by the user asking for anything.
+    //
+    // So the two directions use different thresholds. Once docked, the panel stays docked until it would be COMFORTABLY
+    // visible again (a full panel-height of margin); once anchored, it only docks when it is clearly out of view. That
+    // gap is wider than any single frame's reflow, so the state cannot flicker.
+    const DOCK_MARGIN = 24
+    const wasDocked = dockedRef.current !== null
+    const clearlyOut = resting.top < scrollerBox.top - DOCK_MARGIN
+      || restingBottom > scrollerBox.bottom + DOCK_MARGIN
+    const comfortablyVisible = resting.top >= scrollerBox.top + DOCK_MARGIN
+      && restingBottom <= scrollerBox.bottom - DOCK_MARGIN
+
+    // FREEZE the dock decision while the anchor is being REFLOWED — not while it is merely scrolled.
+    //
+    // A pane drag re-wraps the text above the passage and moves the block by up to 150px, far more than any hysteresis
+    // margin, so the panel kept crossing the threshold and alternating between anchored and docked (measured: 12 frames
+    // where the panel moved while its block held still, dock state flipping between 'false' and 'bottom').
+    //
+    // A scroll also moves the block, but that is the normal case and the panel must be free to dock then — freezing on
+    // any movement at all stopped the panel from ever docking while the transcript scrolled.
+    //
+    // So: freeze only when the block moved AND the scroll offset did not.
+    const anchorMoved = blockBox !== undefined && blockBox !== null
+      && previousBlockRef.current !== null
+      && Math.abs(Math.round(blockBox.top) - previousBlockRef.current) > 1
+    const scrollMoved = previousScrollTopRef.current !== null
+      && Math.abs((scroller === null || scroller === undefined ? 0 : scroller.scrollTop)
+        - previousScrollTopRef.current) > 1
+    const frozen = anchorMoved && scrollMoved === false
+    const needsRescue = frozen
+      ? wasDocked
+      : hasInput && wasDocked
+        ? clearlyOut && comfortablyVisible === false
+        : resting.top < scrollerBox.top - 1 || restingBottom > scrollerBox.bottom + 1
+    previousBlockRef.current = blockBox === undefined || blockBox === null
+      ? null : Math.round(blockBox.top)
+    previousScrollTopRef.current = scroller === null || scroller === undefined ? 0 : scroller.scrollTop
+
+    // Lock the CHOSEN EDGE while docked.
+    //
+    // `snapPosition` picks whichever edge is nearer to the panel's current position. With the anchor block sliding up
+    // and down by 250px during a drag, that "nearer edge" flips between top and bottom — and the panel jumps the full
+    // height of the readable band. The user reported exactly this: up and down, repeatedly, while only a pane boundary
+    // moved.
+    //
+    // Once an edge is chosen it is kept until the panel is anchored again. Re-choosing every frame is what allowed the
+    // flip; comparing the panel's live position to a band that is itself being re-measured cannot be stable.
+    const lockedEdge = dockedEdgeRef.current
+    // LATCH the docked slot's coordinates when the dock is entered, and keep them while it lasts.
+    //
+    // `snapPosition` derives the slot from `readableBand()`, which re-measures the top bar and the composer every frame.
+    // The composer's height changes during a reflow (its own text re-wraps), so the derived slot moved by up to 80px
+    // while the panel was supposed to be sitting still in it — measured as a 80px spread across 80 docked frames. A
+    // docked panel must not chase the chrome that is being re-measured around it.
+    let dockedSlot = null
+    if (needsRescue && snapPosition) {
+      const computed = snapPosition(resting.top, { width, height, edge: lockedEdge })
+      const latched = dockedSlotRef.current
+      // Only the VERTICAL slot is latched, and it is NOT keyed on the panel's width.
+      //
+      // Keying it on width looked reasonable and was wrong: while a boundary is dragged the panel's width changes every
+      // frame (it follows the column), so the latch was invalidated on every frame and re-derived `top` from a band that
+      // was being re-measured mid-reflow. That is what produced the stray 132 and 109 readings on a panel whose
+      // neighbours were steady at 84. The horizontal position may follow the column; the vertical slot must be a
+      // constant once docked.
+      if (latched !== null && latched.edge === computed.edge) {
+        dockedSlot = { left: computed.left, top: latched.top, edge: computed.edge }
+      } else {
+        dockedSlot = computed
+      }
+    }
+    const docked = dockedSlot
+    dockedRef.current = docked
+    dockedEdgeRef.current = docked === null ? null : docked.edge
+    dockedSlotRef.current = docked === null
+      ? null
+      : { top: docked.top, edge: docked.edge }
     const inViewport = docked ?? { left: resting.left, top: resting.top }
 
     // Convert to the container's content space: content = viewport - containerTop + scrollOffset.
@@ -450,6 +564,15 @@ const ComposeBody = React.memo(function ComposeBody(props) {
     // discrete move is animated: while docked the target is an edge that shifts with every scroll frame, and a
     // transition there makes the panel trail the content — the "inertia" that was reported.
     //
+    // A REFLOW is different again, and it is what the user sees as up-and-down wobbling. Dragging a pane boundary
+    // re-wraps the text ABOVE the passage, which shoves the anchor block up or down by a measured 150px; the panel
+    // follows it, because staying glued to the passage is the required behaviour. But following it frame by frame, with
+    // no interpolation, reads as the panel shaking. So a reflow-driven move is animated too, with the SAME WAAPI call
+    // used for a dock change — while a scroll-driven move stays instant, since it must not trail the text.
+    //
+    // The two are told apart by whether the container's scroll offset changed: a reflow moves the block without
+    // scrolling, a scroll moves it by scrolling.
+    //
     // The animation uses the Web Animations API rather than a CSS transition on `top`. A CSS transition cannot work
     // here: the attribute that would enable it and the new position are committed together, so the browser has no
     // previous value to interpolate from and the move lands instantly (measured: 84 -> 97 within one frame, no
@@ -458,24 +581,61 @@ const ComposeBody = React.memo(function ComposeBody(props) {
     const dockedEdge = docked === null ? null : docked.edge
     const previousEdgeRef = React.useRef(undefined)
     const previousTopRef = React.useRef(null)
+    const previousScrollRef = React.useRef(null)
+    /** The running glide, so it can be stopped before measuring. */
+    const glideRef = React.useRef(null)
     React.useLayoutEffect(() => {
       const element = ref.current
       if (element === null) return
+
+      // Measure the position WITHOUT any running glide's transform.
+      //
+      // `getBoundingClientRect()` includes the transform an in-flight animation is painting, so reading it while a glide
+      // was running fed the interpolated offset back into the next `delta`. That is a positive feedback loop: each frame
+      // computed a larger delta than the last and the panel's top exploded — measured 101 -> 1252 -> 53171 -> 2492324 ->
+      // 16777216 in five frames, after which the element was unmounted.
+      //
+      // Cancelling the previous glide first makes every reading the true layout position, so `delta` describes only the
+      // movement that actually happened since the last frame.
+      const running = glideRef.current
+      glideRef.current = null
+      if (running !== null && running !== undefined) {
+        try { running.cancel() } catch { /* already finished */ }
+      }
       const viewportTop = element.getBoundingClientRect().top
       const previousEdge = previousEdgeRef.current
       const previousTop = previousTopRef.current
-      // The first paint has no previous state, so it must not animate in from the origin.
-      if (previousEdge !== undefined && previousEdge !== dockedEdge && previousTop !== null) {
+      const previousScroll = previousScrollRef.current
+      const scrollNow = scroller === null || scroller === undefined ? 0 : scroller.scrollTop
+      // A scroll moves the block by changing the scroll offset; a reflow moves it without touching the offset.
+      const scrolled = previousScroll !== null && scrollNow !== previousScroll
+      const edgeChanged = previousEdge !== undefined && previousEdge !== dockedEdge
+      if (previousTop !== null) {
         const delta = previousTop - viewportTop
-        if (Math.abs(delta) > 2 && typeof element.animate === 'function') {
-          element.animate(
+        // Animate when the dock state changed (a deliberate move), or when the block was shoved by a REFLOW while the
+        // scroll offset stayed put. A scroll-driven move is left alone: it must track the text exactly, and easing it is
+        // the "panel trails the content" defect that was already fixed once.
+        const reflowed = scrolled === false && previousEdge === dockedEdge
+        // Animate the MOVE INTO or OUT OF a dock (edgeChanged), and a reflow-driven move while anchored. While the panel
+        // is docked the target is a constant screen slot that does not follow the reflow at all, so a glide there only
+        // smears a settled position — measured stray tops of 132 and 109 on frames whose neighbours were steady at 84.
+        const settledDocked = dockedEdge !== null && edgeChanged === false
+        if (Math.abs(delta) > 2 && Math.abs(delta) < 400
+          && typeof element.animate === 'function'
+          && settledDocked === false && (edgeChanged || reflowed)) {
+          // A reflow can shove the block by 150px in one frame; easing that over 260ms would visibly lag the passage. The
+          // reflow glide is therefore short — enough to remove the frame-to-frame shake without detaching from the text.
+          // The 400px ceiling is a guard: a real move is never that large, so a bigger `delta` means the measurement is
+          // untrustworthy and animating it would make things worse.
+          glideRef.current = element.animate(
             [{ transform: `translateY(${delta}px)` }, { transform: 'none' }],
-            { duration: 260, easing: 'cubic-bezier(.22,.61,.36,1)' },
+            { duration: edgeChanged ? 260 : 90, easing: 'cubic-bezier(.22,.61,.36,1)' },
           )
         }
       }
       previousEdgeRef.current = dockedEdge
       previousTopRef.current = viewportTop
+      previousScrollRef.current = scrollNow
     })
 
     return createPortal(

@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:c8bff8ae0c960479
+ * Artifact: sha256:a093ff6dcd0a8c59
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -1060,13 +1060,14 @@ function __dshQuoteChatFactory(hostRequire) {
       const bottom = Math.max(band.top + gap, band.bottom - gap - size.height);
       const toTop = Math.abs(restingTop - top);
       const toBottom = Math.abs(bottom - restingTop);
+      const edge = options.edge === "top" || options.edge === "bottom" ? options.edge : toTop <= toBottom ? "top" : "bottom";
       const column = livePanelColumn();
       const centred = column === null ? Math.max(margin, Math.round((viewportWidth - size.width) / 2)) : Math.round(column.left + Math.max(margin, (column.width - size.width) / 2));
       const left = column === null ? centred : Math.min(centred, Math.max(column.left + margin, column.right - size.width - margin));
       return {
         left,
-        top: toTop <= toBottom ? top : bottom,
-        edge: toTop <= toBottom ? "top" : "bottom"
+        top: edge === "top" ? top : bottom,
+        edge
       };
     }
     function anchorAboveBubble(flow, bubble, size) {
@@ -1375,6 +1376,13 @@ function __dshQuoteChatFactory(hostRequire) {
    * covered rather than floating on top. That is the requested behaviour.
    */
   .qc-compose{position:absolute;z-index:6;width:min(420px,92vw);box-sizing:border-box;
+    /* Never let the browser pick this panel as a scroll-anchor candidate.
+       While a pane boundary is dragged the text re-wraps and the transcript's scroll offset is adjusted by the browser's
+       scroll anchoring; measured, scrollTop moved 893 -> 1441 -> 943 across one width sweep. The panel sits at a fixed
+       offset INSIDE the container, so that adjustment carried it up and down the viewport by up to 80px while its dock
+       state never changed — exactly the wobble that was reported. It is not anchored content; it must not influence or be
+       moved by anchoring. */
+    overflow-anchor:none;
     border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:18px;
     background:var(--dsw-alias-bg-overlay);
     box-shadow:0 16px 40px rgba(0,0,0,.32),0 2px 8px rgba(0,0,0,.18);
@@ -1478,6 +1486,9 @@ function __dshQuoteChatFactory(hostRequire) {
    * which is 6 as well and older in DOM order.
    */
   .qc-bubble-panel{position:absolute;z-index:6;box-sizing:border-box;
+    /* Same reason as .qc-compose: the browser's scroll anchoring must not move this panel, which sits at a fixed offset
+       inside the scroll container and was being carried up and down the viewport while a pane boundary was dragged. */
+    overflow-anchor:none;
     width:min(320px,80vw);padding:10px;
     border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:12px;
     background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);
@@ -1982,6 +1993,11 @@ function __dshQuoteChatFactory(hostRequire) {
       const ref = import_react3.default.useRef(null);
       const inputRef = import_react3.default.useRef(null);
       const [comment, setComment] = import_react3.default.useState("");
+      const dockedRef = import_react3.default.useRef(null);
+      const dockedEdgeRef = import_react3.default.useRef(null);
+      const previousBlockRef = import_react3.default.useRef(null);
+      const dockedSlotRef = import_react3.default.useRef(null);
+      const previousScrollTopRef = import_react3.default.useRef(null);
       const onChangeComment = import_react3.default.useCallback((event) => {
         setComment(event.target.value);
       }, []);
@@ -2003,6 +2019,11 @@ function __dshQuoteChatFactory(hostRequire) {
         if (getComputedStyle(scroller).position === "static") {
           scroller.style.position = "relative";
         }
+        const previousAnchor = scroller.style.overflowAnchor;
+        scroller.style.overflowAnchor = "none";
+        return () => {
+          scroller.style.overflowAnchor = previousAnchor;
+        };
       }, [scroller]);
       import_react3.default.useLayoutEffect(() => {
         const element = ref.current;
@@ -2078,9 +2099,31 @@ function __dshQuoteChatFactory(hostRequire) {
       const scrollerBox = scroller === null ? { top: 0, left: 0, bottom: typeof window === "undefined" ? 0 : window.innerHeight } : scroller.getBoundingClientRect();
       const hasInput = comment.trim() !== "";
       const restingBottom = resting.top + height;
-      const fullyVisible = resting.top >= scrollerBox.top - 1 && restingBottom <= scrollerBox.bottom + 1;
-      const needsRescue = hasInput && !fullyVisible;
-      const docked = needsRescue && snapPosition ? snapPosition(resting.top, { width, height }) : null;
+      const DOCK_MARGIN = 24;
+      const wasDocked = dockedRef.current !== null;
+      const clearlyOut = resting.top < scrollerBox.top - DOCK_MARGIN || restingBottom > scrollerBox.bottom + DOCK_MARGIN;
+      const comfortablyVisible = resting.top >= scrollerBox.top + DOCK_MARGIN && restingBottom <= scrollerBox.bottom - DOCK_MARGIN;
+      const anchorMoved = blockBox !== void 0 && blockBox !== null && previousBlockRef.current !== null && Math.abs(Math.round(blockBox.top) - previousBlockRef.current) > 1;
+      const scrollMoved = previousScrollTopRef.current !== null && Math.abs((scroller === null || scroller === void 0 ? 0 : scroller.scrollTop) - previousScrollTopRef.current) > 1;
+      const frozen = anchorMoved && scrollMoved === false;
+      const needsRescue = frozen ? wasDocked : hasInput && wasDocked ? clearlyOut && comfortablyVisible === false : resting.top < scrollerBox.top - 1 || restingBottom > scrollerBox.bottom + 1;
+      previousBlockRef.current = blockBox === void 0 || blockBox === null ? null : Math.round(blockBox.top);
+      previousScrollTopRef.current = scroller === null || scroller === void 0 ? 0 : scroller.scrollTop;
+      const lockedEdge = dockedEdgeRef.current;
+      let dockedSlot = null;
+      if (needsRescue && snapPosition) {
+        const computed = snapPosition(resting.top, { width, height, edge: lockedEdge });
+        const latched = dockedSlotRef.current;
+        if (latched !== null && latched.edge === computed.edge) {
+          dockedSlot = { left: computed.left, top: latched.top, edge: computed.edge };
+        } else {
+          dockedSlot = computed;
+        }
+      }
+      const docked = dockedSlot;
+      dockedRef.current = docked;
+      dockedEdgeRef.current = docked === null ? null : docked.edge;
+      dockedSlotRef.current = docked === null ? null : { top: docked.top, edge: docked.edge };
       const inViewport = docked ?? { left: resting.left, top: resting.top };
       const target = scroller === null ? inViewport : {
         left: Math.round(inViewport.left - scrollerBox.left + scroller.scrollLeft),
@@ -2089,23 +2132,40 @@ function __dshQuoteChatFactory(hostRequire) {
       const dockedEdge = docked === null ? null : docked.edge;
       const previousEdgeRef = import_react3.default.useRef(void 0);
       const previousTopRef = import_react3.default.useRef(null);
+      const previousScrollRef = import_react3.default.useRef(null);
+      const glideRef = import_react3.default.useRef(null);
       import_react3.default.useLayoutEffect(() => {
         const element = ref.current;
         if (element === null) return;
+        const running = glideRef.current;
+        glideRef.current = null;
+        if (running !== null && running !== void 0) {
+          try {
+            running.cancel();
+          } catch {
+          }
+        }
         const viewportTop = element.getBoundingClientRect().top;
         const previousEdge = previousEdgeRef.current;
         const previousTop = previousTopRef.current;
-        if (previousEdge !== void 0 && previousEdge !== dockedEdge && previousTop !== null) {
+        const previousScroll = previousScrollRef.current;
+        const scrollNow = scroller === null || scroller === void 0 ? 0 : scroller.scrollTop;
+        const scrolled = previousScroll !== null && scrollNow !== previousScroll;
+        const edgeChanged = previousEdge !== void 0 && previousEdge !== dockedEdge;
+        if (previousTop !== null) {
           const delta = previousTop - viewportTop;
-          if (Math.abs(delta) > 2 && typeof element.animate === "function") {
-            element.animate(
+          const reflowed = scrolled === false && previousEdge === dockedEdge;
+          const settledDocked = dockedEdge !== null && edgeChanged === false;
+          if (Math.abs(delta) > 2 && Math.abs(delta) < 400 && typeof element.animate === "function" && settledDocked === false && (edgeChanged || reflowed)) {
+            glideRef.current = element.animate(
               [{ transform: `translateY(${delta}px)` }, { transform: "none" }],
-              { duration: 260, easing: "cubic-bezier(.22,.61,.36,1)" }
+              { duration: edgeChanged ? 260 : 90, easing: "cubic-bezier(.22,.61,.36,1)" }
             );
           }
         }
         previousEdgeRef.current = dockedEdge;
         previousTopRef.current = viewportTop;
+        previousScrollRef.current = scrollNow;
       });
       return (0, import_react_dom.createPortal)(
         h2(
@@ -2463,6 +2523,10 @@ function __dshQuoteChatFactory(hostRequire) {
       const { annotation, anchor, labels, onSave, onDelete, onClose, inFlow = false, rel = null } = props;
       const [text, setText] = import_react5.default.useState(annotation.comment);
       const [touched, setTouched] = import_react5.default.useState(false);
+      const dockedRef = import_react5.default.useRef(null);
+      const dockedEdgeLockRef = import_react5.default.useRef(null);
+      const previousBubbleTopRef = import_react5.default.useRef(null);
+      const previousScrollTopRef = import_react5.default.useRef(null);
       const [flash, setFlash] = import_react5.default.useState("");
       const ref = import_react5.default.useRef(null);
       const areaRef = import_react5.default.useRef(null);
@@ -2510,30 +2574,63 @@ function __dshQuoteChatFactory(hostRequire) {
       const bandBottom = rel === null || rel.bandBottom === void 0 ? 0 : rel.bandBottom;
       const panelHeight = measured || rel?.gap || 0;
       const anchoredBottom = anchoredTop + panelHeight;
-      const fullyVisible = rel !== null && rel.bubbleTop !== void 0 && anchoredTop >= bandTop - 1 && anchoredBottom <= bandBottom + 1;
-      const docks = rel !== null && rel.bubbleTop !== void 0 && hasText && fullyVisible === false;
+      const DOCK_MARGIN = 24;
+      const wasDocked = dockedRef.current !== null;
+      const clearlyOut = anchoredTop < bandTop - DOCK_MARGIN || anchoredBottom > bandBottom + DOCK_MARGIN;
+      const comfortablyVisible = anchoredTop >= bandTop + DOCK_MARGIN && anchoredBottom <= bandBottom - DOCK_MARGIN;
+      const hasGeometry = rel !== null && rel.bubbleTop !== void 0;
+      const panelScrollerNow = localScrollerOf(findFlowElement());
+      const scrollerTopNow = panelScrollerNow === null || panelScrollerNow === void 0 ? 0 : panelScrollerNow.scrollTop;
+      const anchorMoved = rel !== null && rel.bubbleTop !== void 0 && previousBubbleTopRef.current !== null && Math.abs(rel.bubbleTop - previousBubbleTopRef.current) > 1;
+      const scrollMoved = previousScrollTopRef.current !== null && Math.abs(scrollerTopNow - previousScrollTopRef.current) > 1;
+      const frozen = anchorMoved && scrollMoved === false;
+      const needsDock = hasGeometry === false ? false : frozen ? wasDocked : wasDocked ? clearlyOut && comfortablyVisible === false : clearlyOut;
+      const docks = hasText && needsDock;
       const dockTop = bandTop;
       const dockBottom = Math.max(bandTop, bandBottom - panelHeight);
-      const dockedEdge = docks === false ? null : Math.abs(anchoredTop - dockTop) <= Math.abs(dockBottom - anchoredTop) ? "top" : "bottom";
+      const lockedEdge = dockedEdgeLockRef.current;
+      const dockedEdge = docks === false ? null : lockedEdge !== null && lockedEdge !== void 0 ? lockedEdge : Math.abs(anchoredTop - dockTop) <= Math.abs(dockBottom - anchoredTop) ? "top" : "bottom";
+      dockedEdgeLockRef.current = dockedEdge;
+      dockedRef.current = dockedEdge;
+      previousBubbleTopRef.current = rel === null || rel.bubbleTop === void 0 ? null : rel.bubbleTop;
+      previousScrollTopRef.current = scrollerTopNow;
       const previousEdgeRef = import_react5.default.useRef(void 0);
       const previousTopRef = import_react5.default.useRef(null);
+      const previousScrollRef = import_react5.default.useRef(null);
+      const glideRef = import_react5.default.useRef(null);
       import_react5.default.useLayoutEffect(() => {
         const element = ref.current;
         if (element === null) return;
+        const running = glideRef.current;
+        glideRef.current = null;
+        if (running !== null && running !== void 0) {
+          try {
+            running.cancel();
+          } catch {
+          }
+        }
         const viewportTop = element.getBoundingClientRect().top;
         const previousEdge = previousEdgeRef.current;
         const previousTop = previousTopRef.current;
-        if (previousEdge !== void 0 && previousEdge !== dockedEdge && previousTop !== null) {
+        const previousScroll = previousScrollRef.current;
+        const panelScroller = localScrollerOf(findFlowElement());
+        const scrollNow = panelScroller === null || panelScroller === void 0 ? 0 : panelScroller.scrollTop;
+        const scrolled = previousScroll !== null && scrollNow !== previousScroll;
+        const edgeChanged = previousEdge !== void 0 && previousEdge !== dockedEdge;
+        if (previousTop !== null) {
           const delta = previousTop - viewportTop;
-          if (Math.abs(delta) > 2 && typeof element.animate === "function") {
-            element.animate(
+          const reflowed = scrolled === false && previousEdge === dockedEdge;
+          const settledDocked = dockedEdge !== null && edgeChanged === false;
+          if (Math.abs(delta) > 2 && Math.abs(delta) < 400 && typeof element.animate === "function" && settledDocked === false && (edgeChanged || reflowed)) {
+            glideRef.current = element.animate(
               [{ transform: `translateY(${delta}px)` }, { transform: "none" }],
-              { duration: 260, easing: "cubic-bezier(.22,.61,.36,1)" }
+              { duration: edgeChanged ? 260 : 90, easing: "cubic-bezier(.22,.61,.36,1)" }
             );
           }
         }
         previousEdgeRef.current = dockedEdge;
         previousTopRef.current = viewportTop;
+        previousScrollRef.current = scrollNow;
       });
       const clampedTop = docks === false ? anchoredTop : dockedEdge === "top" ? dockTop : Math.min(dockBottom, Math.max(bandTop, bandBottom - (measured || 0)));
       const commit = () => {

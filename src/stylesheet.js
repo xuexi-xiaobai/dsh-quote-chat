@@ -45,6 +45,13 @@ export const STYLESHEET = `
  * covered rather than floating on top. That is the requested behaviour.
  */
 .qc-compose{position:absolute;z-index:6;width:min(420px,92vw);box-sizing:border-box;
+  /* Never let the browser pick this panel as a scroll-anchor candidate.
+     While a pane boundary is dragged the text re-wraps and the transcript's scroll offset is adjusted by the browser's
+     scroll anchoring; measured, scrollTop moved 893 -> 1441 -> 943 across one width sweep. The panel sits at a fixed
+     offset INSIDE the container, so that adjustment carried it up and down the viewport by up to 80px while its dock
+     state never changed — exactly the wobble that was reported. It is not anchored content; it must not influence or be
+     moved by anchoring. */
+  overflow-anchor:none;
   border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:18px;
   background:var(--dsw-alias-bg-overlay);
   box-shadow:0 16px 40px rgba(0,0,0,.32),0 2px 8px rgba(0,0,0,.18);
@@ -148,6 +155,9 @@ export const STYLESHEET = `
  * which is 6 as well and older in DOM order.
  */
 .qc-bubble-panel{position:absolute;z-index:6;box-sizing:border-box;
+  /* Same reason as .qc-compose: the browser's scroll anchoring must not move this panel, which sits at a fixed offset
+     inside the scroll container and was being carried up and down the viewport while a pane boundary was dragged. */
+  overflow-anchor:none;
   width:min(320px,80vw);padding:10px;
   border:1px solid var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));border-radius:12px;
   background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);

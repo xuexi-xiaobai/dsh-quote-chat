@@ -643,6 +643,11 @@ export function createLayout() {
     // Distance to each docked slot from where it rests now.
     const toTop = Math.abs(restingTop - top)
     const toBottom = Math.abs(bottom - restingTop)
+    // A caller may LOCK the edge. Re-deciding every frame let the choice flip between top and bottom while the anchor
+    // slid around during a pane drag, which moved the panel by the whole height of the readable band.
+    const edge = options.edge === 'top' || options.edge === 'bottom'
+      ? options.edge
+      : (toTop <= toBottom ? 'top' : 'bottom')
     // Same column-relative centring as the resting place: a docked panel must not jump sideways into a sidebar when it
     // starts gliding, and the sidebar can be on either side.
     const column = livePanelColumn()
@@ -654,8 +659,8 @@ export function createLayout() {
       : Math.min(centred, Math.max(column.left + margin, column.right - size.width - margin))
     return {
       left,
-      top: toTop <= toBottom ? top : bottom,
-      edge: toTop <= toBottom ? 'top' : 'bottom',
+      top: edge === 'top' ? top : bottom,
+      edge,
     }
   }
 

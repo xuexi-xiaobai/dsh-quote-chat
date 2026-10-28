@@ -1,4 +1,4 @@
-﻿/**
+/**
  * The gutter: numbered markers beside annotated passages, and the comment editor they open.
  *
  * ## How the marker is placed
@@ -154,6 +154,14 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
     // — the whole point of anchoring. This flag is what the docking rule keys on, and it resets when the text is
     // emptied, so clearing the box returns the editor to the bubble exactly as the compose panel does.
     const [touched, setTouched] = React.useState(false)
+    /** Whether the editor was docked on the previous render; the hysteresis in the placement reads it. */
+    const dockedRef = React.useRef(null)
+    /** The edge the editor docked to, kept until it is anchored again, so the choice cannot flip per frame. */
+    const dockedEdgeLockRef = React.useRef(null)
+    /** The bubble's top on the previous render, to tell a reflow from a scroll. */
+    const previousBubbleTopRef = React.useRef(null)
+    /** The container's scroll offset on the previous render, for the same reason. */
+    const previousScrollTopRef = React.useRef(null)
     const [flash, setFlash] = React.useState('')
     const ref = React.useRef(null)
     const areaRef = React.useRef(null)
@@ -260,38 +268,110 @@ export function createMarkerLayer({ findFlow, columnElement, anchorAboveBubble }
     const bandBottom = rel === null || rel.bandBottom === undefined ? 0 : rel.bandBottom
     const panelHeight = measured || rel?.gap || 0
     const anchoredBottom = anchoredTop + panelHeight
-    const fullyVisible = rel !== null && rel.bubbleTop !== undefined
-      && anchoredTop >= bandTop - 1
-      && anchoredBottom <= bandBottom + 1
-    const docks = rel !== null && rel.bubbleTop !== undefined && hasText && fullyVisible === false
+    // HYSTERESIS, for the same reason as the compose panel.
+    //
+    // A pane drag re-wraps the text above the bubble, which moves the bubble itself: measured, its top travelled 148px as
+    // the column narrowed and widened again. That carried the editor across the visibility threshold, docked it to an
+    // edge, and the next frame carried it back — the editor oscillated up and down while the user only dragged a
+    // boundary. One threshold cannot be stable when the content moves underneath the panel.
+    //
+    // So the two directions differ: docked stays docked until comfortably visible again, anchored only docks when clearly
+    // out of view. The gap is wider than one frame of reflow, so the state cannot flicker.
+    const DOCK_MARGIN = 24
+    const wasDocked = dockedRef.current !== null
+    const clearlyOut = anchoredTop < bandTop - DOCK_MARGIN
+      || anchoredBottom > bandBottom + DOCK_MARGIN
+    const comfortablyVisible = anchoredTop >= bandTop + DOCK_MARGIN
+      && anchoredBottom <= bandBottom - DOCK_MARGIN
+    const hasGeometry = rel !== null && rel.bubbleTop !== undefined
+    // The container's scroll offset. `localScrollerOf` is memoised, so this is a field read after the first call.
+    const panelScrollerNow = localScrollerOf(findFlowElement())
+    const scrollerTopNow = panelScrollerNow === null || panelScrollerNow === undefined
+      ? 0 : panelScrollerNow.scrollTop
+    // FREEZE the dock decision while the bubble is being REFLOWED — not while it is merely scrolled.
+    //
+    // Same reasoning as the compose panel: a pane drag re-wraps the text above the bubble and moves it by up to 150px,
+    // far more than the hysteresis margin, so the editor kept crossing the threshold and alternating between anchored
+    // and docked. A scroll also moves the bubble, but that is the normal case and docking must stay possible then.
+    const anchorMoved = rel !== null && rel.bubbleTop !== undefined
+      && previousBubbleTopRef.current !== null
+      && Math.abs(rel.bubbleTop - previousBubbleTopRef.current) > 1
+    const scrollMoved = previousScrollTopRef.current !== null
+      && Math.abs(scrollerTopNow - previousScrollTopRef.current) > 1
+    const frozen = anchorMoved && scrollMoved === false
+    const needsDock = hasGeometry === false
+      ? false
+      : frozen
+        ? wasDocked
+        : wasDocked ? clearlyOut && comfortablyVisible === false : clearlyOut
+    const docks = hasText && needsDock
     const dockTop = bandTop
     const dockBottom = Math.max(bandTop, bandBottom - panelHeight)
+    // Lock the chosen edge while docked: re-picking the nearer edge every frame let it flip between top and bottom while
+    // the bubble slid around during a pane drag, which moved the editor by the whole height of the readable band.
+    const lockedEdge = dockedEdgeLockRef.current
     const dockedEdge = docks === false
       ? null
-      : Math.abs(anchoredTop - dockTop) <= Math.abs(dockBottom - anchoredTop) ? 'top' : 'bottom'
+      : lockedEdge !== null && lockedEdge !== undefined
+        ? lockedEdge
+        : Math.abs(anchoredTop - dockTop) <= Math.abs(dockBottom - anchoredTop) ? 'top' : 'bottom'
+    dockedEdgeLockRef.current = dockedEdge
+    dockedRef.current = dockedEdge
+    previousBubbleTopRef.current = rel === null || rel.bubbleTop === undefined
+      ? null : rel.bubbleTop
+    previousScrollTopRef.current = scrollerTopNow
     // Glide only across a dock-state change; track a scroll frame-by-frame. Same reasoning as the compose panel: a CSS
     // transition on a per-frame target makes the panel trail the content, and it cannot interpolate the state change
     // anyway because the flag that enables it arrives in the same commit. WAAPI gets the previous viewport position
     // explicitly, so it works regardless of stylesheet timing.
     const previousEdgeRef = React.useRef(undefined)
     const previousTopRef = React.useRef(null)
+    const previousScrollRef = React.useRef(null)
+    /** The running glide, so it can be stopped before measuring. */
+    const glideRef = React.useRef(null)
     React.useLayoutEffect(() => {
       const element = ref.current
       if (element === null) return
+      // Cancel any running glide BEFORE measuring: `getBoundingClientRect()` includes the transform an in-flight
+      // animation is painting, and feeding that interpolated offset into the next `delta` is a positive feedback loop —
+      // measured on the compose panel, the top exploded 101 -> 1252 -> 53171 -> 2492324 in four frames before the element
+      // was unmounted. Every reading must be the true layout position.
+      const running = glideRef.current
+      glideRef.current = null
+      if (running !== null && running !== undefined) {
+        try { running.cancel() } catch { /* already finished */ }
+      }
       const viewportTop = element.getBoundingClientRect().top
       const previousEdge = previousEdgeRef.current
       const previousTop = previousTopRef.current
-      if (previousEdge !== undefined && previousEdge !== dockedEdge && previousTop !== null) {
+      const previousScroll = previousScrollRef.current
+      // The bubble editor does not hold a scroller reference; resolve it cheaply from the flow it belongs to.
+      const panelScroller = localScrollerOf(findFlowElement())
+      const scrollNow = panelScroller === null || panelScroller === undefined ? 0 : panelScroller.scrollTop
+      const scrolled = previousScroll !== null && scrollNow !== previousScroll
+      const edgeChanged = previousEdge !== undefined && previousEdge !== dockedEdge
+      if (previousTop !== null) {
         const delta = previousTop - viewportTop
-        if (Math.abs(delta) > 2 && typeof element.animate === 'function') {
-          element.animate(
+        // Animate a dock-state change, and a REFLOW-driven move (the bubble was shoved without the scroll offset
+        // changing). A scroll-driven move stays instant, or the editor trails the text.
+        const reflowed = scrolled === false && previousEdge === dockedEdge
+        // While the editor is settled in a docked slot its target does not follow the reflow at all, so a glide there
+        // only smears a settled position.
+        const settledDocked = dockedEdge !== null && edgeChanged === false
+        if (Math.abs(delta) > 2 && Math.abs(delta) < 400
+          && typeof element.animate === 'function'
+          && settledDocked === false && (edgeChanged || reflowed)) {
+          // The ceiling is a guard: a real move is never that large, so a bigger delta means the measurement is
+          // untrustworthy and animating it would make things worse.
+          glideRef.current = element.animate(
             [{ transform: `translateY(${delta}px)` }, { transform: 'none' }],
-            { duration: 260, easing: 'cubic-bezier(.22,.61,.36,1)' },
+            { duration: edgeChanged ? 260 : 90, easing: 'cubic-bezier(.22,.61,.36,1)' },
           )
         }
       }
       previousEdgeRef.current = dockedEdge
       previousTopRef.current = viewportTop
+      previousScrollRef.current = scrollNow
     })
     // Clamping applies ONLY while docked. At rest the position is the pure anchor, which is what lets the editor leave
     // the screen with its passage.
