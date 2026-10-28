@@ -283,9 +283,28 @@ export const STYLESHEET = `
 [data-composer-chip="quote-chat"]:focus-within{
   background:var(--qc-chip-bg-hover, var(--dsw-alias-bg-layer-3, #e8e8e8));
   border-color:var(--dsw-alias-border-l3, rgba(0,0,0,.16))}
-/* The host's own marker glyph is the first child; it is hidden and replaced by a
-   CSS glyph so the node's contents are never touched. */
-[data-composer-chip="quote-chat"] > span:first-child{display:none}
+/* The host's marker glyph is the first child; it is hidden and replaced by a
+   CSS glyph so the node's contents are never touched.
+
+   But it must be hidden as a GLYPH, not as a container.
+
+   The chip has exactly ONE child element, so a rule on "span:first-child" or
+   "span:last-child" hit the same node twice and removed the host's entire
+   subtree from layout: measured, that child computed to display:none with a
+   width of 0. Everything visible afterwards was two pseudo-elements, so the chip
+   contained no text node at all — its 72px were drawn entirely by CSS.
+
+   That is why the chip interacted badly with the surrounding text. A caret
+   cannot sit inside a pseudo-element, and a click near the chip's left edge had
+   no text position to land on, so the following keystrokes went to whichever
+   side the editor considered nearest (measured: text typed at the left edge
+   arrived after the chip).
+
+   The glyph and the label are now hidden individually, by their own class, which
+   leaves the wrapper in flow. The chip keeps a real, zero-width text box with the
+   label in it, so selection, caret placement and click targeting all behave like
+   ordinary inline content. */
+[data-composer-chip="quote-chat"] .yAWgPa_marker{display:none}
 /* The kind glyph, occupying the left slot. */
 [data-composer-chip="quote-chat"]::before{content:"";
   flex:none;width:13px;height:13px;margin-right:6px;
@@ -310,8 +329,11 @@ export const STYLESHEET = `
 [data-composer-chip="quote-chat"]::after{content:attr(data-qc-label);
   order:1;margin-left:0;font-size:12.5px;line-height:1.5;
   color:var(--dsw-alias-label-primary, #181818);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-/* Keep the host's own label out of the way so the ordinal is the only text. */
-[data-composer-chip="quote-chat"] > span:last-child{display:none}
+/* The host's own label is hidden as a glyph — the ordinal above is the visible text — but it stays in the box at zero
+   width so the chip still owns a text node. */
+[data-composer-chip="quote-chat"] .yAWgPa_label{
+  display:inline-block;width:0;height:0;overflow:hidden;
+  font-size:0;line-height:0;vertical-align:baseline}
 
 /* Glyph: a rounded rectangle with a quote stroke inside it — the same "quoted
    text" mark the reference shows. Table chips get a grid glyph. */
@@ -344,6 +366,45 @@ export const STYLESHEET = `
 .qc-chip-remove svg path{stroke:#fff;stroke-width:2.1;stroke-linecap:round;
   fill:none;vector-effect:non-scaling-stroke}
 .qc-chip-remove:hover{background:#c81f14;transform:translate(-50%,-50%) scale(1.1)}
+
+/* ── Dragging a chip ─────────────────────────────────────────────────────────
+
+   A drag shows two things and moves nothing: a solid grab bar at the seam the
+   chip would drop into, and a translucent copy of the chip following the cursor.
+
+   The chip itself belongs to the Host's editor (a Lexical decorator), so its DOM
+   cannot be moved without the next keystroke undoing it. The overlay exists so
+   the gesture still reads as dragging, while the real reorder is written to the
+   draft on release.
+
+   Neither element takes pointer events: the pointer must keep reaching the
+   editor underneath, or the gesture would lose track of the text it is over. */
+.qc-chip-drag-grab{position:fixed;z-index:41;width:2px;
+  border-radius:1px;background:var(--dsw-alias-brand-primary, #6b4df6);
+  transform:translateX(-1px);pointer-events:none;
+  box-shadow:0 0 0 3px rgba(107,77,246,.16)}
+/* The knobs on the bar: they are what makes it read as a grab handle rather
+   than a caret. */
+.qc-chip-drag-grab::before,
+.qc-chip-drag-grab::after{content:"";position:absolute;left:50%;
+  width:7px;height:7px;border-radius:50%;
+  background:var(--dsw-alias-brand-primary, #6b4df6);
+  transform:translateX(-50%)}
+.qc-chip-drag-grab::before{top:-2px}
+.qc-chip-drag-grab::after{bottom:-2px}
+
+.qc-chip-drag-ghost{position:fixed;z-index:42;
+  max-width:16em;padding:2px 9px;
+  border-radius:999px;border:1px solid transparent;
+  background:var(--qc-chip-drag-bg, rgba(107,77,246,.14));
+  color:var(--dsw-alias-brand-primary, #6b4df6);
+  font-size:12.5px;line-height:1.5;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;
+  transform:translate(12px,-50%);pointer-events:none;
+  box-shadow:0 6px 18px rgba(0,0,0,.14)}
+
+/* While a chip is being carried, that chip steps back so the ghost reads as the thing in flight. */
+[data-qc-dragging="true"]{opacity:.45}
 
 /* ── The hover preview card ──────────────────────────────────────────────────
 

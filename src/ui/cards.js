@@ -24,6 +24,7 @@ import React from 'react'
 import { createPortal } from 'react-dom'
 import { tableHtml } from '../html.js'
 import { CHIP_SOURCE } from '../chip-draft.js'
+import { attachChipDragging } from '../chip-drag.js'
 
 /** createElement, bound once. */
 const h = React.createElement
@@ -62,7 +63,7 @@ export function createCards({ composerContainer }) {
    * @param props - the annotations, the live chip list, labels, and handlers.
    */
   function ChipCards(props) {
-    const { annotations, occurrences, labels, onJump, onRemove } = props
+    const { annotations, occurrences, labels, onJump, onRemove, setDraft, draft } = props
     // Handlers live in a ref so the effect does not rebuild on every render.
     const actionsRef = React.useRef({ onJump, onRemove })
     actionsRef.current = { onJump, onRemove }
@@ -75,6 +76,14 @@ export function createCards({ composerContainer }) {
   if (typeof document === 'undefined') return undefined
   let frame = 0
   let timer = 0
+  /**
+   * When a drag last reordered the draft, so the click that ends that gesture does not also jump to the passage.
+   *
+   * A drop produces a `click` a few milliseconds later on the element the press started on. Acting on both would move
+   * the transcript away from the spot the user just arranged.
+   */
+  let consumedClickAt = 0
+  const dragConsumedClick = () => consumedClickAt !== 0 && Date.now() - consumedClickAt < 400
   /** Pending close, so leaving the chip can be undone by coming back. */
   let closeTimer = 0
   const marked = new Set()
@@ -84,6 +93,7 @@ export function createCards({ composerContainer }) {
     delete chip.dataset.qcNum
     delete chip.dataset.qcKind
     delete chip.dataset.qcLabel
+    delete chip.dataset.qcRef
     marked.delete(chip)
   }
 
@@ -126,6 +136,9 @@ export function createCards({ composerContainer }) {
       chip.dataset.qcNum = String(ordinal)
       chip.dataset.qcKind = annotation.kind === 'table' ? 'table' : 'text'
       chip.dataset.qcLabel = labels.content.replace('{n}', String(ordinal))
+      // The chip's identity, for the drag layer: it needs to know which annotation it is moving, and the ordinal is a
+      // position that changes as soon as the draft is rewritten.
+      chip.dataset.qcRef = annotation.id
       marked.add(chip)
     }
     for (const chip of [...marked]) {
@@ -292,7 +305,15 @@ export function createCards({ composerContainer }) {
 
   // Clicking the chip jumps. `openReference` covers the editor's own activation
   // path; this covers a plain click on the token itself.
+  //
+  // A click that ENDS a drag must not also jump: the pointer travelled, the draft was reordered, and landing on the
+  // passage as well would move the transcript out from under the user's own result.
   const onClick = (event) => {
+    if (dragConsumedClick()) {
+      event.preventDefault()
+      event.stopPropagation()
+      return
+    }
     const chip = chipOf(event)
     if (chip === null) return
     const annotation = pairs().find((pair) => pair.chip === chip)?.annotation
@@ -303,11 +324,27 @@ export function createCards({ composerContainer }) {
   }
   document.addEventListener('click', onClick, true)
 
+  // Dragging a chip reorders the draft through the same `setDraft` the rest of the plugin uses; the editor's own DOM is
+  // never moved. See `chip-drag.js` for why that split is required.
+  //
+  // `composerContainer()` is resolved here rather than passed in: the composer can be re-created by the Host without the
+  // plugin re-rendering, and a captured element would then reject every later press.
+  const detachDrag = attachChipDragging({
+    listChips: () => pairs().map((pair) => pair.chip),
+    readDraft: () => ({ draft, occurrences }),
+    setDraft,
+    source: CHIP_SOURCE,
+    onMoved: () => {
+      consumedClickAt = Date.now()
+    },
+  })
+
   return () => {
     if (frame !== 0) cancelAnimationFrame(frame)
     clearTimeout(timer)
     if (closeTimer !== 0) clearTimeout(closeTimer)
     observer.disconnect()
+    detachDrag()
     document.removeEventListener('mouseover', onPointer, true)
     document.removeEventListener('scroll', reposition, true)
     window.removeEventListener('resize', reposition)

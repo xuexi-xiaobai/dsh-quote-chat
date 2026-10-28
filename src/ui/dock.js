@@ -518,7 +518,9 @@ export function annotationDock(deps) {
           onConfirm: (comment) => commit(overlay.source, comment),
           onCancel: cancelCompose,
         }),
-      h(ChipCards, { annotations, occurrences, labels, onJump, onRemove }),
+      h(ChipCards, {
+        annotations, occurrences, labels, onJump, onRemove, setDraft: inputActions?.setDraft, draft,
+      }),
       h(MarkerLayer, { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
       h(TableAddButton, { label: labels.tableAdd, onAdd: annotateTable }),
       typeof notice === 'string' && notice !== ''

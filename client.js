@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:d66f63cf27329e6a
+ * Artifact: sha256:2b1f1fdfaf021a65
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -1614,9 +1614,28 @@ function __dshQuoteChatFactory(hostRequire) {
   [data-composer-chip="quote-chat"]:focus-within{
     background:var(--qc-chip-bg-hover, var(--dsw-alias-bg-layer-3, #e8e8e8));
     border-color:var(--dsw-alias-border-l3, rgba(0,0,0,.16))}
-  /* The host's own marker glyph is the first child; it is hidden and replaced by a
-     CSS glyph so the node's contents are never touched. */
-  [data-composer-chip="quote-chat"] > span:first-child{display:none}
+  /* The host's marker glyph is the first child; it is hidden and replaced by a
+     CSS glyph so the node's contents are never touched.
+
+     But it must be hidden as a GLYPH, not as a container.
+
+     The chip has exactly ONE child element, so a rule on "span:first-child" or
+     "span:last-child" hit the same node twice and removed the host's entire
+     subtree from layout: measured, that child computed to display:none with a
+     width of 0. Everything visible afterwards was two pseudo-elements, so the chip
+     contained no text node at all — its 72px were drawn entirely by CSS.
+
+     That is why the chip interacted badly with the surrounding text. A caret
+     cannot sit inside a pseudo-element, and a click near the chip's left edge had
+     no text position to land on, so the following keystrokes went to whichever
+     side the editor considered nearest (measured: text typed at the left edge
+     arrived after the chip).
+
+     The glyph and the label are now hidden individually, by their own class, which
+     leaves the wrapper in flow. The chip keeps a real, zero-width text box with the
+     label in it, so selection, caret placement and click targeting all behave like
+     ordinary inline content. */
+  [data-composer-chip="quote-chat"] .yAWgPa_marker{display:none}
   /* The kind glyph, occupying the left slot. */
   [data-composer-chip="quote-chat"]::before{content:"";
     flex:none;width:13px;height:13px;margin-right:6px;
@@ -1641,8 +1660,11 @@ function __dshQuoteChatFactory(hostRequire) {
   [data-composer-chip="quote-chat"]::after{content:attr(data-qc-label);
     order:1;margin-left:0;font-size:12.5px;line-height:1.5;
     color:var(--dsw-alias-label-primary, #181818);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  /* Keep the host's own label out of the way so the ordinal is the only text. */
-  [data-composer-chip="quote-chat"] > span:last-child{display:none}
+  /* The host's own label is hidden as a glyph — the ordinal above is the visible text — but it stays in the box at zero
+     width so the chip still owns a text node. */
+  [data-composer-chip="quote-chat"] .yAWgPa_label{
+    display:inline-block;width:0;height:0;overflow:hidden;
+    font-size:0;line-height:0;vertical-align:baseline}
 
   /* Glyph: a rounded rectangle with a quote stroke inside it — the same "quoted
      text" mark the reference shows. Table chips get a grid glyph. */
@@ -1675,6 +1697,45 @@ function __dshQuoteChatFactory(hostRequire) {
   .qc-chip-remove svg path{stroke:#fff;stroke-width:2.1;stroke-linecap:round;
     fill:none;vector-effect:non-scaling-stroke}
   .qc-chip-remove:hover{background:#c81f14;transform:translate(-50%,-50%) scale(1.1)}
+
+  /* ── Dragging a chip ─────────────────────────────────────────────────────────
+
+     A drag shows two things and moves nothing: a solid grab bar at the seam the
+     chip would drop into, and a translucent copy of the chip following the cursor.
+
+     The chip itself belongs to the Host's editor (a Lexical decorator), so its DOM
+     cannot be moved without the next keystroke undoing it. The overlay exists so
+     the gesture still reads as dragging, while the real reorder is written to the
+     draft on release.
+
+     Neither element takes pointer events: the pointer must keep reaching the
+     editor underneath, or the gesture would lose track of the text it is over. */
+  .qc-chip-drag-grab{position:fixed;z-index:41;width:2px;
+    border-radius:1px;background:var(--dsw-alias-brand-primary, #6b4df6);
+    transform:translateX(-1px);pointer-events:none;
+    box-shadow:0 0 0 3px rgba(107,77,246,.16)}
+  /* The knobs on the bar: they are what makes it read as a grab handle rather
+     than a caret. */
+  .qc-chip-drag-grab::before,
+  .qc-chip-drag-grab::after{content:"";position:absolute;left:50%;
+    width:7px;height:7px;border-radius:50%;
+    background:var(--dsw-alias-brand-primary, #6b4df6);
+    transform:translateX(-50%)}
+  .qc-chip-drag-grab::before{top:-2px}
+  .qc-chip-drag-grab::after{bottom:-2px}
+
+  .qc-chip-drag-ghost{position:fixed;z-index:42;
+    max-width:16em;padding:2px 9px;
+    border-radius:999px;border:1px solid transparent;
+    background:var(--qc-chip-drag-bg, rgba(107,77,246,.14));
+    color:var(--dsw-alias-brand-primary, #6b4df6);
+    font-size:12.5px;line-height:1.5;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis;
+    transform:translate(12px,-50%);pointer-events:none;
+    box-shadow:0 6px 18px rgba(0,0,0,.14)}
+
+  /* While a chip is being carried, that chip steps back so the ghost reads as the thing in flight. */
+  [data-qc-dragging="true"]{opacity:.45}
 
   /* ── The hover preview card ──────────────────────────────────────────────────
 
@@ -2217,13 +2278,183 @@ function __dshQuoteChatFactory(hostRequire) {
   // src/ui/cards.js
   var import_react4 = __toESM(require("react"), 1);
   var import_react_dom2 = require("react-dom");
+
+  // src/chip-drag.js
+  var DRAG_GRAB_CLASS = "qc-chip-drag-grab";
+  var DRAG_GHOST_CLASS = "qc-chip-drag-ghost";
+  var CHIP_SOURCE2 = "quote-chat";
+  var DRAG_THRESHOLD = 4;
+  function dropIndexAt(chips, clientX) {
+    let index = 0;
+    for (const chip of chips) {
+      const box = chip.getBoundingClientRect();
+      if (clientX > box.left + box.width / 2) index += 1;
+    }
+    return index;
+  }
+  function moveChipInDraft(draft, references, source, ref, target) {
+    const own = references.filter((item) => item.source === source && item.ref !== void 0).slice().sort((left, right) => left.offset - right.offset);
+    const current = own.findIndex((item) => item.ref === ref);
+    if (current < 0) return null;
+    const to = Math.max(0, Math.min(own.length, target));
+    const from = current;
+    const insertAt = to > from ? to - 1 : to;
+    if (insertAt === from) return null;
+    const chip = own[from];
+    let start = chip.offset;
+    const stop = chip.offset + chip.length;
+    if (start > 0 && draft[start - 1] === "\n") start -= 1;
+    const chunk = draft.slice(start, stop);
+    const removedLength = stop - start;
+    const rest = `${draft.slice(0, start)}${draft.slice(stop)}`;
+    const survivors = own.filter((item) => item.ref !== ref).map((item) => item.offset >= stop ? { ...item, offset: item.offset - removedLength } : { ...item });
+    const anchorChip = insertAt < survivors.length ? survivors[insertAt] : null;
+    const insertOffset = anchorChip === null ? rest.length : anchorChip.offset;
+    const text = `${rest.slice(0, insertOffset)}${chunk}${rest.slice(insertOffset)}`;
+    const movedIds = new Set(own.map((item) => item.ref));
+    const rebuilt = [];
+    for (const item of references) {
+      if (item.source === source && movedIds.has(item.ref)) continue;
+      if (item.offset >= stop) rebuilt.push({ ...item, offset: item.offset + (text.length - draft.length) });
+      else rebuilt.push({ ...item });
+    }
+    const order = [...own];
+    const moved = order.splice(from, 1)[0];
+    order.splice(insertAt, 0, moved);
+    let searchFrom = 0;
+    for (const item of order) {
+      const at = text.indexOf("￼", searchFrom);
+      if (at < 0) break;
+      rebuilt.push({ ...item, offset: at });
+      searchFrom = at + item.length;
+    }
+    rebuilt.sort((left, right) => left.offset - right.offset);
+    return { text, references: rebuilt };
+  }
+  function attachChipDragging({ listChips, readDraft, setDraft, source, onMoved }) {
+    if (typeof document === "undefined") return () => {
+    };
+    let ghost = null;
+    let grab = null;
+    let dragging = null;
+    const ensureOverlay = () => {
+      if (ghost === null || ghost.isConnected === false) {
+        ghost = document.createElement("div");
+        ghost.className = DRAG_GHOST_CLASS;
+        ghost.setAttribute("aria-hidden", "true");
+        document.body.appendChild(ghost);
+      }
+      if (grab === null || grab.isConnected === false) {
+        grab = document.createElement("div");
+        grab.className = DRAG_GRAB_CLASS;
+        grab.setAttribute("aria-hidden", "true");
+        document.body.appendChild(grab);
+      }
+    };
+    const placeGrab = (chips, index) => {
+      if (chips.length === 0) return;
+      const at = Math.min(index, chips.length);
+      const anchorChip = at < chips.length ? chips[at] : chips[chips.length - 1];
+      const box = anchorChip.getBoundingClientRect();
+      const left = at < chips.length ? box.left : box.right;
+      grab.style.left = `${Math.round(left)}px`;
+      grab.style.top = `${Math.round(box.top)}px`;
+      grab.style.height = `${Math.round(box.height)}px`;
+    };
+    const cleanup = () => {
+      if (ghost !== null) ghost.remove();
+      if (grab !== null) grab.remove();
+      ghost = null;
+      grab = null;
+      if (dragging !== null && dragging.element !== null) {
+        dragging.element.removeAttribute("data-qc-dragging");
+      }
+      dragging = null;
+      document.body.style.removeProperty("cursor");
+    };
+    const onPointerDown = (event) => {
+      if (event.button !== 0) return;
+      const target = event.target instanceof Element ? event.target.closest("[data-composer-chip]") : null;
+      if (target === null) return;
+      if (target.getAttribute("data-composer-chip") !== CHIP_SOURCE2) return;
+      const chips = listChips();
+      const index = chips.indexOf(target);
+      if (index < 0) return;
+      dragging = {
+        element: target,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        active: false,
+        index,
+        ref: target.getAttribute("data-qc-ref"),
+        label: target.getAttribute("data-qc-label") ?? "",
+        kind: target.getAttribute("data-qc-kind") ?? "text"
+      };
+    };
+    const onPointerMove = (event) => {
+      if (dragging === null) return;
+      if (dragging.active === false) {
+        const dx = event.clientX - dragging.startX;
+        const dy = event.clientY - dragging.startY;
+        if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+        dragging.active = true;
+        ensureOverlay();
+        dragging.element.setAttribute("data-qc-dragging", "true");
+        ghost.textContent = dragging.label;
+        ghost.setAttribute("data-qc-kind", dragging.kind);
+        document.body.style.cursor = "grabbing";
+      }
+      event.preventDefault();
+      ghost.style.left = `${Math.round(event.clientX)}px`;
+      ghost.style.top = `${Math.round(event.clientY)}px`;
+      const chips = listChips();
+      dragging.slot = dropIndexAt(chips, event.clientX);
+      placeGrab(chips, dragging.slot);
+    };
+    const finish = (commit) => {
+      const state = dragging;
+      if (state === null) return;
+      if (state.active && commit) {
+        const live = readDraft();
+        const result = moveChipInDraft(live.draft, live.occurrences, source, state.ref, state.slot);
+        if (result !== null && typeof setDraft === "function") {
+          setDraft(result);
+          if (typeof onMoved === "function") onMoved();
+        }
+      }
+      cleanup();
+    };
+    const onPointerUp = () => finish(true);
+    const onKeyDown = (event) => {
+      if (event.key === "Escape" && dragging !== null && dragging.active) {
+        event.stopPropagation();
+        finish(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("pointermove", onPointerMove, true);
+    document.addEventListener("pointerup", onPointerUp, true);
+    document.addEventListener("pointercancel", onPointerUp, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("pointermove", onPointerMove, true);
+      document.removeEventListener("pointerup", onPointerUp, true);
+      document.removeEventListener("pointercancel", onPointerUp, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+      cleanup();
+    };
+  }
+
+  // src/ui/cards.js
   var h3 = import_react4.default.createElement;
   var HOVER_LINGER_MS = 260;
   var CARD_EXIT_MS = 130;
   var VIEWPORT_MARGIN2 = 8;
   function createCards({ composerContainer: composerContainer2 }) {
     function ChipCards2(props) {
-      const { annotations, occurrences, labels, onJump, onRemove } = props;
+      const { annotations, occurrences, labels, onJump, onRemove, setDraft, draft } = props;
       const actionsRef = import_react4.default.useRef({ onJump, onRemove });
       actionsRef.current = { onJump, onRemove };
       const [hover, setHover] = import_react4.default.useState(null);
@@ -2233,12 +2464,15 @@ function __dshQuoteChatFactory(hostRequire) {
         if (typeof document === "undefined") return void 0;
         let frame = 0;
         let timer = 0;
+        let consumedClickAt = 0;
+        const dragConsumedClick = () => consumedClickAt !== 0 && Date.now() - consumedClickAt < 400;
         let closeTimer = 0;
         const marked = /* @__PURE__ */ new Set();
         const unmark = (chip) => {
           delete chip.dataset.qcNum;
           delete chip.dataset.qcKind;
           delete chip.dataset.qcLabel;
+          delete chip.dataset.qcRef;
           marked.delete(chip);
         };
         const pairs = () => {
@@ -2263,6 +2497,7 @@ function __dshQuoteChatFactory(hostRequire) {
             chip.dataset.qcNum = String(ordinal);
             chip.dataset.qcKind = annotation.kind === "table" ? "table" : "text";
             chip.dataset.qcLabel = labels.content.replace("{n}", String(ordinal));
+            chip.dataset.qcRef = annotation.id;
             marked.add(chip);
           }
           for (const chip of [...marked]) {
@@ -2372,6 +2607,11 @@ function __dshQuoteChatFactory(hostRequire) {
         document.addEventListener("scroll", reposition, true);
         window.addEventListener("resize", reposition);
         const onClick = (event) => {
+          if (dragConsumedClick()) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
           const chip = chipOf(event);
           if (chip === null) return;
           const annotation = pairs().find((pair) => pair.chip === chip)?.annotation;
@@ -2381,11 +2621,21 @@ function __dshQuoteChatFactory(hostRequire) {
           actionsRef.current.onJump(annotation);
         };
         document.addEventListener("click", onClick, true);
+        const detachDrag = attachChipDragging({
+          listChips: () => pairs().map((pair) => pair.chip),
+          readDraft: () => ({ draft, occurrences }),
+          setDraft,
+          source: CHIP_SOURCE,
+          onMoved: () => {
+            consumedClickAt = Date.now();
+          }
+        });
         return () => {
           if (frame !== 0) cancelAnimationFrame(frame);
           clearTimeout(timer);
           if (closeTimer !== 0) clearTimeout(closeTimer);
           observer.disconnect();
+          detachDrag();
           document.removeEventListener("mouseover", onPointer, true);
           document.removeEventListener("scroll", reposition, true);
           window.removeEventListener("resize", reposition);
@@ -3543,7 +3793,15 @@ function __dshQuoteChatFactory(hostRequire) {
           onConfirm: (comment) => commit(overlay.source, comment),
           onCancel: cancelCompose
         }),
-        h6(ChipCards2, { annotations: annotations2, occurrences, labels, onJump, onRemove }),
+        h6(ChipCards2, {
+          annotations: annotations2,
+          occurrences,
+          labels,
+          onJump,
+          onRemove,
+          setDraft: inputActions?.setDraft,
+          draft
+        }),
         h6(MarkerLayer2, { annotations: annotations2, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
         h6(TableAddButton2, { label: labels.tableAdd, onAdd: annotateTable }),
         typeof notice === "string" && notice !== "" ? h6("div", { className: "qc-notice" }, notice) : null
@@ -3599,7 +3857,7 @@ function __dshQuoteChatFactory(hostRequire) {
     registry,
     jumpHandler,
     CHIP_TRIGGER: CHIP_TRIGGER2,
-    CHIP_SOURCE: CHIP_SOURCE2,
+    CHIP_SOURCE: CHIP_SOURCE3,
     CHIP_PLACEHOLDER: CHIP_PLACEHOLDER2,
     serializeChipForModel: serializeChipForModel2
   }) {
@@ -3609,7 +3867,7 @@ function __dshQuoteChatFactory(hostRequire) {
         if (triggers === void 0 || typeof triggers.registerSource !== "function") return void 0;
         return triggers.registerSource({
           trigger: CHIP_TRIGGER2,
-          name: CHIP_SOURCE2,
+          name: CHIP_SOURCE3,
           openReference(_session, reference) {
             const jump = jumpHandler.current;
             if (typeof jump !== "function") return false;
