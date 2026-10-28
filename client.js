@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:500db5541263a635
+ * Artifact: sha256:2967659a06bd27f6
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -1627,7 +1627,12 @@ function __dshQuoteChatFactory(hostRequire) {
     /* Height tracks the line, not a pixel value: 1.45em against an inherited 15px gives the 21-22px the composer's own
        line box occupies, so a chip never makes its line taller than a plain one. */
     height:1.45em;
+    /* The middle value aligns the box's centre with the parent's x-height midpoint, which is NOT the optical centre of a
+       line of CJK text: measured, the chip's centre sat 2.3px below the text's and its bottom edge landed exactly on the
+       paragraph's, so it read as hanging off the line rather than sitting in it.
+       A small em-based lift corrects it, and being em-based it survives a font-size change. */
     vertical-align:middle;
+    transform:translateY(-.09em);
     padding:0 .55em;margin:0 .4em;
     border-radius:999px;
     border:1px solid color-mix(in srgb, currentColor 16%, transparent);
@@ -2332,11 +2337,8 @@ function __dshQuoteChatFactory(hostRequire) {
   var DRAG_GHOST_CLASS = "qc-chip-drag-ghost";
   var CHIP_SOURCE2 = "quote-chat";
   var DRAG_THRESHOLD = 4;
-  function dropOffsetAt(root, clientX, clientY, draft) {
-    if (typeof document === "undefined" || root === null) return null;
-    const range = document.caretRangeFromPoint?.(clientX, clientY);
-    if (range === void 0 || range === null) return null;
-    if (root.contains(range.startContainer) === false) return null;
+  function offsetInDraft(root, range) {
+    if (typeof document === "undefined" || root === null || range === null) return null;
     const offsetOf = (node, within) => {
       let offset = 0;
       let reached = false;
@@ -2380,8 +2382,7 @@ function __dshQuoteChatFactory(hostRequire) {
       return reached ? offset : null;
     };
     const computed = offsetOf(range.startContainer, range.startOffset);
-    if (computed === null) return null;
-    return Math.max(0, Math.min(computed, draft.length));
+    return computed === null ? null : computed;
   }
   function moveChipInDraft(draft, references, source, ref, target) {
     const own = references.filter((item) => item.source === source && item.ref !== void 0).slice().sort((left, right) => left.offset - right.offset);
@@ -2451,32 +2452,6 @@ function __dshQuoteChatFactory(hostRequire) {
         document.body.appendChild(grab);
       }
     };
-    const caretBoxAt = (root, clientX, clientY) => {
-      if (root === null || typeof document.caretRangeFromPoint !== "function") return null;
-      const range = document.caretRangeFromPoint(clientX, clientY);
-      if (range === null || range === void 0) return null;
-      if (root.contains(range.startContainer) === false) return null;
-      const box = range.getBoundingClientRect();
-      if (box.height > 0) {
-        return { left: box.left, top: box.top, height: box.height };
-      }
-      const widened = range.cloneRange();
-      const container = range.startContainer;
-      if (container.nodeType === Node.TEXT_NODE && container.data.length > 0) {
-        const at = Math.min(range.startOffset, container.data.length - 1);
-        widened.setStart(container, at);
-        widened.setEnd(container, at + 1);
-        const charBox = widened.getBoundingClientRect();
-        if (charBox.height > 0) {
-          return {
-            left: range.startOffset <= at ? charBox.left : charBox.right,
-            top: charBox.top,
-            height: charBox.height
-          };
-        }
-      }
-      return null;
-    };
     const chipIndexNear = (chips, clientX) => {
       let best = 0;
       let bestDistance = Infinity;
@@ -2489,6 +2464,33 @@ function __dshQuoteChatFactory(hostRequire) {
         }
       }
       return best;
+    };
+    const caretAt = (root, clientX, clientY) => {
+      if (root === null || typeof document.caretRangeFromPoint !== "function") return null;
+      const range = document.caretRangeFromPoint(clientX, clientY);
+      if (range === null || range === void 0) return null;
+      if (root.contains(range.startContainer) === false) return null;
+      const offset = offsetInDraft(root, range);
+      const box = caretBoxOf(range);
+      if (box === null) return { offset, left: clientX, top: clientY, height: 20 };
+      return { offset, left: box.left, top: box.top, height: box.height };
+    };
+    const caretBoxOf = (range) => {
+      const direct = range.getBoundingClientRect();
+      if (direct.height > 0) return direct;
+      const container = range.startContainer;
+      if (container.nodeType !== Node.TEXT_NODE || container.data.length === 0) return null;
+      const at = Math.min(range.startOffset, container.data.length - 1);
+      const widened = range.cloneRange();
+      widened.setStart(container, at);
+      widened.setEnd(container, at + 1);
+      const box = widened.getBoundingClientRect();
+      if (box.height === 0) return null;
+      return {
+        left: range.startOffset <= at ? box.left : box.right,
+        top: box.top,
+        height: box.height
+      };
     };
     const placeGrab = (chips, index) => {
       if (chips.length === 0) return;
@@ -2547,19 +2549,19 @@ function __dshQuoteChatFactory(hostRequire) {
       event.preventDefault();
       ghost.style.left = `${Math.round(event.clientX)}px`;
       ghost.style.top = `${Math.round(event.clientY)}px`;
-      const root = dragging.element.closest('[contenteditable="true"]') ?? document.querySelector('[contenteditable="true"]');
-      const draftNow = readDraft().draft ?? "";
-      const offset = dropOffsetAt(root, event.clientX, event.clientY, draftNow);
-      if (offset !== null) dragging.offset = offset;
-      const caret = offset === null ? null : caretBoxAt(root, event.clientX, event.clientY);
-      if (caret === null) {
+      const root = dragging.root ?? (dragging.element.closest('[contenteditable="true"]') ?? document.querySelector('[contenteditable="true"]'));
+      dragging.root = root;
+      const draftNow = dragging.draft ?? (dragging.draft = readDraft().draft ?? "");
+      const caret = caretAt(root, event.clientX, event.clientY);
+      if (caret === null || caret.offset === null) {
         const chips = listChips();
         placeGrab(chips, chipIndexNear(chips, event.clientX));
-      } else {
-        grab.style.left = `${Math.round(caret.left)}px`;
-        grab.style.top = `${Math.round(caret.top)}px`;
-        grab.style.height = `${Math.round(caret.height)}px`;
+        return;
       }
+      dragging.offset = Math.max(0, Math.min(caret.offset, draftNow.length));
+      grab.style.left = `${Math.round(caret.left)}px`;
+      grab.style.top = `${Math.round(caret.top)}px`;
+      grab.style.height = `${Math.round(caret.height)}px`;
     };
     const finish = (commit) => {
       const state = dragging;

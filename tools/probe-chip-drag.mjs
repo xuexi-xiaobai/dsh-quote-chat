@@ -157,9 +157,14 @@ try {
     const during = await overlay()
     const draws = during.grab !== null && during.ghost !== null
     const transparent = during.grab?.pointerEvents === 'none' && during.ghost?.pointerEvents === 'none'
-    // The bar must sit on a seam: within a couple of pixels of some chip's edge.
-    const onSeam = during.grab === null ? false : start.list.some((chip) =>
-      Math.abs(during.grab.left - chip.left) <= 3 || Math.abs(during.grab.left - chip.right) <= 3)
+    // The bar marks the INSERTION POINT, which since drops can land inside prose is the caret's position rather than a
+    // chip's edge. Requiring it to sit on a chip seam was right while chips could only be dropped between chips; it is
+    // now wrong for exactly the capability that was asked for.
+    const onSeam = during.grab === null
+      ? false
+      : Math.abs(during.grab.left - toX) <= 12
+        || start.list.some((chip) => Math.abs(during.grab.left - chip.left) <= 3
+          || Math.abs(during.grab.left - chip.right) <= 3)
     const ghostFollows = during.ghost === null
       ? false : Math.abs(during.ghost.left - toX) <= 24
 

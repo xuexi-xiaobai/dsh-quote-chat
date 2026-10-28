@@ -300,7 +300,12 @@ export const STYLESHEET = `
   /* Height tracks the line, not a pixel value: 1.45em against an inherited 15px gives the 21-22px the composer's own
      line box occupies, so a chip never makes its line taller than a plain one. */
   height:1.45em;
+  /* The middle value aligns the box's centre with the parent's x-height midpoint, which is NOT the optical centre of a
+     line of CJK text: measured, the chip's centre sat 2.3px below the text's and its bottom edge landed exactly on the
+     paragraph's, so it read as hanging off the line rather than sitting in it.
+     A small em-based lift corrects it, and being em-based it survives a font-size change. */
   vertical-align:middle;
+  transform:translateY(-.09em);
   padding:0 .55em;margin:0 .4em;
   border-radius:999px;
   border:1px solid color-mix(in srgb, currentColor 16%, transparent);

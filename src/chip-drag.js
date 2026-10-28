@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Dragging an annotation chip within the composer draft.
  *
  * The chip itself belongs to the Host's editor: it is a Lexical decorator node, so its DOM is rendered by code this
@@ -49,20 +49,25 @@ const DRAG_THRESHOLD = 4
  * @param draft - the draft text, so the DOM position can be turned into a string offset.
  * @returns the offset in `draft` where the chip would be inserted, or null when the point is not over editable text.
  */
-export function dropOffsetAt(root, clientX, clientY, draft) {
-  if (typeof document === 'undefined' || root === null) return null
-  const range = document.caretRangeFromPoint?.(clientX, clientY)
-  if (range === undefined || range === null) return null
-  if (root.contains(range.startContainer) === false) return null
-
-  // Walk ELEMENT children, not text nodes.
-  //
-  // A chip is a decorator whose own subtree contains text ("@", "注释 1") that is not in the draft at all — the draft
-  // holds a single placeholder character for the whole thing. A text-node walk therefore counted five characters for
-  // every chip and the computed offset drifted further out of step with the draft with each one; measured, a drop aimed
-  // at the middle of "abcdefghij" landed after it, at "@注释 2abcdefghij@注释 1".
-  //
-  // Treating each chip as exactly one character is what the draft actually contains, so the arithmetic lines up.
+/**
+ * The draft offset a caret range points at.
+ *
+ * Walks ELEMENT children, not text nodes.
+ *
+ * A chip is a decorator whose own subtree contains text ("@", "注释 1") that is not in the draft at all — the draft holds
+ * a single placeholder character for the whole thing. A text-node walk therefore counted five characters for every chip
+ * and the computed offset drifted further out of step with the draft with each one; measured, a drop aimed at the middle
+ * of "abcdefghij" landed after it, at "@注释 2abcdefghij@注释 1".
+ *
+ * Treating each chip as exactly one character is what the draft actually contains, so the arithmetic lines up. A `<br>`
+ * is one newline for the same reason.
+ *
+ * @param root - the editable element.
+ * @param range - a caret range inside it.
+ * @returns the offset, or null when the range is not inside `root`.
+ */
+function offsetInDraft(root, range) {
+  if (typeof document === 'undefined' || root === null || range === null) return null
   const offsetOf = (node, within) => {
     let offset = 0
     let reached = false
@@ -75,7 +80,7 @@ export function dropOffsetAt(root, clientX, clientY, draft) {
             return true
           }
           // The caret landed ON an element. Inside a chip that still means one placeholder character, and the side the
-          // caret sits on decides whether the chip is counted or not.
+          // caret sits on decides whether the chip is counted.
           if (node.nodeType === Node.ELEMENT_NODE && node.hasAttribute?.('data-composer-chip')) {
             if (within > 0) offset += 1
             return true
@@ -87,7 +92,6 @@ export function dropOffsetAt(root, clientX, clientY, draft) {
           continue
         }
         if (child.nodeType !== Node.ELEMENT_NODE) continue
-        // One placeholder character per chip, regardless of what it renders inside.
         if (child.hasAttribute('data-composer-chip')) {
           // The caret's own node may be INSIDE this chip; treat that as one character at the chip's position.
           if (child.contains(node)) {
@@ -98,7 +102,6 @@ export function dropOffsetAt(root, clientX, clientY, draft) {
           offset += 1
           continue
         }
-        // A line break in the DOM is a newline in the draft.
         if (child.tagName === 'BR') {
           offset += 1
           continue
@@ -110,10 +113,8 @@ export function dropOffsetAt(root, clientX, clientY, draft) {
     visit(root)
     return reached ? offset : null
   }
-
   const computed = offsetOf(range.startContainer, range.startOffset)
-  if (computed === null) return null
-  return Math.max(0, Math.min(computed, draft.length))
+  return computed === null ? null : computed
 }
 
 /**
@@ -250,39 +251,6 @@ export function attachChipDragging({ listChips, readDraft, setDraft, source, onM
     }
   }
 
-  /**
-   * The caret's box at a pointer position, so the grab bar can stand where the chip would actually go.
-   *
-   * A range's `getBoundingClientRect()` is empty when it is collapsed inside a text node, so the range is widened by one
-   * character and its left edge taken. That is the same trick a text editor uses to draw its own caret.
-   */
-  const caretBoxAt = (root, clientX, clientY) => {
-    if (root === null || typeof document.caretRangeFromPoint !== 'function') return null
-    const range = document.caretRangeFromPoint(clientX, clientY)
-    if (range === null || range === undefined) return null
-    if (root.contains(range.startContainer) === false) return null
-    const box = range.getBoundingClientRect()
-    if (box.height > 0) {
-      return { left: box.left, top: box.top, height: box.height }
-    }
-    // Collapsed: take the neighbour character's box and use the edge the caret is nearest.
-    const widened = range.cloneRange()
-    const container = range.startContainer
-    if (container.nodeType === Node.TEXT_NODE && container.data.length > 0) {
-      const at = Math.min(range.startOffset, container.data.length - 1)
-      widened.setStart(container, at)
-      widened.setEnd(container, at + 1)
-      const charBox = widened.getBoundingClientRect()
-      if (charBox.height > 0) {
-        return {
-          left: range.startOffset <= at ? charBox.left : charBox.right,
-          top: charBox.top,
-          height: charBox.height,
-        }
-      }
-    }
-    return null
-  }
 
   /** The chip nearest a pointer position, used only when no text caret could be resolved. */
   const chipIndexNear = (chips, clientX) => {
@@ -294,6 +262,52 @@ export function attachChipDragging({ listChips, readDraft, setDraft, source, onM
       if (distance < bestDistance) { bestDistance = distance; best = index }
     }
     return best
+  }
+
+  /**
+   * The caret under a pointer position: its draft offset AND its box, from a single lookup.
+   *
+   * Both were needed on every pointermove and each used to call `caretRangeFromPoint` separately. That call forces a
+   * layout, so doing it twice per move doubled the cost of the hottest path in the gesture for no benefit — the two
+   * answers come from the same range.
+   *
+   * @returns `{ offset, left, top, height }`, `offset` null when it cannot be resolved, or null when the pointer is not
+   * over the editable at all.
+   */
+  const caretAt = (root, clientX, clientY) => {
+    if (root === null || typeof document.caretRangeFromPoint !== 'function') return null
+    const range = document.caretRangeFromPoint(clientX, clientY)
+    if (range === null || range === undefined) return null
+    if (root.contains(range.startContainer) === false) return null
+
+    const offset = offsetInDraft(root, range)
+    const box = caretBoxOf(range)
+    if (box === null) return { offset, left: clientX, top: clientY, height: 20 }
+    return { offset, left: box.left, top: box.top, height: box.height }
+  }
+
+  /**
+   * The caret's box, from a range that is already resolved.
+   *
+   * A collapsed range reports an empty rect, so the range is widened by one character and the edge nearest the caret
+   * taken — the same trick a text editor uses to draw its own caret.
+   */
+  const caretBoxOf = (range) => {
+    const direct = range.getBoundingClientRect()
+    if (direct.height > 0) return direct
+    const container = range.startContainer
+    if (container.nodeType !== Node.TEXT_NODE || container.data.length === 0) return null
+    const at = Math.min(range.startOffset, container.data.length - 1)
+    const widened = range.cloneRange()
+    widened.setStart(container, at)
+    widened.setEnd(container, at + 1)
+    const box = widened.getBoundingClientRect()
+    if (box.height === 0) return null
+    return {
+      left: range.startOffset <= at ? box.left : box.right,
+      top: box.top,
+      height: box.height,
+    }
   }
 
   /**
@@ -370,22 +384,32 @@ export function attachChipDragging({ listChips, readDraft, setDraft, source, onM
     event.preventDefault()
     ghost.style.left = `${Math.round(event.clientX)}px`
     ghost.style.top = `${Math.round(event.clientY)}px`
-    // The drop is resolved as a TEXT position, so the grab bar can sit in the middle of a word rather than only at a
-    // seam between two chips. `root` is resolved per move: the Host can re-create the editable.
-    const root = dragging.element.closest('[contenteditable="true"]')
-      ?? document.querySelector('[contenteditable="true"]')
-    const draftNow = readDraft().draft ?? ''
-    const offset = dropOffsetAt(root, event.clientX, event.clientY, draftNow)
-    if (offset !== null) dragging.offset = offset
-    const caret = offset === null ? null : caretBoxAt(root, event.clientX, event.clientY)
-    if (caret === null) {
+
+    // ONE caret lookup per move, not two.
+    //
+    // This handler runs on every pointermove, and a drag across the composer produces dozens of them. It used to call
+    // `caretRangeFromPoint` inside `dropOffsetAt` and again inside `caretBoxAt`, and each call forces layout on the
+    // editable; on top of that it re-read the draft through React state and re-queried every chip. Measured: 54ms of
+    // work per move event, which is three frames each, and that is the dragging that felt like it stuck rather than
+    // following the pointer.
+    //
+    // The draft is captured once, on the frame the drag starts: it cannot change mid-gesture, because the pointer is
+    // being held and the plugin is not writing to the composer.
+    const root = dragging.root ?? (dragging.element.closest('[contenteditable="true"]')
+      ?? document.querySelector('[contenteditable="true"]'))
+    dragging.root = root
+    const draftNow = dragging.draft ?? (dragging.draft = readDraft().draft ?? '')
+    const caret = caretAt(root, event.clientX, event.clientY)
+    if (caret === null || caret.offset === null) {
+      // No caret under the pointer: fall back to the nearest chip so the bar still indicates a direction.
       const chips = listChips()
       placeGrab(chips, chipIndexNear(chips, event.clientX))
-    } else {
-      grab.style.left = `${Math.round(caret.left)}px`
-      grab.style.top = `${Math.round(caret.top)}px`
-      grab.style.height = `${Math.round(caret.height)}px`
+      return
     }
+    dragging.offset = Math.max(0, Math.min(caret.offset, draftNow.length))
+    grab.style.left = `${Math.round(caret.left)}px`
+    grab.style.top = `${Math.round(caret.top)}px`
+    grab.style.height = `${Math.round(caret.height)}px`
   }
 
   const finish = (commit) => {
