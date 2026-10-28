@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:a093ff6dcd0a8c59
+ * Artifact: sha256:d66f63cf27329e6a
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -2106,7 +2106,7 @@ function __dshQuoteChatFactory(hostRequire) {
       const anchorMoved = blockBox !== void 0 && blockBox !== null && previousBlockRef.current !== null && Math.abs(Math.round(blockBox.top) - previousBlockRef.current) > 1;
       const scrollMoved = previousScrollTopRef.current !== null && Math.abs((scroller === null || scroller === void 0 ? 0 : scroller.scrollTop) - previousScrollTopRef.current) > 1;
       const frozen = anchorMoved && scrollMoved === false;
-      const needsRescue = frozen ? wasDocked : hasInput && wasDocked ? clearlyOut && comfortablyVisible === false : resting.top < scrollerBox.top - 1 || restingBottom > scrollerBox.bottom + 1;
+      const needsRescue = hasInput === false ? false : frozen ? wasDocked : wasDocked ? clearlyOut && comfortablyVisible === false : resting.top < scrollerBox.top - 1 || restingBottom > scrollerBox.bottom + 1;
       previousBlockRef.current = blockBox === void 0 || blockBox === null ? null : Math.round(blockBox.top);
       previousScrollTopRef.current = scroller === null || scroller === void 0 ? 0 : scroller.scrollTop;
       const lockedEdge = dockedEdgeRef.current;

@@ -500,11 +500,19 @@ const ComposeBody = React.memo(function ComposeBody(props) {
       && Math.abs((scroller === null || scroller === undefined ? 0 : scroller.scrollTop)
         - previousScrollTopRef.current) > 1
     const frozen = anchorMoved && scrollMoved === false
-    const needsRescue = frozen
-      ? wasDocked
-      : hasInput && wasDocked
-        ? clearlyOut && comfortablyVisible === false
-        : resting.top < scrollerBox.top - 1 || restingBottom > scrollerBox.bottom + 1
+    // `hasInput` gates EVERY branch. An empty panel is never rescued: it must be free to scroll out of view with the
+    // passage it belongs to, which is the whole point of living inside the scroll container. Only once there is text to
+    // protect does leaving the screen become a problem worth moving for.
+    //
+    // The last branch originally carried that condition and lost it while the hysteresis was added, which made an EMPTY
+    // panel dock to the header and the composer as soon as it was scrolled past either one.
+    const needsRescue = hasInput === false
+      ? false
+      : frozen
+        ? wasDocked
+        : wasDocked
+          ? clearlyOut && comfortablyVisible === false
+          : resting.top < scrollerBox.top - 1 || restingBottom > scrollerBox.bottom + 1
     previousBlockRef.current = blockBox === undefined || blockBox === null
       ? null : Math.round(blockBox.top)
     previousScrollTopRef.current = scroller === null || scroller === undefined ? 0 : scroller.scrollTop
