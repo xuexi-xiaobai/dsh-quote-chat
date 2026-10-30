@@ -39,11 +39,44 @@
  */
 import { readFile, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
+import { readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build as esbuild } from 'esbuild'
 
 const here = dirname(fileURLToPath(import.meta.url))
+
+/**
+ * Fail with a diagnosis when the installed esbuild binary belongs to another platform.
+ *
+ * `node_modules/` is not committed, but it is also never pruned: a checkout copied between a
+ * Windows machine and a Mac keeps the ORIGINAL platform's binary under `@esbuild/`, and the first
+ * thing the reader sees is a 40-line esbuild stack trace about "you installed esbuild for another
+ * platform". The situation is ordinary and the remedy is one command, so say which one.
+ *
+ * @param root - the package directory holding `node_modules`.
+ * @returns a remedy sentence, or null when the installed binaries match this platform.
+ */
+function platformMismatch(root) {
+  const arch = `${process.platform}-${process.arch}`
+  let present
+  try {
+    present = readdirSync(join(root, 'node_modules', '@esbuild'))
+  } catch {
+    // No install at all: esbuild's own "cannot find module" is the accurate message.
+    return null
+  }
+  if (present.length === 0 || present.includes(arch)) return null
+  return `build: esbuild binaries are for ${present.join(', ')}, but this machine is ${arch}.\n`
+    + `  node_modules is not committed and is not pruned, so a checkout moved between machines keeps the old binary.\n`
+    + `  Fix: run \`npm install\` in ${root} (or \`npm ci\` for a clean tree), then re-run this command.`
+}
+
+const mismatch = platformMismatch(here)
+if (mismatch !== null) {
+  console.error(mismatch)
+  process.exit(1)
+}
 const ENTRY = join(here, 'src', 'index.js')
 const OUTPUT = join(here, 'client.js')
 
@@ -82,6 +115,18 @@ async function buildBundle() {
     format: 'cjs',
     platform: 'browser',
     target: ['chrome110'],
+    /**
+     * Pin the paths esbuild prints into the artifact.
+     *
+     * esbuild labels each module with its path RELATIVE TO THE INVOCATION DIRECTORY, so the same
+     * sources built from the plugin directory and from the repository root differ: `// src/index.js`
+     * against `// dsh-quote-chat/src/index.js`. Every one of those comments is inside the bundle, so
+     * the artifact's hash changed with the caller's working directory — `--check` passed in one
+     * shell and failed in another, and a CI checkout was compared against whatever directory its job
+     * happened to run from. Pinning `absWorkingDir` to the package makes the output depend only on
+     * the sources, which is what the hash is supposed to identify.
+     */
+    absWorkingDir: here,
     // No runtime dependencies: React and ReactDOM must come from the Host.
     external: EXTERNALS,
     // Readable output; this file is debugged by hand in a browser.
