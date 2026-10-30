@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Browser acceptance artifacts: screenshots, MCP caches, recorded frames.
+# `recordings/` is 442MB of captured video frames and must never enter history.
+recordings/
+.playwright-mcp/
+acceptance/
+qc-*.png
+window-check.png
+
+# Scratch probes: throwaway scripts written while chasing one bug. The suites
+# that are meant to keep running live in `tools/accept-*.mjs` and are tracked.
+tools/probe-*.mjs
+probe-*.mjs
+
+# Editor and OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local environment overrides
+.env
+.env.local
+
+# Logs
+*.log
+
+# Python bytecode from helper scripts
+__pycache__/
+*.pyc
