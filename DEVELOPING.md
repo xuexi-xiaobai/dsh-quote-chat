@@ -21,6 +21,41 @@
 Because both are junctions, **building IS deploying**: `node build.mjs` writes `client.js`
 and the profiles see it immediately. There is no copy step.
 
+Both are installed with the platform's own tooling rather than by hand:
+
+```sh
+# the profile this Harness is running in (the agent's plugin_manager does the same thing)
+dsh plugin --profile web add "<absolute path to dsh-quote-chat>"
+```
+
+`dsh` refuses `--profile desktop` from the command line while Desktop is running; install into
+that profile through the app's plugin manager, or quit the app first.
+
+## Building on macOS
+
+The build is a local esbuild dependency, and `node_modules/` is neither committed nor pruned. A
+checkout that travelled from a Windows machine therefore still holds `@esbuild/win32-x64`, and
+`node build.mjs` dies inside esbuild's 40-line "you installed esbuild for another platform"
+trace. `build.mjs` now detects that case before calling esbuild and prints the one command that
+fixes it:
+
+```sh
+cd dsh-quote-chat && npm install     # or npm ci for a clean tree
+```
+
+Two properties of the build are worth knowing, because both were once mistaken for flakiness:
+
+- **The artifact is reproducible.** A fresh `npm ci` in an empty directory, given the same
+  sources, produces byte-identical `client.js` (`sha256:5848438bdcb1ec08` at the time of
+  writing). If a rebuild changes bytes without a source change, something in the environment
+  changed, not the code.
+- **The working directory used to matter.** esbuild writes each module's path *relative to the
+  invocation directory* into a comment, so building from the repo root produced
+  `// dsh-quote-chat/src/index.js` where the plugin directory produced `// src/index.js` — a
+  different artifact and a different hash, which is why `--check` passed in one shell and failed
+  in another. `absWorkingDir` now pins it, so the command is cwd-independent. Run it from
+  anywhere.
+
 ## Update loop
 
 ```sh
@@ -59,9 +94,13 @@ Two details this script encodes, both discovered the hard way:
 - **Content containment, not byte equality.** The Host appends a
   `//# sourceMappingURL=…` trailer to every composed bundle, so the response is always the
   artifact plus a trailer.
-- **PowerShell for HTTP, not Node `fetch`.** The trust fence discriminates on request
-  shape: Node's `fetch` gets 401 even with the right token, while a plain WinHTTP request
-  is accepted. The script shells out to `powershell.exe` and only compares bytes itself.
+- **PowerShell for HTTP, not Node `fetch`.** *(Superseded — the script now uses plain Node
+  `fetch` on every platform.)* The observation behind this note was real: a bare
+  `fetch(tokenisedUrl)` does return 401. The conclusion was wrong. The token is not a header; it
+  is spent once, answering `303` with a `Set-Cookie`, and only that cookie opens the index. A
+  request that skips the exchange is anonymous, which the fence correctly rejects. `verify-web-build.mjs`
+  now performs the exchange itself — `redirect: 'manual'`, keep the cookie, replay it — so it needs
+  no shell, no PowerShell and no platform-specific HTTP client.
 
 ## Test data
 
@@ -118,6 +157,33 @@ when the page is already showing the same URL.
 
 Every probe carries a hard timeout (`QC_PROBE_TIMEOUT_MS`, default 180s) that forces exit with a diagnostic, because a
 resource that is opened and never released keeps Node alive and looks exactly like a slow test.
+
+### Where the browser and its dependencies come from
+
+`tools/platform.mjs` resolves the four paths the browser suite needs, so the suite is not tied to the machine it was
+written on. Each is `QC_*` override first, then that platform's default:
+
+| What | Variable | Default |
+|---|---|---|
+| Playwright module | `QC_PLAYWRIGHT` | the `playwright` package (`npm install --save-dev playwright`) |
+| Browser profile | `QC_PROFILE` | `~/.qc-playwright-profile` on macOS/Linux, the Windows path on Windows |
+| Chrome executable | `QC_CHROME` | Google Chrome, Chromium or Edge in `/Applications`, then a Playwright browser cache |
+| ffmpeg | `QC_FFMPEG` | `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin` |
+
+Two consequences worth knowing:
+
+- **Importing `harness.mjs` no longer needs Playwright or ffmpeg.** Both are resolved at use, so the source-shape
+  suites (which read `tools/` as text) and a probe that never records video both work on a bare machine. A missing
+  Playwright or Chrome now produces a one-line instruction instead of a `MODULE_NOT_FOUND` stack, and a failure
+  during launch cancels the hang guard so the process exits immediately instead of sitting for the full timeout.
+- **Screen height changes what the geometry assertions mean.** A maximised 1280×800 laptop panel leaves a 632px
+  readable band, and several placement checks ("the panel clears the whole block", "the header covers it") cannot be
+  set up in that space — they fail as *could not set the test up*, which reads like a product defect. Run the
+  geometry suites with a taller virtual viewport:
+
+  ```sh
+  QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
+  ```
 
 **Three rules that are not negotiable:**
 
