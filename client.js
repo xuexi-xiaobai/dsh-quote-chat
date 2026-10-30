@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:15349cb5b99c1935
+ * Artifact: sha256:5848438bdcb1ec08
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -1968,49 +1968,61 @@ function __dshQuoteChatFactory(hostRequire) {
 
   /* ── The undo bar ────────────────────────────────────────────────────────────
 
-     Sits one notch above the notice and uses the same anchoring, so a removal and a diagnostic never overlap.
+     WHERE IT SITS.
 
-     It is styled as an ACTION rather than a warning: neutral surface, accent on the button. The removal has already
-     happened visually, so nothing here should read as an alert — this is an offer, not a problem.
+     Bottom-centre was tried first and failed: the hover preview card opens ABOVE the chip, so the bar landed inside the
+     card's rectangle (measured 315..695 x 450..546 against the bar's 560..720 x 495..533) and clicks aimed at the bar hit
+     the card. Raising the z-index cannot help — the card is a portal with its own stacking context, so the two values are
+     never compared. Top-centre was then tried and read as application chrome, sitting in the header strip next to the
+     view title.
 
-     Deliberately not auto-dismissed by CSS: the bar stays until the state that backs it is invalidated, which is a
-     decision the component makes, not the stylesheet.
+     It belongs WITH THE COMPOSER, which is what it edits, but clear of the preview card: pinned just below the top of the
+     composer's area and above the notice slot. Never overlapping the card, always in the same place, and near the eye
+     after pressing ×.
 
-     Anchored ABOVE the notice's slot (bottom 132 vs 96) so that the two can be on screen at once. They can: an undo bar
-     is already showing when a later action sets a notice. */
-  /* Layering, and one collision worth naming.
+     THE WHOLE BAR IS THE BUTTON. A bar whose only live region is a small button inside it invites a missed click, and that
+     was reported: pressing the middle did nothing. Every pixel here is the control.
 
-     The undo bar and the hover preview card can be on screen together: removing a chip leaves the pointer where the × was,
-     and that chip's preview card is still mounted while it animates out. Measured, the card occupied 315..695 x 450..546
-     and the bar landed at 560..720 x 495..533 — directly on top of it, so clicks aimed at the undo button hit the card.
+     The meter is a countdown, not decoration: this bar has a real five-second deadline, and a draining hairline says so
+     without a number ticking in the reader's face.
 
-     Raising this bar's z-index does NOT fix it: the card lives in a stacking context of its own (it is a portal with its
-     own positioned ancestor), so the two z-index values are never compared. What fixes it is not overlapping at all.
-
-     The bar is therefore pinned near the TOP of the viewport, clear of both the card (which opens above the chip) and the
-     composer. It is also where a "something was removed" message belongs: out of the way of the text being edited, and in
-     the same place every time regardless of where the removed chip happened to sit. */
-  .qc-undo{position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:74;
-    display:flex;align-items:center;gap:10px;
-    padding:6px 8px 6px 12px;border-radius:9px;
-    border:1px solid var(--dsw-alias-border-l2, rgba(0,0,0,.1));
-    background:var(--dsw-alias-bg-overlay, #fff);
-    box-shadow:0 6px 18px rgba(15,17,21,.12),0 1px 3px rgba(15,17,21,.06);
-    font-size:12px;color:var(--dsw-alias-label-secondary, #61666b);
-    animation:qc-undo-in .18s cubic-bezier(.2,.8,.3,1);
-    max-width:min(32em,90vw)}
+     The offset is a fallback only. The component measures the composer and passes --qc-composer-offset, so the bar sits
+     just above the composer at any window size; the constant here keeps it sane if that measurement has not run yet. */
+  .qc-undo{position:fixed;left:50%;bottom:var(--qc-composer-offset, 148px);
+    transform:translateX(-50%);z-index:76;
+    display:flex;align-items:center;gap:11px;
+    appearance:none;margin:0;padding:9px 9px 9px 13px;
+    border-radius:11px;cursor:pointer;overflow:hidden;
+    border:1px solid color-mix(in srgb,var(--qc-accent,#4176e6) 26%,transparent);
+    background:color-mix(in srgb,var(--qc-accent,#4176e6) 7%,var(--dsw-alias-bg-overlay,#fff));
+    box-shadow:0 10px 26px rgba(15,17,21,.15),0 2px 6px rgba(15,17,21,.07);
+    font:inherit;font-size:12.5px;text-align:left;line-height:1.25;
+    color:var(--dsw-alias-label-secondary,#61666b);
+    max-width:min(30em,88vw);
+    animation:qc-undo-in .2s cubic-bezier(.2,.8,.3,1);
+    transition:background .12s ease,border-color .12s ease,box-shadow .12s ease}
   @keyframes qc-undo-in{
-    from{opacity:0;transform:translateX(-50%) translateY(-6px)}
-    to{opacity:1;transform:translateX(-50%) translateY(0)}}
+    from{opacity:0;transform:translateX(-50%) translateY(7px) scale(.985)}
+    to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}
+  .qc-undo:hover{
+    background:color-mix(in srgb,var(--qc-accent,#4176e6) 12%,var(--dsw-alias-bg-overlay,#fff));
+    border-color:color-mix(in srgb,var(--qc-accent,#4176e6) 40%,transparent);
+    box-shadow:0 12px 30px rgba(15,17,21,.18),0 2px 7px rgba(15,17,21,.08)}
+  .qc-undo:active{transform:translateX(-50%) scale(.988)}
+  .qc-undo:focus-visible{outline:2px solid color-mix(in srgb,var(--qc-accent,#4176e6) 55%,transparent);
+    outline-offset:2px}
   .qc-undo-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .qc-undo-action{flex:none;appearance:none;margin:0;padding:4px 10px;
-    border:0;border-radius:6px;cursor:pointer;font:inherit;font-size:12px;font-weight:500;
-    background:color-mix(in srgb,var(--qc-accent,#4176e6) 10%,transparent);
-    color:color-mix(in srgb,var(--qc-accent,#4176e6) 78%,var(--qc-ink,#0f1115));
+  .qc-undo-action{flex:none;padding:4px 11px;border-radius:7px;font-weight:600;
+    background:color-mix(in srgb,var(--qc-accent,#4176e6) 14%,transparent);
+    color:color-mix(in srgb,var(--qc-accent,#4176e6) 84%,var(--qc-ink,#0f1115));
     transition:background .12s ease}
-  .qc-undo-action:hover{background:color-mix(in srgb,var(--qc-accent,#4176e6) 18%,transparent)}
-  .qc-undo-action:focus-visible{outline:2px solid color-mix(in srgb,var(--qc-accent,#4176e6) 50%,transparent);
-    outline-offset:1px}
+  .qc-undo:hover .qc-undo-action{background:color-mix(in srgb,var(--qc-accent,#4176e6) 22%,transparent)}
+  /* The countdown hairline, pinned to the bottom edge of the bar. Width is driven by --qc-undo-left, which the component
+     keeps in whole seconds; the transition is longer than the tick interval so the bar slides rather than steps. */
+  .qc-undo-meter{position:absolute;left:0;bottom:0;height:2px;border-radius:0 1px 1px 0;
+    width:calc(var(--qc-undo-left, 5) / 5 * 100%);
+    background:color-mix(in srgb,var(--qc-accent,#4176e6) 62%,transparent);
+    transition:width .3s linear;pointer-events:none}
 
   .qc-side{display:flex;flex-direction:column;height:100%;min-height:0;font-size:13px;
     color:var(--dsw-alias-label-primary);box-sizing:border-box}
@@ -2742,7 +2754,9 @@ function __dshQuoteChatFactory(hostRequire) {
   var h3 = import_react4.default.createElement;
   var HOVER_LINGER_MS = 260;
   var CARD_EXIT_MS = 130;
+  var SUPPRESS_MS = 400;
   var VIEWPORT_MARGIN2 = 8;
+  var snap = (value) => Math.round(value * 100) / 100;
   function createCards({ composerContainer: composerContainer2 }) {
     function ChipCards2(props) {
       const { annotations, occurrences, labels, onJump, onRemove, setDraft, draft } = props;
@@ -2751,6 +2765,7 @@ function __dshQuoteChatFactory(hostRequire) {
       const [hover, setHover] = import_react4.default.useState(null);
       const hoverRef = import_react4.default.useRef(null);
       hoverRef.current = hover;
+      const suppressUntil = import_react4.default.useRef(0);
       import_react4.default.useEffect(() => {
         if (typeof document === "undefined") return void 0;
         let frame = 0;
@@ -2791,8 +2806,14 @@ function __dshQuoteChatFactory(hostRequire) {
             chip.dataset.qcRef = annotation.id;
             marked.add(chip);
           }
+          const alive = new Set(annotations.map((item) => item.id));
           for (const chip of [...marked]) {
-            if (!live.has(chip)) unmark(chip);
+            if (live.has(chip)) continue;
+            const ref = chip.dataset.qcRef;
+            if (ref !== void 0 && alive.has(ref)) {
+              continue;
+            }
+            unmark(chip);
           }
         };
         const schedule = () => {
@@ -2845,6 +2866,7 @@ function __dshQuoteChatFactory(hostRequire) {
           return pairs().find((pair) => pair.chip === chip)?.annotation;
         };
         const onPointer = (event) => {
+          if (Date.now() < suppressUntil.current) return;
           const annotation = hoverTargetOf(event);
           if (annotation === void 0 || annotation === null) {
             if (closeTimer === 0) {
@@ -2863,17 +2885,16 @@ function __dshQuoteChatFactory(hostRequire) {
             clearTimeout(closeTimer);
             closeTimer = 0;
           }
-          const snap2 = (value) => Math.round(value * 100) / 100;
           const chip = pairs().find((pair) => pair.annotation.id === annotation.id)?.chip;
           if (chip === void 0) return;
           const rect = chip.getBoundingClientRect();
           setHover((current) => {
-            if (current !== null && current.annotation.id === annotation.id && current.anchor.left === snap2(rect.left) && current.anchor.top === snap2(rect.top) && current.anchor.width === snap2(rect.width) && current.anchor.height === snap2(rect.height)) return current;
+            if (current !== null && current.annotation.id === annotation.id && current.anchor.left === snap(rect.left) && current.anchor.top === snap(rect.top) && current.anchor.width === snap(rect.width) && current.anchor.height === snap(rect.height)) return current;
             return { annotation, anchor: {
-              left: snap2(rect.left),
-              top: snap2(rect.top),
-              width: snap2(rect.width),
-              height: snap2(rect.height)
+              left: snap(rect.left),
+              top: snap(rect.top),
+              width: snap(rect.width),
+              height: snap(rect.height)
             } };
           });
         };
@@ -2932,7 +2953,6 @@ function __dshQuoteChatFactory(hostRequire) {
           document.removeEventListener("scroll", reposition, true);
           window.removeEventListener("resize", reposition);
           document.removeEventListener("click", onClick, true);
-          for (const chip of [...marked]) unmark(chip);
         };
       }, [annotations, occurrences, labels]);
       if (hover === null) return null;
@@ -2956,6 +2976,7 @@ function __dshQuoteChatFactory(hostRequire) {
               onClick: (event) => {
                 event.preventDefault();
                 event.stopPropagation();
+                suppressUntil.current = Date.now() + SUPPRESS_MS;
                 setHover(null);
                 onRemove(hover.annotation);
               }
@@ -3752,6 +3773,7 @@ function __dshQuoteChatFactory(hostRequire) {
   var import_react8 = __toESM(require("react"), 1);
   var import_react_dom4 = require("react-dom");
   var h6 = import_react8.default.createElement;
+  var UNDO_MS = 5e3;
   function annotationDock(deps) {
     const {
       ctx,
@@ -3802,8 +3824,10 @@ function __dshQuoteChatFactory(hostRequire) {
       const annotations2 = useAnnotations2(sessionId);
       const [overlay, setOverlay] = import_react8.default.useState(null);
       const [notice, setNotice] = import_react8.default.useState("");
-      const undoRef = import_react8.default.useRef([]);
-      const [undoDepth, setUndoDepth] = import_react8.default.useState(0);
+      const undoRef = import_react8.default.useRef(null);
+      const [undoPending, setUndoPending] = import_react8.default.useState(false);
+      const [undoLeft, setUndoLeft] = import_react8.default.useState(0);
+      const [undoToken, setUndoToken] = import_react8.default.useState(0);
       const overlayRef = import_react8.default.useRef(null);
       overlayRef.current = overlay;
       const labels = import_react8.default.useMemo(() => ({
@@ -3825,7 +3849,6 @@ function __dshQuoteChatFactory(hostRequire) {
         missing: t("card.missing"),
         limit: t("card.limit"),
         removed: t("card.removed"),
-        removedMany: t("card.removedMany"),
         undo: t("card.undo"),
         jump: t("marker.jump"),
         tableAdd: t("table.add"),
@@ -4027,43 +4050,66 @@ function __dshQuoteChatFactory(hostRequire) {
       }, [annotations2, onJump]);
       const onRemove = import_react8.default.useCallback((annotation) => {
         if (sessionId === void 0) return;
-        const removed = chipBridge2.release(
+        chipBridge2.release(
           inputActions,
-          () => ({ draft, occurrences: inputStateRef.current?.occurrences }),
+          () => ({
+            draft: inputStateRef.current?.draft ?? "",
+            occurrences: inputStateRef.current?.occurrences
+          }),
           annotation.id
         );
         removeAnnotation(sessionId, annotation.id);
-        undoRef.current.push({ annotation, removed });
-        setUndoDepth(undoRef.current.length);
-      }, [draft, inputActions, sessionId]);
+        undoRef.current = annotation;
+        setUndoPending(true);
+        setUndoLeft(Math.ceil(UNDO_MS / 1e3));
+        setUndoToken((value) => value + 1);
+      }, [inputActions, sessionId]);
+      import_react8.default.useEffect(() => {
+        if (!undoPending) return void 0;
+        const deadline = Date.now() + UNDO_MS;
+        const tick = () => {
+          const remaining = deadline - Date.now();
+          if (remaining <= 0) {
+            undoRef.current = null;
+            setUndoPending(false);
+            setUndoLeft(0);
+            return;
+          }
+          setUndoLeft(Math.ceil(remaining / 1e3));
+        };
+        setUndoLeft(Math.ceil(UNDO_MS / 1e3));
+        const timer = setInterval(tick, 250);
+        return () => clearInterval(timer);
+      }, [undoPending, undoToken]);
       const onUndoRemove = import_react8.default.useCallback(() => {
         if (sessionId === void 0) return;
-        const entry = undoRef.current.pop();
-        setUndoDepth(undoRef.current.length);
-        if (entry === void 0) return;
+        const entry = undoRef.current;
+        undoRef.current = null;
+        setUndoPending(false);
+        setUndoLeft(0);
+        if (entry === null) return;
         const restored = addAnnotation(sessionId, {
-          kind: entry.annotation.kind,
-          text: entry.annotation.text,
-          previewText: entry.annotation.previewText,
-          previewHtml: entry.annotation.previewHtml,
-          comment: entry.annotation.comment,
-          anchor: entry.annotation.anchor
+          kind: entry.kind,
+          text: entry.text,
+          previewText: entry.previewText,
+          previewHtml: entry.previewHtml,
+          comment: entry.comment,
+          anchor: entry.anchor
         });
         if (restored === null) {
           setNotice(labels.limit.replace("{max}", String(MAX_ANNOTATIONS2)));
           return;
         }
-        if (!writeChip(restored)) setNotice(labels.unavailable);
-      }, [labels, sessionId]);
-      import_react8.default.useEffect(() => {
-        if (undoRef.current.length === 0) return void 0;
-        const invalidate = () => {
-          undoRef.current.length = 0;
-          setUndoDepth(0);
-        };
-        invalidate();
-        return void 0;
-      }, [sessionId]);
+        if (!chipBridge2.place(
+          inputActions,
+          () => ({
+            draft: inputStateRef.current?.draft ?? "",
+            occurrences: inputStateRef.current?.occurrences
+          }),
+          restored,
+          labels
+        )) setNotice(labels.unavailable);
+      }, [inputActions, labels, sessionId]);
       const onUpdate = import_react8.default.useCallback((annotation, comment) => {
         if (sessionId === void 0) return;
         chipRegistry2.updateComment(annotation.id, comment);
@@ -4088,6 +4134,24 @@ function __dshQuoteChatFactory(hostRequire) {
       }, [ctx, labels, t]);
       const canAnnotate = typeof inputActions?.setDraft === "function" || typeof inputActions?.captureInsertion === "function" && typeof inputActions?.insertText === "function";
       const canAsk = typeof ctx.get("sidebarRight")?.openTab === "function";
+      import_react8.default.useEffect(() => {
+        if (typeof document === "undefined") return void 0;
+        const sync = () => {
+          const editor = [...document.querySelectorAll('[contenteditable="true"]')].filter((element) => element.closest("[data-sidebar-right-tab]") === null).find((element) => element.getBoundingClientRect().height > 0);
+          const box = editor?.getBoundingClientRect?.();
+          if (box === void 0 || box === null || box.height === 0) return;
+          const offset = Math.max(0, Math.round(window.innerHeight - box.top + 8));
+          document.documentElement.style.setProperty("--qc-composer-offset", `${offset}px`);
+        };
+        sync();
+        const timer = setInterval(sync, 500);
+        window.addEventListener("resize", sync);
+        return () => {
+          clearInterval(timer);
+          window.removeEventListener("resize", sync);
+          document.documentElement.style.removeProperty("--qc-composer-offset");
+        };
+      }, []);
       return h6(
         import_react8.default.Fragment,
         null,
@@ -4128,21 +4192,27 @@ function __dshQuoteChatFactory(hostRequire) {
         }),
         h6(MarkerLayer2, { annotations: annotations2, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
         h6(TableAddButton2, { label: labels.tableAdd, onAdd: annotateTable }),
-        // The undo bar sits above the notice: removing something is a normal action and its offer should not compete with
-        // a diagnostic message, which is always about something going wrong.
-        undoDepth > 0 ? h6(
-          "div",
-          { className: "qc-undo", role: "status" },
-          h6(
-            "span",
-            { className: "qc-undo-text" },
-            undoDepth === 1 ? labels.removed : labels.removedMany.replace("{n}", String(undoDepth))
-          ),
-          h6("button", {
+        // The whole bar is the control.
+        //
+        // It used to be a container whose only live region was a small button inside it, and pressing the middle of the
+        // bar did nothing — reported as "the undo button is hard to hit". A single button makes every pixel work, and the
+        // label reads as the action it performs rather than as a caption.
+        undoPending ? h6(
+          "button",
+          {
             type: "button",
-            className: "qc-undo-action",
-            onClick: onUndoRemove
-          }, labels.undo)
+            className: "qc-undo",
+            onClick: onUndoRemove,
+            title: labels.undo
+          },
+          h6("span", { className: "qc-undo-text" }, labels.removed),
+          h6("span", { className: "qc-undo-action", "aria-hidden": "true" }, labels.undo),
+          // A thin bar that drains over the life of the window, so the deadline is visible rather than surprising.
+          h6("span", {
+            className: "qc-undo-meter",
+            "aria-hidden": "true",
+            style: { "--qc-undo-left": String(undoLeft) }
+          })
         ) : null,
         typeof notice === "string" && notice !== "" ? h6("div", { className: "qc-notice" }, notice) : null
       );

@@ -57,8 +57,8 @@ function makePort({ draft = '', occurrences = [], throws = null } = {}) {
   const okPlaced = bridge.place(port, read, annotation(), LABELS)
   check('placing a chip reports success', okPlaced === true, String(okPlaced))
   check('placing writes the draft exactly once', calls.length === 1, String(calls.length))
-  check('the draft text gains one break and the placeholder',
-    calls[0].text === `hello\n${CHIP_PLACEHOLDER}`, JSON.stringify(calls[0].text))
+  check('the draft text gains the placeholder with no separator',
+    calls[0].text === `hello${CHIP_PLACEHOLDER}`, JSON.stringify(calls[0].text))
   check('the reference offset locates the placeholder',
     calls[0].references[0].offset === calls[0].text.indexOf(CHIP_PLACEHOLDER),
     `${calls[0].references[0].offset} vs ${calls[0].text.indexOf(CHIP_PLACEHOLDER)}`)
@@ -126,7 +126,7 @@ function makePort({ draft = '', occurrences = [], throws = null } = {}) {
   }), 'qc-1')
   check('releasing a present chip reports success', released === true, String(released))
   check('releasing writes the draft once', calls.length === 1, String(calls.length))
-  check('the chip and its line break are gone', calls[0].text === 'tail',
+  check('the chip is gone and the newline it sat after stays', calls[0].text === '\ntail',
     JSON.stringify(calls[0].text))
   check('releasing does not delete the payload',
     registry.has('qc-1') === true,
@@ -209,7 +209,7 @@ function makePort({ draft = '', occurrences = [], throws = null } = {}) {
   const written = calls[0]
   const ref = written.references[0].ref
   check('the chain: the draft holds one placeholder',
-    written.text === `请问：\n${CHIP_PLACEHOLDER}`, JSON.stringify(written.text))
+    written.text === `请问：${CHIP_PLACEHOLDER}`, JSON.stringify(written.text))
 
   const initial = serializeChipForModel(registry.get(ref))
   check('the chain: serialization before the edit',
@@ -221,7 +221,7 @@ function makePort({ draft = '', occurrences = [], throws = null } = {}) {
     edited === '\n[注释 1]\n补充说明\n被引用的段落\n', JSON.stringify(edited))
 
   check('the chain: the draft text is unchanged by the edit',
-    written.text === `请问：\n${CHIP_PLACEHOLDER}`, 'the comment leaked into the draft')
+    written.text === `请问：${CHIP_PLACEHOLDER}`, 'the comment leaked into the draft')
 }
 
 // ── Instance isolation ─────────────────────────────────────────────────────

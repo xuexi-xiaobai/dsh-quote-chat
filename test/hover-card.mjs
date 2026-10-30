@@ -20,7 +20,7 @@ const source = await readFile(join(here, '..', 'src', 'index.js'), 'utf8')
 const cardsSource = await readFile(new URL('../src/ui/cards.js', import.meta.url), 'utf8')
 // The stylesheet is its own module now.
 const stylesheetSource = await readFile(join(here, '..', 'src', 'stylesheet.js'), 'utf8')
-const css = /export const STYLESHEET = `([\s\S]*?)`\n/.exec(stylesheetSource)?.[1] ?? ''
+const css = /export const STYLESHEET = `([\s\S]*?)`\r?\n/.exec(stylesheetSource)?.[1] ?? ''
 
 const cases = []
 const check = (name, ok, detail) => cases.push({ name, ok, detail })

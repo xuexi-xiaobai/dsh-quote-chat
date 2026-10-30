@@ -35,8 +35,21 @@ const HOVER_LINGER_MS = 260
 /** How long the exit animation runs before the card unmounts. */
 const CARD_EXIT_MS = 130
 
+/**
+ * After removing a chip, refuse to show its card for this long.
+ *
+ * The pointer stays where the × was, so without this the next pointer event re-opens a card for a chip that no longer
+ * exists. The card is a portal in its own stacking context, so while mounted it intercepts clicks aimed at anything
+ * beneath it — measured, it completely covered the undo bar and made the button unreachable. Long enough to outlast the
+ * pointer events that follow a click, short enough that the user does not notice a dead zone.
+ */
+const SUPPRESS_MS = 400
+
 /** Never let a card touch the viewport edge. */
 const VIEWPORT_MARGIN = 8
+
+/** Keep subpixel chip geometry stable across hover and reposition handlers. */
+const snap = (value) => Math.round(value * 100) / 100
 
 /**
  * Create the annotation strip bound to one plugin instance.
@@ -71,6 +84,15 @@ export function createCards({ composerContainer }) {
     // The same value, readable from the DOM handlers without re-binding them.
     const hoverRef = React.useRef(null)
     hoverRef.current = hover
+    /**
+     * While `Date.now()` is below this, no card is shown. See SUPPRESS_MS.
+     *
+     * Declared HERE, not inside the effect below. It spent one revision inside the effect callback, which is a hook
+     * call outside the component body — React rejects that with "Invalid hook call" (#321) and the whole dock slot
+     * crashes. The symptom was not an obvious error: the composer still worked, but every selection-driven surface
+     * silently stopped appearing, so annotating a passage became impossible.
+     */
+    const suppressUntil = React.useRef(0)
 
     React.useEffect(() => {
   if (typeof document === 'undefined') return undefined
@@ -141,8 +163,25 @@ export function createCards({ composerContainer }) {
       chip.dataset.qcRef = annotation.id
       marked.add(chip)
     }
+    // Only strip a chip that is provably no longer ours.
+    //
+    // This used to unmark every chip not in `live`, which is right when a chip is deleted but wrong when `pairs()` comes
+    // back EMPTY for a moment. That happens because `pairs()` zips the DOM chips against `occurrences`, and the host
+    // re-renders the composer during a jump with `occurrences` not yet settled: the zip produced nothing, `live` stayed
+    // empty, and every chip lost its `data-qc-*` attributes. Measured after clicking a chip: `data-qc-num` went from "1"
+    // to null on the very same element, the chip's label and icon disappeared with it, and because `pairs()` then
+    // matched nothing, selecting a passage stopped opening the toolbar at all.
+    //
+    // A chip is only stripped when the store no longer contains its reference — an empty result is not evidence.
+    const alive = new Set(annotations.map((item) => item.id))
     for (const chip of [...marked]) {
-      if (!live.has(chip)) unmark(chip)
+      if (live.has(chip)) continue
+      const ref = chip.dataset.qcRef
+      if (ref !== undefined && alive.has(ref)) {
+        // The chip still stands for a live annotation; this pass simply could not pair it. Leave it marked.
+        continue
+      }
+      unmark(chip)
     }
   }
 
@@ -235,6 +274,9 @@ export function createCards({ composerContainer }) {
   // `mouseover` alone also covers leaving the ×, which a chip-scoped `mouseout`
   // could never see.
   const onPointer = (event) => {
+    // A card that is still open swallows clicks aimed at anything it covers, because it is a portal in its own stacking
+    // context. Nothing may be open during the window after a removal — see SUPPRESS_MS.
+    if (Date.now() < suppressUntil.current) return
     const annotation = hoverTargetOf(event)
     // `undefined` = pointer is elsewhere; `null` = inside a piece with nothing
     // open. Both mean there is nothing to show.
@@ -269,7 +311,6 @@ export function createCards({ composerContainer }) {
     // half a pixel of error is enough to leave a sliver of the icon showing past the red disc — which is what was
     // reported. Two decimals is precise enough for placement and still stable enough that a chip sitting still does not
     // re-render on every mouse move.
-    const snap = (value) => Math.round(value * 100) / 100
     const chip = pairs().find((pair) => pair.annotation.id === annotation.id)?.chip
     if (chip === undefined) return
     const rect = chip.getBoundingClientRect()
@@ -357,7 +398,24 @@ export function createCards({ composerContainer }) {
     document.removeEventListener('scroll', reposition, true)
     window.removeEventListener('resize', reposition)
     document.removeEventListener('click', onClick, true)
-    for (const chip of [...marked]) unmark(chip)
+    // The chips are deliberately NOT unmarked here.
+    //
+    // This used to run `for (const chip of [...marked]) unmark(chip)`, which strips `data-qc-num`, `-kind`, `-label` and
+    // `-ref` from every chip. That is correct when the component really is going away, but this effect re-runs whenever
+    // `annotations`, `occurrences` or `labels` change identity — and the host hands back a fresh `occurrences` array on
+    // its own re-renders. Clicking a chip to jump scrolls the transcript, the host re-renders, the cleanup ran, and
+    // every chip lost its attributes on the SAME DOM node (verified with a MutationObserver: four attribute deletions,
+    // no node replacement).
+    //
+    // The damage was not cosmetic. `pairs()` zips DOM chips against `occurrences` by reference, and a chip without
+    // `data-qc-ref` matches nothing, so the chip list became permanently empty: no label, no icon, and selecting a
+    // passage stopped opening the toolbar entirely, because the selection path also depends on being able to resolve a
+    // chip. That is the reported "after jumping, the chip breaks and no more annotations can be added".
+    //
+    // Attributes are the only thing this component writes to the host's DOM, and `apply()` rewrites them for every chip
+    // it can pair on the next pass. Leaving them in place through a re-run is therefore harmless when the effect comes
+    // back, and when the component genuinely unmounts the host owns the chip's whole subtree anyway, so the attributes
+    // go with it. `unmark` still exists for the real case: a chip whose annotation is gone (see `apply`).
   }
     }, [annotations, occurrences, labels])
 
@@ -390,6 +448,13 @@ export function createCards({ composerContainer }) {
       onClick: (event) => {
         event.preventDefault()
         event.stopPropagation()
+        // Drop the card AND stop it coming back.
+        //
+        // `setHover(null)` alone is not enough: the pointer is still over the chip's position, so the very next pointer
+        // event re-opens the card. That mattered because the card is a portal in its own stacking context, and while it
+        // is mounted it swallows clicks aimed at anything beneath it — measured, the undo bar sat underneath it and
+        // could not be pressed at all.
+        suppressUntil.current = Date.now() + SUPPRESS_MS
         setHover(null)
         onRemove(hover.annotation)
       },

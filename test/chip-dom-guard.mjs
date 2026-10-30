@@ -67,7 +67,12 @@ check('no positioned flash overlay remains',
 // The stylesheet is a template literal. A backtick inside it ends the string
 // early and the whole bundle fails to parse — this bit twice, so it is a test now.
 // The stylesheet lives in its own module now, so this reads it there.
-const cssMatch = /export const STYLESHEET = `([\s\S]*?)`\n/.exec(highlightSource === null ? '' : stylesheetSource)
+//
+// The trailing `\r?` is not cosmetic: this repository is checked out with CRLF on Windows, so the closing backtick is
+// followed by `\r\n`, not `\n`. Anchoring on a bare newline made the whole extraction fail there and every following
+// assertion was skipped with a message about a missing template literal — a false alarm about the source, caused by the
+// line ending.
+const cssMatch = /export const STYLESHEET = `([\s\S]*?)`\r?\n/.exec(highlightSource === null ? '' : stylesheetSource)
 check('CSS block is extractable', cssMatch !== null, 'could not find the CSS template literal')
 if (cssMatch !== null) {
   const css = cssMatch[1]

@@ -1,4 +1,4 @@
-﻿import { readSourceBundle } from './source.mjs'
+import { readSourceBundle } from './source.mjs'
 /**
  * Guard the gutter marker and the jump highlight.
  *
@@ -22,7 +22,7 @@ const dockSource = await readFile(new URL('../src/ui/dock.js', import.meta.url),
 // The stylesheet is its own module now.
 const stylesheetSource = await readFile(join(here, '..', 'src', 'stylesheet.js'), 'utf8')
 const highlightSource = await readFile(join(here, '..', 'src', 'highlight.js'), 'utf8')
-const css = /export const STYLESHEET = `([\s\S]*?)`\n/.exec(stylesheetSource)?.[1] ?? ''
+const css = /export const STYLESHEET = `([\s\S]*?)`\r?\n/.exec(stylesheetSource)?.[1] ?? ''
 
 const cases = []
 const check = (name, ok, detail) => cases.push({ name, ok, detail })

@@ -49,6 +49,14 @@ const NON_ANSWER_SELECTOR = 'textarea, input, [contenteditable="true"], [data-sl
 
 /** Elements a card must not replay. */
 const UNSAFE_IN_CARD = 'script, style, iframe, object, embed, link, meta'
+
+/**
+ * How long the undo offer stands after a removal.
+ *
+ * Module scope, not the component body: it is used as an effect dependency and as the deadline for the countdown, and a
+ * value re-created on every render would restart the interval continuously and the bar would never close.
+ */
+const UNDO_MS = 5000
 export function annotationDock(deps) {
   const {
     ctx,
@@ -95,10 +103,24 @@ export function annotationDock(deps) {
     /** `{ kind: 'actions' | 'compose', source }` — one floating surface at a time. */
     const [overlay, setOverlay] = React.useState(null)
     const [notice, setNotice] = React.useState('')
-    /** Removed annotations that can still be put back, newest last. Not on a timer — see `onRemove`. */
-    const undoRef = React.useRef([])
-    /** Mirrors `undoRef.current.length` so the bar renders without reading a ref during render. */
-    const [undoDepth, setUndoDepth] = React.useState(0)
+    /**
+     * The one removed annotation that can still be restored, or null.
+     *
+     * ONE entry, not a stack: the bar offers a single "撤销", so keeping several would mean a button that restores
+     * something other than what its label says. A second removal replaces the offer.
+     */
+    const undoRef = React.useRef(null)
+    /** Mirrors `undoRef.current !== null` so the bar can render without reading a ref during render. */
+    const [undoPending, setUndoPending] = React.useState(false)
+    /** Counts down the seconds left in the undo window; 0 hides the bar. */
+    const [undoLeft, setUndoLeft] = React.useState(0)
+    /**
+     * Bumped by every removal so the countdown effect restarts even when `undoPending` stays true.
+     *
+     * Without it, removing a second chip while the bar is still showing left the new offer running against the first
+     * removal's deadline: the effect's dependency did not change, so it never re-ran.
+     */
+    const [undoToken, setUndoToken] = React.useState(0)
     const overlayRef = React.useRef(null)
     overlayRef.current = overlay
 
@@ -121,7 +143,6 @@ export function annotationDock(deps) {
       missing: t('card.missing'),
       limit: t('card.limit'),
       removed: t('card.removed'),
-      removedMany: t('card.removedMany'),
       undo: t('card.undo'),
       jump: t('marker.jump'),
       tableAdd: t('table.add'),
@@ -443,77 +464,98 @@ export function annotationDock(deps) {
     }, [annotations, onJump])
 
     /**
-     * Removal, with an undo that does not expire on a timer.
+     * Remove an annotation's chip, keeping the annotation for a few seconds so the removal can be undone.
      *
-     * The chip leaves the draft immediately — the visual result is the same whether or not the data is still held — and
-     * the removed annotation is kept in `undoStack` until the user does something that makes "put it back" meaningless
-     * or unsafe: sending a message, switching conversation, or removing something else.
+     * THE DRAFT IS ALWAYS READ THROUGH `inputStateRef`, NEVER FROM THIS CALLBACK'S CLOSURE.
      *
-     * WHY NOT A TIMED WINDOW
+     * `chipBridge.place` / `release` rebuild the whole draft from the string they are handed, so a stale string does not
+     * merely fail to update — it REPLACES the composer. That is what made an earlier undo wipe whatever the user had
+     * typed: `writeChip` was created during an earlier render and closed over that render's `draft`, so the restore
+     * wrote a draft that still contained the old chip and none of the prose typed since. Everything that touches the
+     * draft here reads `inputStateRef.current`, which is refreshed on every render.
      *
-     * A five-second toast is the conventional answer and it is the wrong one here. The × sits in the same slot as the
-     * kind glyph, which is where a pointer lands when the user means to CLICK the chip and jump to the passage. So a
-     * mis-click is not a rare event, and what it destroys is an annotation plus whatever the user typed as its comment.
-     * Losing that because they were reading rather than watching a toast is a bad trade. The undo stays available until
-     * it is genuinely too late, which is a point the code can actually detect.
-     *
-     * The stack holds several entries rather than one, because removing two chips in a row is a normal thing to do
-     * while tidying a draft.
+     * The window is 5 seconds and it is a real deadline, not a cosmetic one: after it the annotation is genuinely
+     * dropped, so the bar never offers something it can no longer do.
      */
     const onRemove = React.useCallback((annotation) => {
       if (sessionId === undefined) return
-      // Removing the annotation removes its chip, and any prose the user typed after that chip stays: only the chip and
-      // its comment line go.
-      const removed = chipBridge.release(
+      // Removing the annotation removes its chip; prose typed after that chip stays.
+      chipBridge.release(
         inputActions,
-        () => ({ draft, occurrences: inputStateRef.current?.occurrences }),
+        () => ({
+          draft: inputStateRef.current?.draft ?? '',
+          occurrences: inputStateRef.current?.occurrences,
+        }),
         annotation.id,
       )
       removeAnnotation(sessionId, annotation.id)
-      // Keep the live record, so the passage, the comment and the anchor all survive. `writeChip` rebuilds the chip from
-      // the stored annotation when the undo runs, so the exact insertion point does not need to be captured here.
-      undoRef.current.push({ annotation, removed })
-      setUndoDepth(undoRef.current.length)
-    }, [draft, inputActions, sessionId])
+      // One entry, replaced by each removal. The live record carries the passage, the comment and the anchor.
+      undoRef.current = annotation
+      setUndoPending(true)
+      setUndoLeft(Math.ceil(UNDO_MS / 1000))
+      // Restart the countdown for EVERY removal, including one that lands while the bar is already showing.
+      //
+      // `undoPending` cannot express that: it goes true -> true on a second removal, and a dependency that does not
+      // change does not re-run the effect, so the new entry inherited the FIRST removal's deadline and could expire in
+      // under five seconds. A counter always changes, so the effect always restarts with a fresh deadline.
+      setUndoToken((value) => value + 1)
+    }, [inputActions, sessionId])
+
+    /**
+     * Count the undo window down and close it.
+     *
+     * Driven by an interval rather than a chain of timeouts so the number on the bar and the closing moment come from
+     * the SAME clock — a timeout chain would drift from the label after a slow frame.
+     */
+    React.useEffect(() => {
+      if (!undoPending) return undefined
+      const deadline = Date.now() + UNDO_MS
+      const tick = () => {
+        const remaining = deadline - Date.now()
+        if (remaining <= 0) {
+          undoRef.current = null
+          setUndoPending(false)
+          setUndoLeft(0)
+          return
+        }
+        setUndoLeft(Math.ceil(remaining / 1000))
+      }
+      setUndoLeft(Math.ceil(UNDO_MS / 1000))
+      const timer = setInterval(tick, 250)
+      return () => clearInterval(timer)
+    }, [undoPending, undoToken])
 
     /** Put the most recently removed annotation back, chip and all. */
     const onUndoRemove = React.useCallback(() => {
       if (sessionId === undefined) return
-      const entry = undoRef.current.pop()
-      setUndoDepth(undoRef.current.length)
-      if (entry === undefined) return
+      const entry = undoRef.current
+      undoRef.current = null
+      setUndoPending(false)
+      setUndoLeft(0)
+      if (entry === null) return
       const restored = addAnnotation(sessionId, {
-        kind: entry.annotation.kind,
-        text: entry.annotation.text,
-        previewText: entry.annotation.previewText,
-        previewHtml: entry.annotation.previewHtml,
-        comment: entry.annotation.comment,
-        anchor: entry.annotation.anchor,
+        kind: entry.kind,
+        text: entry.text,
+        previewText: entry.previewText,
+        previewHtml: entry.previewHtml,
+        comment: entry.comment,
+        anchor: entry.anchor,
       })
       if (restored === null) {
-        // The cap is reached, so the annotation cannot come back. Say so rather than leaving the bar looking broken.
         setNotice(labels.limit.replace('{max}', String(MAX_ANNOTATIONS)))
         return
       }
-      if (!writeChip(restored)) setNotice(labels.unavailable)
-    }, [labels, sessionId])
-
-    /**
-     * The undo offer is only honest while it can still be honoured, so it is cleared at the points where that stops
-     * being true. Sending is the important one: a message that goes out without the annotation must not leave a bar
-     * offering to add it back, because the draft no longer describes what was sent.
-     */
-    React.useEffect(() => {
-      if (undoRef.current.length === 0) return undefined
-      /** Any of these means the draft the undo would edit is no longer the draft on screen. */
-      const invalidate = () => {
-        undoRef.current.length = 0
-        setUndoDepth(0)
-      }
-      // A conversation switch changes which annotations exist at all.
-      invalidate()
-      return undefined
-    }, [sessionId])
+      // Read the CURRENT draft: the user may have typed since the removal.
+      if (!chipBridge.place(
+        inputActions,
+        () => ({
+          draft: inputStateRef.current?.draft ?? '',
+          occurrences: inputStateRef.current?.occurrences,
+        }),
+        restored,
+        labels,
+      )) setNotice(labels.unavailable)
+    }, [inputActions, labels, sessionId])
 
     /**
      * Rewrite one annotation's comment from the bubble editor.
@@ -553,6 +595,36 @@ export function annotationDock(deps) {
         && typeof inputActions?.insertText === 'function')
     const canAsk = typeof ctx.get('sidebarRight')?.openTab === 'function'
 
+    /**
+     * Keep `--qc-composer-offset` on the document equal to the composer's distance from the bottom of the viewport.
+     *
+     * The undo bar is `position: fixed`, so it cannot inherit the composer's position the way a sibling would. Measuring
+     * is the only way for it to sit just above the composer at any window size and with any amount of text in the box.
+     * Written once per change rather than per animation frame: the composer's top only moves when the draft grows or the
+     * window resizes, and both of those fire an observer.
+     */
+    React.useEffect(() => {
+      if (typeof document === 'undefined') return undefined
+      const sync = () => {
+        // Resolved per call, not captured: the host can re-create the composer without this component re-rendering.
+        const editor = [...document.querySelectorAll('[contenteditable="true"]')]
+          .filter((element) => element.closest('[data-sidebar-right-tab]') === null)
+          .find((element) => element.getBoundingClientRect().height > 0)
+        const box = editor?.getBoundingClientRect?.()
+        if (box === undefined || box === null || box.height === 0) return
+        const offset = Math.max(0, Math.round(window.innerHeight - box.top + 8))
+        document.documentElement.style.setProperty('--qc-composer-offset', `${offset}px`)
+      }
+      sync()
+      const timer = setInterval(sync, 500)
+      window.addEventListener('resize', sync)
+      return () => {
+        clearInterval(timer)
+        window.removeEventListener('resize', sync)
+        document.documentElement.style.removeProperty('--qc-composer-offset')
+      }
+    }, [])
+
     return h(React.Fragment, null,
       overlay === null ? null : overlay.kind === 'actions'
         ? h(ActionPopup, {
@@ -591,19 +663,26 @@ export function annotationDock(deps) {
       }),
       h(MarkerLayer, { annotations, occurrences, labels, onJump, onHighlight, onUpdate, onRemove }),
       h(TableAddButton, { label: labels.tableAdd, onAdd: annotateTable }),
-      // The undo bar sits above the notice: removing something is a normal action and its offer should not compete with
-      // a diagnostic message, which is always about something going wrong.
-      undoDepth > 0
-        ? h('div', { className: 'qc-undo', role: 'status' },
-          h('span', { className: 'qc-undo-text' },
-            undoDepth === 1
-              ? labels.removed
-              : labels.removedMany.replace('{n}', String(undoDepth))),
-          h('button', {
-            type: 'button',
-            className: 'qc-undo-action',
-            onClick: onUndoRemove,
-          }, labels.undo))
+      // The whole bar is the control.
+      //
+      // It used to be a container whose only live region was a small button inside it, and pressing the middle of the
+      // bar did nothing — reported as "the undo button is hard to hit". A single button makes every pixel work, and the
+      // label reads as the action it performs rather than as a caption.
+      undoPending
+        ? h('button', {
+          type: 'button',
+          className: 'qc-undo',
+          onClick: onUndoRemove,
+          title: labels.undo,
+        },
+        h('span', { className: 'qc-undo-text' }, labels.removed),
+        h('span', { className: 'qc-undo-action', 'aria-hidden': 'true' }, labels.undo),
+        // A thin bar that drains over the life of the window, so the deadline is visible rather than surprising.
+        h('span', {
+          className: 'qc-undo-meter',
+          'aria-hidden': 'true',
+          style: { '--qc-undo-left': String(undoLeft) },
+        }))
         : null,
       typeof notice === 'string' && notice !== ''
         ? h('div', { className: 'qc-notice' }, notice)

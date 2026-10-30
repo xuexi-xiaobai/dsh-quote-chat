@@ -105,13 +105,25 @@ check('an empty draft becomes just the chip',
   withAppendedChip('', [], '\uFFFC', ref('a')).text === '\uFFFC',
   JSON.stringify(withAppendedChip('', [], '\uFFFC', ref('a')).text))
 
-check('appending to prose inserts one break',
-  withAppendedChip('hello', [], '\uFFFC', ref('a')).text === 'hello\n\uFFFC',
+// A chip contributes NO separator.
+//
+// It used to insert a newline, which made the second chip always wrap and let the host add a leading space to the new
+// paragraph. Spacing between a chip and the words around it is a CSS concern now, because anything in the draft reaches
+// the model and would have to be stripped again at submit time.
+check('appending to prose adds no separator',
+  withAppendedChip('hello', [], '\uFFFC', ref('a')).text === 'hello\uFFFC',
   JSON.stringify(withAppendedChip('hello', [], '\uFFFC', ref('a')).text))
 
-check('a trailing newline is not doubled',
+check('a trailing newline is respected as-is',
   withAppendedChip('hello\n', [], '\uFFFC', ref('a')).text === 'hello\n\uFFFC',
   JSON.stringify(withAppendedChip('hello\n', [], '\uFFFC', ref('a')).text))
+
+check('two chips append back to back',
+  (() => {
+    const first = withAppendedChip('x', [], '\uFFFC', ref('a'))
+    return withAppendedChip(first.text, first.references, '\uFFFC', ref('b')).text === 'x\uFFFC\uFFFC'
+  })(),
+  'a separator crept in between two chips')
 
 check('the appended reference offset matches its place in the text',
   (() => {
@@ -133,9 +145,9 @@ check('existing references are preserved and the new one appended last',
 check('appending offsets the new reference after the whole draft',
   (() => {
     const snapshot = withAppendedChip('abc', [], '\uFFFC', ref('a'))
-    return snapshot.references[0].offset === 4
+    return snapshot.references[0].offset === 3
   })(),
-  'the offset ignored the inserted break')
+  'the offset does not point just past the existing text')
 
 check('references of other sources are carried through',
   (() => {
@@ -154,17 +166,23 @@ check('removing the only chip empties the draft',
   })(),
   'a lone chip did not clear cleanly')
 
-check('removing a chip at the start takes its break with it',
+// A chip does not own a line break any more.
+//
+// Since a chip no longer inserts a separator when appended, removal must not swallow a newline either — doing so ate a
+// line the user had typed themselves. Only the placeholder character goes; the text around it, newlines included, is
+// exactly what the user wrote. The one remaining case where a break goes is a chip alone on its own middle line, where
+// leaving both newlines would open a blank line (covered below).
+check('removing a chip at the start leaves the following break',
   (() => {
     const snapshot = withoutChip('\uFFFC\ntail', [ref('a', { offset: 0 })], CHIP_SOURCE, 'a')
-    return snapshot.text === 'tail'
+    return snapshot.text === '\ntail'
   })(),
   JSON.stringify(withoutChip('\uFFFC\ntail', [ref('a', { offset: 0 })], CHIP_SOURCE, 'a')?.text))
 
-check('removing a chip at the end takes the preceding break',
+check('removing a chip at the end leaves the preceding break',
   (() => {
     const snapshot = withoutChip('head\n\uFFFC', [ref('a', { offset: 5 })], CHIP_SOURCE, 'a')
-    return snapshot.text === 'head'
+    return snapshot.text === 'head\n'
   })(),
   JSON.stringify(withoutChip('head\n\uFFFC', [ref('a', { offset: 5 })], CHIP_SOURCE, 'a')?.text))
 
@@ -194,8 +212,8 @@ check('later references shift left by exactly the removed length',
       ref('a', { offset: 0 }),
       ref('b', { offset: 3 }),
     ], CHIP_SOURCE, 'a')
-    // '\uFFFC\n' is removed (2 units), so the second chip sits at index 1.
-    return snapshot.text === 'b\uFFFC' && snapshot.references[0].offset === 1
+    // Only the placeholder goes (1 unit), so the second chip moves from 3 to 2 and the newline stays.
+    return snapshot.text === '\nb\uFFFC' && snapshot.references[0].offset === 2
   })(),
   JSON.stringify((() => {
     const draft = '\uFFFC\nb\uFFFC'

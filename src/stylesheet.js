@@ -635,49 +635,61 @@ export const STYLESHEET = `
 
 /* ── The undo bar ────────────────────────────────────────────────────────────
 
-   Sits one notch above the notice and uses the same anchoring, so a removal and a diagnostic never overlap.
+   WHERE IT SITS.
 
-   It is styled as an ACTION rather than a warning: neutral surface, accent on the button. The removal has already
-   happened visually, so nothing here should read as an alert — this is an offer, not a problem.
+   Bottom-centre was tried first and failed: the hover preview card opens ABOVE the chip, so the bar landed inside the
+   card's rectangle (measured 315..695 x 450..546 against the bar's 560..720 x 495..533) and clicks aimed at the bar hit
+   the card. Raising the z-index cannot help — the card is a portal with its own stacking context, so the two values are
+   never compared. Top-centre was then tried and read as application chrome, sitting in the header strip next to the
+   view title.
 
-   Deliberately not auto-dismissed by CSS: the bar stays until the state that backs it is invalidated, which is a
-   decision the component makes, not the stylesheet.
+   It belongs WITH THE COMPOSER, which is what it edits, but clear of the preview card: pinned just below the top of the
+   composer's area and above the notice slot. Never overlapping the card, always in the same place, and near the eye
+   after pressing ×.
 
-   Anchored ABOVE the notice's slot (bottom 132 vs 96) so that the two can be on screen at once. They can: an undo bar
-   is already showing when a later action sets a notice. */
-/* Layering, and one collision worth naming.
+   THE WHOLE BAR IS THE BUTTON. A bar whose only live region is a small button inside it invites a missed click, and that
+   was reported: pressing the middle did nothing. Every pixel here is the control.
 
-   The undo bar and the hover preview card can be on screen together: removing a chip leaves the pointer where the × was,
-   and that chip's preview card is still mounted while it animates out. Measured, the card occupied 315..695 x 450..546
-   and the bar landed at 560..720 x 495..533 — directly on top of it, so clicks aimed at the undo button hit the card.
+   The meter is a countdown, not decoration: this bar has a real five-second deadline, and a draining hairline says so
+   without a number ticking in the reader's face.
 
-   Raising this bar's z-index does NOT fix it: the card lives in a stacking context of its own (it is a portal with its
-   own positioned ancestor), so the two z-index values are never compared. What fixes it is not overlapping at all.
-
-   The bar is therefore pinned near the TOP of the viewport, clear of both the card (which opens above the chip) and the
-   composer. It is also where a "something was removed" message belongs: out of the way of the text being edited, and in
-   the same place every time regardless of where the removed chip happened to sit. */
-.qc-undo{position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:74;
-  display:flex;align-items:center;gap:10px;
-  padding:6px 8px 6px 12px;border-radius:9px;
-  border:1px solid var(--dsw-alias-border-l2, rgba(0,0,0,.1));
-  background:var(--dsw-alias-bg-overlay, #fff);
-  box-shadow:0 6px 18px rgba(15,17,21,.12),0 1px 3px rgba(15,17,21,.06);
-  font-size:12px;color:var(--dsw-alias-label-secondary, #61666b);
-  animation:qc-undo-in .18s cubic-bezier(.2,.8,.3,1);
-  max-width:min(32em,90vw)}
+   The offset is a fallback only. The component measures the composer and passes --qc-composer-offset, so the bar sits
+   just above the composer at any window size; the constant here keeps it sane if that measurement has not run yet. */
+.qc-undo{position:fixed;left:50%;bottom:var(--qc-composer-offset, 148px);
+  transform:translateX(-50%);z-index:76;
+  display:flex;align-items:center;gap:11px;
+  appearance:none;margin:0;padding:9px 9px 9px 13px;
+  border-radius:11px;cursor:pointer;overflow:hidden;
+  border:1px solid color-mix(in srgb,var(--qc-accent,#4176e6) 26%,transparent);
+  background:color-mix(in srgb,var(--qc-accent,#4176e6) 7%,var(--dsw-alias-bg-overlay,#fff));
+  box-shadow:0 10px 26px rgba(15,17,21,.15),0 2px 6px rgba(15,17,21,.07);
+  font:inherit;font-size:12.5px;text-align:left;line-height:1.25;
+  color:var(--dsw-alias-label-secondary,#61666b);
+  max-width:min(30em,88vw);
+  animation:qc-undo-in .2s cubic-bezier(.2,.8,.3,1);
+  transition:background .12s ease,border-color .12s ease,box-shadow .12s ease}
 @keyframes qc-undo-in{
-  from{opacity:0;transform:translateX(-50%) translateY(-6px)}
-  to{opacity:1;transform:translateX(-50%) translateY(0)}}
+  from{opacity:0;transform:translateX(-50%) translateY(7px) scale(.985)}
+  to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}
+.qc-undo:hover{
+  background:color-mix(in srgb,var(--qc-accent,#4176e6) 12%,var(--dsw-alias-bg-overlay,#fff));
+  border-color:color-mix(in srgb,var(--qc-accent,#4176e6) 40%,transparent);
+  box-shadow:0 12px 30px rgba(15,17,21,.18),0 2px 7px rgba(15,17,21,.08)}
+.qc-undo:active{transform:translateX(-50%) scale(.988)}
+.qc-undo:focus-visible{outline:2px solid color-mix(in srgb,var(--qc-accent,#4176e6) 55%,transparent);
+  outline-offset:2px}
 .qc-undo-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.qc-undo-action{flex:none;appearance:none;margin:0;padding:4px 10px;
-  border:0;border-radius:6px;cursor:pointer;font:inherit;font-size:12px;font-weight:500;
-  background:color-mix(in srgb,var(--qc-accent,#4176e6) 10%,transparent);
-  color:color-mix(in srgb,var(--qc-accent,#4176e6) 78%,var(--qc-ink,#0f1115));
+.qc-undo-action{flex:none;padding:4px 11px;border-radius:7px;font-weight:600;
+  background:color-mix(in srgb,var(--qc-accent,#4176e6) 14%,transparent);
+  color:color-mix(in srgb,var(--qc-accent,#4176e6) 84%,var(--qc-ink,#0f1115));
   transition:background .12s ease}
-.qc-undo-action:hover{background:color-mix(in srgb,var(--qc-accent,#4176e6) 18%,transparent)}
-.qc-undo-action:focus-visible{outline:2px solid color-mix(in srgb,var(--qc-accent,#4176e6) 50%,transparent);
-  outline-offset:1px}
+.qc-undo:hover .qc-undo-action{background:color-mix(in srgb,var(--qc-accent,#4176e6) 22%,transparent)}
+/* The countdown hairline, pinned to the bottom edge of the bar. Width is driven by --qc-undo-left, which the component
+   keeps in whole seconds; the transition is longer than the tick interval so the bar slides rather than steps. */
+.qc-undo-meter{position:absolute;left:0;bottom:0;height:2px;border-radius:0 1px 1px 0;
+  width:calc(var(--qc-undo-left, 5) / 5 * 100%);
+  background:color-mix(in srgb,var(--qc-accent,#4176e6) 62%,transparent);
+  transition:width .3s linear;pointer-events:none}
 
 .qc-side{display:flex;flex-direction:column;height:100%;min-height:0;font-size:13px;
   color:var(--dsw-alias-label-primary);box-sizing:border-box}

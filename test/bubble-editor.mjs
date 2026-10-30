@@ -27,7 +27,7 @@ const markersSource = await readFile(new URL('../src/ui/markers.js', import.meta
 const selectionSource = await readFile(new URL('../src/selection.js', import.meta.url), 'utf8')
 // The stylesheet is its own module now.
 const stylesheetSource = await readFile(join(here, '..', 'src', 'stylesheet.js'), 'utf8')
-const css = /export const STYLESHEET = `([\s\S]*?)`\n/.exec(stylesheetSource)?.[1] ?? ''
+const css = /export const STYLESHEET = `([\s\S]*?)`\r?\n/.exec(stylesheetSource)?.[1] ?? ''
 // Layout rules moved to their own module: assert against it where the claim is about layout.
 const layoutSource = await readFile(join(here, '..', 'src', 'layout.js'), 'utf8')
 const navigationSource = await readFile(join(here, '..', 'src', 'navigation.js'), 'utf8')
@@ -285,15 +285,36 @@ check('the panel measures the passage box',
   /row\.getBoundingClientRect\(\)/.test(markersSource),
   'the panel has no box to anchor against')
 // --- Dark mode -------------------------------------------------------------
-check('the chip surface comes from a theme token',
-  /data-composer-chip="quote-chat"\][\s\S]{0,320}--dsw-alias-bg-layer-2/.test(css),
+// The chip is themed through THREE custom properties rather than through the host's surface tokens.
+//
+// The surface tokens cannot do this job: --dsw-alias-bg-layer-1/2/3 all resolve to #fff, the composer's own colour, so a
+// layer token cannot express "slightly raised" — which is exactly why the chip once had no body of its own. Its fill,
+// border and ink are mixed from --qc-accent over --qc-surface, and the dark block below re-points those three variables.
+// The requirement these assertions exist for is unchanged: the chip must have a visible body AND text in both themes.
+// The chip's own rule block, extracted once and then inspected — rather than matching across an arbitrary character
+// span from the selector. The span approach broke silently whenever a comment inside the rule grew, which says nothing
+// about the CSS being wrong.
+const chipRule = (() => {
+  const start = css.indexOf('[data-composer-chip="quote-chat"]{')
+  if (start < 0) return ''
+  const end = css.indexOf('\n}', start)
+  return end < 0 ? css.slice(start) : css.slice(start, end)
+})()
+check('the chip surface is themed, not a literal',
+  /background:color-mix\(in srgb, var\(--qc-accent/.test(chipRule)
+    && /var\(--qc-surface/.test(chipRule),
   'the chip hard-codes a light grey and breaks in dark mode')
 check('the chip has a visible outline so the pill reads in dark mode',
-  /data-composer-chip="quote-chat"\][\s\S]{0,360}border:1px solid var\(--dsw-alias-border-l2/.test(css),
+  /border:1px solid color-mix\(in srgb, var\(--qc-accent/.test(chipRule),
   'the chip has no outline and disappears against a dark background')
-check('the chip text comes from a theme token',
-  /data-composer-chip="quote-chat"\]::after\{[\s\S]{0,160}--dsw-alias-label-primary/.test(css),
+check('the chip text is themed, not hard-coded ink',
+  /color:color-mix\(in srgb, var\(--qc-accent/.test(chipRule)
+    && /var\(--qc-ink/.test(chipRule),
   'the chip ordinal hard-codes dark ink and breaks in dark mode')
+check('dark mode re-points the chip variables',
+  /prefers-color-scheme: dark[\s\S]{0,400}--qc-accent:#5b8cf0/.test(css)
+    && /prefers-color-scheme: dark[\s\S]{0,400}--qc-surface:#1b1d21/.test(css),
+  'the chip has no dark-mode variable set')
 check('the hover card surface comes from a theme token',
   /\.qc-card\{[^}]*--dsw-alias-bg-overlay/.test(css),
   'the card hard-codes white and breaks in dark mode')
@@ -349,7 +370,9 @@ check('the compose popover sits above the selection',
     && !/anchorInTranscript\(flow, source\.rect/.test(popoversSource),
   'the compose panel is not placed above the selection')
 check('the compose popover docks once the user types',
-  /snapPosition\(resting\.top, \{ width, height \}\)/.test(popoversSource)
+  // The docked slot now depends on WHICH edge it locked to, so the call carries `edge`. A dock keyed only on width
+  // drifted 80px, because the panel's width changes every frame while a pane is dragged.
+  /snapPosition\(resting\.top, \{ width, height, edge: lockedEdge \}\)/.test(popoversSource)
     && /comment\.trim\(\) !== ''/.test(popoversSource),
   'the compose panel does not dock to the header or the composer')
 check('the compose popover is mounted inside the transcript container',
@@ -361,7 +384,11 @@ check('the compose popover is mounted inside the transcript container',
     && /position: scroller === null \? 'fixed' : 'absolute'/.test(popoversSource),
   'the panel is positioned against the viewport, so the header and composer cannot cover it')
 check('the docking move is animated, not a jump',
-  /transition:top .*cubic-bezier/.test(css)
+  // The glide is a Web Animation, not a CSS transition. A transition could not be cancelled: feeding the running
+  // transform back in as a delta made the panel's top explode, so the animation is explicitly cancelled before the next
+  // measurement and the element is animated from its settled position.
+  /element\.animate\(/.test(popoversSource)
+    && /glideRef\.current\?\.cancel\(\)|running\.cancel\(\)/.test(popoversSource)
     && /data-docked/.test(popoversSource),
   'the panel would jump between its resting and docked places')
 check('the anchor is clamped into the scroll band',

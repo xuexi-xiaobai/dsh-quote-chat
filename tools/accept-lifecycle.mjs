@@ -1284,6 +1284,17 @@ export async function run({ browser, check: report, url }) {
     compose: document.querySelector('.qc-compose') !== null,
     painted: window.CSS?.highlights?.get('quote-chat-flash') !== undefined,
   }))
+  // KNOWN STALE ASSERTION — the product changed, this expectation did not.
+  //
+  // `dock.js` deliberately narrowed dismissal to "a press INSIDE the transcript": the old rule ("any
+  // press outside the surface closes it") discarded a half-typed comment because the reader glanced at
+  // the header or adjusted a side panel, and the comment there records that decision.
+  //
+  // The click this block performs is, by the two checks just above, OUTSIDE the transcript — exactly
+  // the case the product now refuses to dismiss. So these two report a mismatch between the suite and
+  // a deliberate behaviour, not a defect. They are left failing rather than rewritten: deciding whether
+  // the assertion or the rule is right is a product call, and a probe must not be edited to go green
+  // for a change it did not make (DEVELOPING.md, working discipline #3).
   check('clicking outside closes the compose box',
     afterDismiss.compose === false,
     JSON.stringify(afterDismiss))

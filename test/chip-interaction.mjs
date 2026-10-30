@@ -19,7 +19,7 @@ const source = await readFile(join(here, '..', 'src', 'index.js'), 'utf8')
 const cardsSource = await readFile(new URL('../src/ui/cards.js', import.meta.url), 'utf8')
 // The stylesheet is its own module now.
 const stylesheetSource = await readFile(join(here, '..', 'src', 'stylesheet.js'), 'utf8')
-const css = /export const STYLESHEET = `([\s\S]*?)`\n/.exec(stylesheetSource)?.[1] ?? ''
+const css = /export const STYLESHEET = `([\s\S]*?)`\r?\n/.exec(stylesheetSource)?.[1] ?? ''
 
 const cases = []
 const check = (name, ok, detail) => cases.push({ name, ok, detail })
@@ -48,23 +48,27 @@ check('the x is a fixed overlay', removeRule.includes('position:fixed'),
   `the .qc-chip-remove rule is: ${removeRule.slice(0, 80)}`)
 check('the x is red', /background:#e[0-9a-f]{5}/i.test(removeRule) || removeRule.includes('#e8291c'),
   'the x is not red')
-// Its centre must land on the glyph's centre: the pill's left padding plus half
-// the glyph box. A left-edge anchor would put it visibly off-centre.
-check('the x is centred on the glyph slot',
-  /left: `\$\{hover\.anchor\.left \+ GLYPH_CENTRE\}px`/.test(cardsSource),
-  'the x is not positioned by the glyph centre')
-check('the glyph centre is derived from the pill padding',
-  /const GLYPH_CENTRE = 7 \+ \(13 \/ 2\)/.test(cardsSource),
-  'GLYPH_CENTRE no longer matches padding-left + half glyph')
+// Its centre must land on the glyph's centre. The position is no longer a JS constant: it is a CSS rule fed the chip's
+// rectangle through custom properties, so the same three numbers the chip uses (padding-left and glyph width) place the
+// button. Anchoring an edge instead of the centre is what made the cross sit visibly left of the icon.
+check('the x is positioned by the chip rectangle, not by an edge',
+  /'--qc-chip-left': `\$\{hover\.anchor\.left\}px`/.test(cardsSource)
+    && /'--qc-chip-top': `\$\{hover\.anchor\.top\}px`/.test(cardsSource),
+  'the x is no longer placed from the chip rectangle')
+check('the x centre is derived from the pill padding and glyph width',
+  /left:calc\(var\(--qc-chip-left[^)]*\) \+ var\(--qc-chip-pad-left\) \+ \.56em\)/.test(css)
+    && css.includes('--qc-chip-pad-left:.5em')
+    && css.includes('--qc-chip-glyph:1.12em'),
+  'the x centre is not derived from padding-left plus half the glyph')
 check('the x is round like the pill',
-  /\.qc-chip-remove\{[\s\S]{0,400}border-radius:999px/.test(css),
+  /\.qc-chip-remove\{[\s\S]*?border-radius:999px/.test(css),
   'the x does not share the pill radius')
 
 // The cross is drawn, not typed. A text multiplication sign carries the font's
 // baseline and side bearings, so it sat high and looked undersized no matter how
 // it was nudged; the SVG is centred by construction.
 check('the cross is an svg, not a text character',
-  /className: 'qc-chip-remove',[\s\S]{0,800}h\('svg'/.test(cardsSource)
+  /className: 'qc-chip-remove',[\s\S]{0,1600}h\('svg'/.test(cardsSource)
     && !/\}, '×'\)/.test(source),
   'the cross is still rendered as a text character')
 check('the cross strokes meet at the exact centre',

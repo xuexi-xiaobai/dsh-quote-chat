@@ -22,7 +22,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const source = await readSourceBundle()
 // The stylesheet is its own module now.
 const stylesheetSource = await readFile(join(here, '..', 'src', 'stylesheet.js'), 'utf8')
-const css = /export const STYLESHEET = `([\s\S]*?)`\n/.exec(stylesheetSource)?.[1] ?? ''
+const css = /export const STYLESHEET = `([\s\S]*?)`\r?\n/.exec(stylesheetSource)?.[1] ?? ''
 
 const cases = []
 const check = (name, ok, detail) => cases.push({ name, ok, detail })
