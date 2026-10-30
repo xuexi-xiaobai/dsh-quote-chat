@@ -14,8 +14,8 @@
 import { spawn } from 'node:child_process'
 
 const NODE = process.env.QC_NODE ?? 'D:\\Programs_Apps\\nodejs\\node.exe'
-const CLI = 'C:\\Users\\Ethan cole\\AppData\\Local\\qc-playwright-mcp\\node_modules\\@playwright\\mcp\\cli.js'
-const PROFILE = process.env.QC_PROFILE ?? 'C:\\Users\\Ethan cole\\AppData\\Local\\qc-playwright-profile'
+const CLI = 'C:\\Users\\<user>\\AppData\\Local\\qc-playwright-mcp\\node_modules\\@playwright\\mcp\\cli.js'
+const PROFILE = process.env.QC_PROFILE ?? 'C:\\Users\\<user>\\AppData\\Local\\qc-playwright-profile'
 
 const URL_ARG = process.argv[2]
 if (URL_ARG === undefined) {

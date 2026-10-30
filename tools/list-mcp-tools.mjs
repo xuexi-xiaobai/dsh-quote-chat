@@ -6,7 +6,7 @@
  */
 import { spawn } from 'node:child_process'
 
-const CLI = 'C:\\Users\\Ethan cole\\AppData\\Local\\qc-playwright-mcp\\node_modules\\@playwright\\mcp\\cli.js'
+const CLI = 'C:\\Users\\<user>\\AppData\\Local\\qc-playwright-mcp\\node_modules\\@playwright\\mcp\\cli.js'
 const NODE = process.env.QC_NODE ?? 'D:\\Programs_Apps\\nodejs\\node.exe'
 
 const child = spawn(NODE, [CLI, '--viewport-size', '1440x900'], { stdio: ['pipe', 'pipe', 'pipe'] })

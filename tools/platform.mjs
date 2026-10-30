@@ -98,7 +98,7 @@ function chromiumIn(cacheRoot) {
 function installedChrome() {
   if (isWindows) {
     return firstExisting([
-      'C:/Users/Ethan cole/AppData/Local/ms-playwright/chromium-1248/chrome-win64/chrome.exe',
+      'C:/Users/<user>/AppData/Local/ms-playwright/chromium-1248/chrome-win64/chrome.exe',
     ])
   }
   if (process.platform === 'darwin') {
@@ -153,7 +153,7 @@ export function resolvePlaywright() {
 export function resolveProfile() {
   const configured = process.env.QC_PROFILE
   if (configured !== undefined && configured !== '') return resolve(configured)
-  if (isWindows) return 'C:/Users/Ethan cole/AppData/Local/qc-playwright-profile'
+  if (isWindows) return 'C:/Users/<user>/AppData/Local/qc-playwright-profile'
   return join(homedir(), '.qc-playwright-profile')
 }
 
@@ -179,7 +179,7 @@ export function resolveChrome() {
 export function resolveFfmpeg() {
   const configured = process.env.QC_FFMPEG
   if (configured !== undefined && configured !== '') return resolve(configured)
-  if (isWindows) return 'C:/Users/Ethan cole/AppData/Local/Microsoft/WinGet/Links/ffmpeg.exe'
+  if (isWindows) return 'C:/Users/<user>/AppData/Local/Microsoft/WinGet/Links/ffmpeg.exe'
   const candidates = [
     '/opt/homebrew/bin/ffmpeg',
     '/usr/local/bin/ffmpeg',

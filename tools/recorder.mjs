@@ -24,7 +24,7 @@ import { join } from 'node:path'
  * Playwright MCP only writes inside its allowed roots (the workspace and .playwright-mcp),
  * so recordings must live there. Callers pass an output directory; this asserts it is one.
  */
-const FFMPEG = 'C:\\Users\\Ethan cole\\AppData\\Local\\Microsoft\\WinGet\\Links\\ffmpeg.exe'
+const FFMPEG = 'C:\\Users\\<user>\\AppData\\Local\\Microsoft\\WinGet\\Links\\ffmpeg.exe'
 
 /** Frames per second of the produced video; also the pause inserted after each frame. */
 const FPS = 2

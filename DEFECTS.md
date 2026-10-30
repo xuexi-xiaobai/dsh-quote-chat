@@ -41,7 +41,8 @@ node tools/platform.mjs         # 可选：打印四个依赖路径，确认解�
 启动服务器（**必须用你自己的 profile 和端口，不要动用户在 3080 上的服务器**）：
 
 ```sh
-DSH=/Users/macos/.npm/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai/dsh/lib/bin.js
+# <npx-cache> 换成本机 npx 缓存路径（`npm config get cache` 下的 _npx/<hash>）
+DSH=<npx-cache>/node_modules/@deepseek-ai/dsh/lib/bin.js
 nohup node "$DSH" --profile web --host 127.0.0.1 --port 8791 --no-open > /tmp/qc-web.log 2>&1 &
 sleep 14 && sed -n 's/^dsh web: //p' /tmp/qc-web.log      # 拿到带 token 的 URL
 ```
@@ -88,10 +89,16 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 
 ## 2. 待修缺陷
 
+每条缺陷在 GitHub issue 里有对应条目（仓库 `xuexi-xiaobai/dsh-quote-chat`）。
+**本文档是长文**：记证据强度、被证伪的旧说法、以及排查过程中排除掉的可能；
+**issue 是可跟踪的条目**：认领、关联 commit、关闭。两者不要各说各话。
+
 下面每一条都标注了**证据强度**。`[已验证]` = 我在当前代码上跑过或读过并确认；
 `[未验证]` = 合理推断，需要执行者先证实再动手。
 
 ### 缺陷 1：一次被取消的拖拽会让选区工具栏永久失效
+
+> 追踪：**未开 issue** —— 见下方「第二轮核实」，本条已降级为健壮性缺口，不再占修复排期。
 
 **证据强度：`[已验证]`（代码路径）+ `[未验证]`（浏览器内的复现）**
 
@@ -133,6 +140,8 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 
 ### 缺陷 2：满 12 条后再也无法添加，而提示语没有说明该怎么办
 
+> 追踪：issue [#2](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/2)
+
 **证据强度：`[已验证]`（行为）+ `[已修正]`（我上一轮的说法有误，见下）**
 
 - 位置：`src/index.js:34` `MAX_ANNOTATIONS = 12`，`src/annotation-store.js:140`
@@ -163,6 +172,8 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 
 ### 缺陷 3：刷新后残留的草稿芯片会让发送被拒绝
 
+> 追踪：issue [#3](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/3)
+
 **证据强度：`[已验证]`（宿主行为 + 插件行为），`[未验证]`（端到端复现）**
 
 - 插件侧：`src/registrations.js:102` —— `registry.get(ref)` 取不到 payload 时
@@ -181,6 +192,8 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 
 ### 缺陷 4：撤销把芯片放回草稿末尾，而不是原来的位置
 
+> 追踪：issue [#4](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/4)
+
 **证据强度：`[已验证]`（代码路径）**
 
 - 位置：`src/ui/dock.js:549` `onUndoRemove` → `chipBridge.place` →
@@ -197,6 +210,8 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
   增加一个对称的插入函数，并为它写单元测试。
 
 ### 缺陷 5：`pairs()` 按下标拉链，长度不等时静默错配
+
+> 追踪：issue [#5](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/5)
 
 **证据强度：`[已验证]`（代码路径）**
 
@@ -217,6 +232,8 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 ---
 
 ### 缺陷 6：动作工具栏开着时，Esc 关不掉它
+
+> 追踪：issue [#1](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/1)
 
 **证据强度：`[已验证]`（真实浏览器，三次独立运行，结果一致）**
 

@@ -20,8 +20,8 @@ if (dir === undefined) {
   process.exit(2)
 }
 
-const FFMPEG = 'C:/Users/Ethan cole/AppData/Local/Microsoft/WinGet/Links/ffmpeg.exe'
-const FFMPEG_PROBE = 'C:/Users/Ethan cole/AppData/Local/Microsoft/WinGet/Links/ffprobe.exe'
+const FFMPEG = 'C:/Users/<user>/AppData/Local/Microsoft/WinGet/Links/ffmpeg.exe'
+const FFMPEG_PROBE = 'C:/Users/<user>/AppData/Local/Microsoft/WinGet/Links/ffprobe.exe'
 
 const frames = readdirSync(dir).filter((name) => name.endsWith('.jpg')).sort()
 console.log(`\n  ${frames.length} frames in ${dir}`)

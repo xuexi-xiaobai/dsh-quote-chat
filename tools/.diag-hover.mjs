@@ -3,8 +3,8 @@
  */
 import { spawn } from 'node:child_process'
 const NODE='D:\\Programs_Apps\\nodejs\\node.exe'
-const CLI='C:\\Users\\Ethan cole\\AppData\\Local\\qc-playwright-mcp\\node_modules\\@playwright\\mcp\\cli.js'
-const PROFILE='C:\\Users\\Ethan cole\\AppData\\Local\\qc-playwright-profile'
+const CLI='C:\\Users\\<user>\\AppData\\Local\\qc-playwright-mcp\\node_modules\\@playwright\\mcp\\cli.js'
+const PROFILE='C:\\Users\\<user>\\AppData\\Local\\qc-playwright-profile'
 const URL_ARG=process.argv[2]
 const child=spawn(NODE,[CLI,'--viewport-size','1280x800','--user-data-dir',PROFILE],{stdio:['pipe','pipe','pipe']})
 const inbox=[];let buffer=''

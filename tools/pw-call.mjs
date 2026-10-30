@@ -12,11 +12,11 @@ import { readFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 
 const NODE = process.env.QC_NODE ?? 'D:\\Programs_Apps\\nodejs\\node.exe'
-const CLI = 'C:\\Users\\Ethan cole\\AppData\\Local\\qc-playwright-mcp\\node_modules\\@playwright\\mcp\\cli.js'
+const CLI = 'C:\\Users\\<user>\\AppData\\Local\\qc-playwright-mcp\\node_modules\\@playwright\\mcp\\cli.js'
 // Attach to an existing CDP browser when one is running; otherwise let Playwright launch its
 // own. The launcher keeps a profile on disk so the DSH login survives between calls.
 const CDP = process.env.QC_CDP ?? ''
-const PROFILE = process.env.QC_PROFILE ?? 'C:\\Users\\Ethan cole\\AppData\\Local\\qc-playwright-profile'
+const PROFILE = process.env.QC_PROFILE ?? 'C:\\Users\\<user>\\AppData\\Local\\qc-playwright-profile'
 
 const launchArgs = [CLI, '--viewport-size', '1440x900', '--user-data-dir', PROFILE]
 if (CDP !== '') launchArgs.push('--cdp-endpoint', CDP)

@@ -27,8 +27,8 @@ import { join } from 'node:path'
 import { createRecorder } from './recorder.mjs'
 
 const NODE = process.env.QC_NODE ?? 'D:\\Programs_Apps\\nodejs\\node.exe'
-const CLI = 'C:\\Users\\Ethan cole\\AppData\\Local\\qc-playwright-mcp\\node_modules\\@playwright\\mcp\\cli.js'
-const PROFILE = 'C:\\Users\\Ethan cole\\AppData\\Local\\qc-playwright-profile'
+const CLI = 'C:\\Users\\<user>\\AppData\\Local\\qc-playwright-mcp\\node_modules\\@playwright\\mcp\\cli.js'
+const PROFILE = 'C:\\Users\\<user>\\AppData\\Local\\qc-playwright-profile'
 
 const URL_ARG = process.argv[2]
 // Playwright MCP refuses to write outside its allowed roots, so the recording lives in the
