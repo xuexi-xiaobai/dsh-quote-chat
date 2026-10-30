@@ -291,3 +291,37 @@ node tools/accept-lifecycle.mjs "<tokenised base>"
 The lifecycle run drives real pointer and keyboard input through Playwright MCP, asserts 21
 observable behaviours, and writes `result.json` next to its recording. That file records the
 **artifact sha256 it validated**, so a pass is always attributable to a specific build.
+
+## Publishing to GitHub
+
+The working copy lives inside a scratch workspace (`deepseekharness插件/`) that also holds
+`_discarded/`, `ai-collab/`, `chip-design/` and loose screenshots. None of that belongs to the
+plugin, so the GitHub repository is **not** this checkout's history — it is the plugin subtree,
+extracted with `git subtree split`.
+
+The repository is `xuexi-xiaobai/dsh-quote-chat` (private), and this checkout already has it as a
+remote named `plugin`. To publish a change:
+
+```sh
+cd <repo>/deepseekharness插件          # the workspace root, one level above this file
+git commit ...                          # commit in the workspace first
+git subtree push --prefix=dsh-quote-chat plugin main
+```
+
+`git subtree push` re-splits the history on every run, so it is slower than a plain push and its
+progress output is noisy — that is expected. It never force-pushes; if it refuses, the split branch
+has diverged from `main`, which means someone committed to the GitHub side.
+
+**Never push the workspace root.** `git remote add plugin` points at the plugin repository, and a
+plain `git push plugin master` from the workspace root would try to publish `_discarded/` and the
+442MB `recordings/` directory.
+
+Bugs found while working belong in the issue tracker rather than only in `DEFECTS.md`:
+
+```sh
+gh issue create --repo xuexi-xiaobai/dsh-quote-chat --title "..." --label bug --body-file -
+```
+
+`DEFECTS.md` stays the long-form handover (evidence strength, what was ruled out); the issue is the
+trackable entry. File the issue when the defect is first observed, and keep the document as the
+place where a claim is corrected after someone tests it.
