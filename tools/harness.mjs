@@ -37,24 +37,89 @@ import { execFileSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
+import {
+  resolvePlaywright, resolveProfile, resolveChrome, resolveFfmpeg,
+} from './platform.mjs'
 
-/** pnpm keeps the real package under .pnpm; createRequire does not resolve a bare name through it. */
-const PLAYWRIGHT = 'C:/Users/Ethan cole/AppData/Local/qc-playwright-mcp/node_modules/.pnpm/playwright@1.64.0-alpha-1790635538000/node_modules/playwright/index.js'
+/**
+ * Where Playwright, the profile, Chrome and ffmpeg come from.
+ *
+ * These used to be four Windows literals in this file, which is why the whole browser suite could
+ * only run on one machine. `platform.mjs` resolves each from `QC_*` overrides, then that platform's
+ * default; it never throws at import time, so a suite that only reads the DOM does not need ffmpeg.
+ */
+const PLAYWRIGHT = resolvePlaywright()
 
-/** The same profile the MCP server used, so the login survives. */
-const PROFILE = 'C:/Users/Ethan cole/AppData/Local/qc-playwright-profile'
+/** The persistent profile: the app's login and session list live here. */
+const PROFILE = resolveProfile()
 
-/** ffmpeg, used to rebuild recordings at a constant frame rate. */
-const FFMPEG = 'C:/Users/Ethan cole/AppData/Local/Microsoft/WinGet/Links/ffmpeg.exe'
+/** ffmpeg, used to rebuild recorded frames into an mp4. Undefined when the machine has none. */
+const FFMPEG = resolveFfmpeg()
 
 /** Where recordings are written when the caller does not name a directory. */
 const RECORDINGS = resolve(fileURLToPath(new URL('.', import.meta.url)), '..', 'recordings')
 
-/** The bundled Playwright expects a revision that is not installed; use the chromium that exists. */
-const CHROME = 'C:/Users/Ethan cole/AppData/Local/ms-playwright/chromium-1248/chrome-win64/chrome.exe'
+/** The browser that owns PROFILE. Undefined when no installation was found; checked before launching. */
+const CHROME = resolveChrome()
 
 const require = createRequire(import.meta.url)
-const { chromium } = require(PLAYWRIGHT)
+
+/**
+ * Load Playwright, with a message that names the fix.
+ *
+ * Previously an unresolvable path threw `MODULE_NOT_FOUND` while the module was being evaluated: the
+ * stack pointed at a string constant, and every probe died before its first line of test code. The
+ * install step is one command, so it is worth saying.
+ *
+ * @returns the `chromium` export.
+ */
+function loadChromium() {
+  let playwright
+  try {
+    playwright = require(PLAYWRIGHT)
+  } catch (failure) {
+    throw new Error(
+      `[harness] cannot load Playwright from ${JSON.stringify(PLAYWRIGHT)}.\n`
+      + '  Install it in this package (`npm install --save-dev playwright`), or point\n'
+      + '  QC_PLAYWRIGHT at an existing install.\n'
+      + `  Original error: ${failure?.message ?? failure}`,
+    )
+  }
+  return playwright.chromium
+}
+
+/**
+ * The Chromium launcher, loaded on first use.
+ *
+ * Deferred rather than hoisted into a `const { chromium } = require(...)` at module scope: importing
+ * this module must stay side-effect free and must not require Playwright. The source-shape suites
+ * read `tools/` as text and never open a browser, and a hoisted require made that import fail on any
+ * machine without Playwright installed.
+ *
+ * @returns the `chromium` export of the Playwright module.
+ */
+function chromiumLauncher() {
+  return loadChromium()
+}
+
+/**
+ * Read `QC_VIEWPORT` as `{ width, height }`.
+ *
+ * An unreachable value is ignored rather than thrown: a mis-typed variable must not turn every suite
+ * into an import failure, and the default (follow the window) is always a valid run.
+ *
+ * @returns the viewport, or null to follow the window.
+ */
+function readViewportFromEnv() {
+  const raw = (process.env.QC_VIEWPORT ?? '').trim()
+  if (raw === '') return null
+  const match = /^(\d{3,5})x(\d{3,5})$/.exec(raw)
+  if (match === null) {
+    console.warn(`[harness] QC_VIEWPORT=${JSON.stringify(raw)} is not WIDTHxHEIGHT; following the window instead`)
+    return null
+  }
+  return { width: Number(match[1]), height: Number(match[2]) }
+}
 
 /**
  * Open a browser and return helpers bound to it.
@@ -65,7 +130,14 @@ const { chromium } = require(PLAYWRIGHT)
 export async function openBrowser(options = {}) {
   // A fixed viewport is opt-in. By default the page follows the window, which is maximised below, so a
   // human watching the run sees the whole app instead of a 1280x800 frame.
-  const viewport = options.viewport ?? null
+  //
+  // `QC_VIEWPORT` (e.g. `1440x1000`) forces one. It exists because several geometry assertions are
+  // threshold-based on the height of the readable band, and a laptop panel can be short: this machine
+  // maximises to a 1280x800 screen, leaving a 632px band, and the compose-panel placement checks fail
+  // there for lack of vertical room rather than from a defect. A taller virtual viewport separates
+  // "the window is small" from "the panel is misplaced", which is the difference between a measured
+  // result and a misleading one.
+  const viewport = options.viewport ?? readViewportFromEnv()
   // Attach to an existing context when one is supplied. Launching is the single most expensive
   // step (~3.4s), and a campaign of several suites pays it once instead of once per suite.
   //
@@ -104,38 +176,61 @@ export async function openBrowser(options = {}) {
    * background job never reports completion. That reads as "the command hung", which is exactly what happened.
    */
   let cdpBrowser = null
+  /**
+   * Open the browser, clearing the hang guard when opening FAILS.
+   *
+   * The guard is deliberately not unref'd, so that a leaked CDP socket cannot keep the process alive
+   * forever. That same property means a failure that escapes `openBrowser` still leaves a timer armed,
+   * and Node will not exit until it fires: a missing Playwright install reported its (correct, one
+   * screen) diagnostic and then sat silent for the full 180s. A caller that receives an error is
+   * already done waiting, so the guard is cancelled on the way out.
+   */
   const context = options.context ?? await (async () => {
-    if (attached) {
-      cdpBrowser = await chromium.connectOverCDP(cdpEndpoint)
-      const existing = cdpBrowser.contexts()[0]
-      if (existing === undefined) throw new Error(`no browser context at ${cdpEndpoint}`)
-      return existing
-    }
-    mkdirSync(PROFILE, { recursive: true })
+    try {
+      if (attached) {
+        cdpBrowser = await chromiumLauncher().connectOverCDP(cdpEndpoint)
+        const existing = cdpBrowser.contexts()[0]
+        if (existing === undefined) throw new Error(`no browser context at ${cdpEndpoint}`)
+        return existing
+      }
+      // A profile without a browser is the most common first-run failure, and Playwright's own message
+      // for an undefined `executablePath` names neither the variable nor the machine's platform.
+      if (CHROME === undefined) {
+        throw new Error(
+          '[harness] no Chrome/Chromium found to launch.\n'
+          + '  Install Google Chrome, or point QC_CHROME at an executable.',
+        )
+      }
+      mkdirSync(PROFILE, { recursive: true })
 
-    return chromium.launchPersistentContext(PROFILE, {
-      headless: false,
-      executablePath: CHROME,
-      // Maximised so the run is watchable, and positioned at the origin so two concurrent runs do not
-      // land on top of each other at an arbitrary offset.
-      args: [
-        '--start-maximized',
-        '--window-position=0,0',
-        // The translation bubble and the crash-restore bubble are browser UI, not app UI, and both sit
-        // in the top-right corner — over the header edge where the compose panel docks. They covered
-        // the app during both measurement and human inspection, so they are switched off here.
-        '--disable-translate',
-        '--disable-features=Translate,TranslateUI,TranslateLanguageDetection',
-        '--hide-crash-restore-bubble',
-        '--no-first-run',
-        '--no-default-browser-check',
-        // Keep the window focused, so screenshots show the app rather than a dimmed background.
-        '--disable-backgrounding-occluded-windows',
-      ],
-      // null = use the window's size. With a fixed viewport the page would stay 1280x800 regardless of
-      // the window, and the point of maximising is lost.
-      viewport,
-    })
+      return await chromiumLauncher().launchPersistentContext(PROFILE, {
+        headless: false,
+        executablePath: CHROME,
+        // Maximised so the run is watchable, and positioned at the origin so two concurrent runs do not
+        // land on top of each other at an arbitrary offset.
+        args: [
+          '--start-maximized',
+          '--window-position=0,0',
+          // The translation bubble and the crash-restore bubble are browser UI, not app UI, and both sit
+          // in the top-right corner — over the header edge where the compose panel docks. They covered
+          // the app during both measurement and human inspection, so they are switched off here.
+          '--disable-translate',
+          '--disable-features=Translate,TranslateUI,TranslateLanguageDetection',
+          '--hide-crash-restore-bubble',
+          '--no-first-run',
+          '--no-default-browser-check',
+          // Keep the window focused, so screenshots show the app rather than a dimmed background.
+          '--disable-backgrounding-occluded-windows',
+        ],
+        // null = use the window's size. With a fixed viewport the page would stay 1280x800 regardless of
+        // the window, and the point of maximising is lost.
+        viewport,
+      })
+    } catch (failure) {
+      // Nothing will release this timer: the caller is getting an error, not a browser handle.
+      if (hangGuard !== null) clearTimeout(hangGuard)
+      throw failure
+    }
   })()
   const page = context.pages()[0] ?? await context.newPage()
 
@@ -676,6 +771,16 @@ export async function openBrowser(options = {}) {
       // The rate the frames REALLY represent, so the duration survives a dip in capture speed. Using the
       // requested rate here would compress the timeline whenever the loop fell behind.
       const sourceFps = Math.max(1, Math.round((captured / seconds) * 1000) / 1000)
+      // The frames are kept either way: muxing is the only step that needs ffmpeg, and a machine without
+      // it should lose the mp4, not the recording. The caller gets `frameDir` and a named reason.
+      if (FFMPEG === undefined) {
+        return {
+          video: null,
+          frames: captured,
+          frameDir,
+          error: 'ffmpeg was not found; frames were captured but no mp4 was produced (set QC_FFMPEG)',
+        }
+      }
       try {
         execFileSync(FFMPEG, [
           '-y',

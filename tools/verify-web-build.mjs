@@ -12,10 +12,12 @@
  *
  * Two details this script has to respect, both discovered empirically:
  *
- *   1. The index document is behind the browser-trust fence. Node's `fetch` is rejected
- *      with 401 even with the correct token, while a plain WinHTTP request is accepted, so
- *      the fence discriminates on request shape rather than on the token alone. This script
- *      therefore shells out to PowerShell for HTTP and only compares bytes itself.
+ *   1. The index document is behind the browser-trust fence, and the token is not a credential
+ *      that rideS on the request: the tokenised URL answers `303` with a `Set-Cookie`, and only
+ *      that cookie opens the index. A bare `fetch(tokenisedUrl)` therefore reports 401 — which
+ *      looked like "the fence rejects Node" and was worked around by shelling out to PowerShell.
+ *      It does not reject Node; it rejects a request that never completed the exchange. Following
+ *      the redirect by hand and replaying the cookie works from plain Node on every platform.
  *   2. The served bundle is the artifact PLUS a `//# sourceMappingURL=…` trailer the Host
  *      appends to every composed bundle, so byte equality always fails. Containment is the
  *      honest test of "the browser receives this build".
@@ -23,20 +25,11 @@
  * Usage:
  *   node tools/verify-web-build.mjs [--url <tokenised base>]
  */
-import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
-
-/**
- * Absolute path to Windows PowerShell.
- *
- * `pwsh` (PowerShell 7) is not on the PATH Node inherits here, and `spawnSync pwsh` fails
- * with ENOENT. The in-box Windows PowerShell is always present at this path.
- */
-const POWERSHELL = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PKG_DIR = dirname(here)
@@ -57,26 +50,57 @@ const AUTH = parsed.search
 const sha = (buffer) => createHash('sha256').update(buffer).digest('hex')
 
 /**
- * Fetch a URL through PowerShell, which the Host's trust fence accepts.
- * @param url - absolute URL.
- * @returns the body text, or null when the request failed.
+ * An HTTP session against one Host, carrying the cookie the token exchange issues.
+ *
+ * The token is spent once. `open()` performs that exchange and keeps whatever `Set-Cookie`
+ * answered; `get()` replays those cookies on the same origin. Two requests are therefore the
+ * minimum for any check, which is why this is a small session object rather than a `get` helper.
  */
-function get(url) {
-  // Single-quoted here-string avoids PowerShell interpolation of $ characters in URLs.
-  const script = [
-    '$ErrorActionPreference = "Stop"',
-    `$r = Invoke-WebRequest -Uri '${url.replace(/'/g, "''")}' -UseBasicParsing -TimeoutSec 20`,
-    '[Console]::Out.Write($r.Content)',
-  ].join('\n')
-  try {
-    return execFileSync(POWERSHELL, ['-NoProfile', '-NonInteractive', '-Command', script], {
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-    })
-  } catch {
-    return null
+function createSession() {
+  /** `name=value` pairs, already reduced to the cookie header form. */
+  let cookie = ''
+
+  /**
+   * Exchange the `?token=` for a session cookie.
+   * @param tokenisedUrl - the URL `dsh web` printed.
+   * @returns the final index body, or null when the server did not accept the token.
+   */
+  const open = async (tokenisedUrl) => {
+    // `redirect: 'manual'` is the point: following automatically would swallow the 303 whose
+    // Set-Cookie is the only durable credential, and the follow-up request would be anonymous.
+    const exchange = await fetch(tokenisedUrl, { redirect: 'manual' })
+    // `getSetCookie` exists on Node 20+; the fallback keeps older runtimes working.
+    const issued = typeof exchange.headers.getSetCookie === 'function'
+      ? exchange.headers.getSetCookie()
+      : [exchange.headers.get('set-cookie')].filter((value) => value != null)
+    cookie = issued.map((entry) => entry.split(';')[0]).join('; ')
+    if (exchange.status === 200) return exchange.text()
+    if (exchange.status < 300 || exchange.status >= 400) return null
+    const index = await get(new URL('/', tokenisedUrl).href)
+    return index
   }
+
+  /**
+   * Read one URL on the session's origin.
+   * @param url - absolute URL.
+   * @returns the body text, or null when the request failed.
+   */
+  const get = async (url) => {
+    try {
+      const response = await fetch(url, {
+        ...(cookie === '' ? {} : { headers: { cookie } }),
+      })
+      if (!response.ok) return null
+      return await response.text()
+    } catch {
+      return null
+    }
+  }
+
+  return { open, get, cookie: () => cookie }
 }
+
+const session = createSession()
 
 const rows = []
 const problems = []
@@ -106,7 +130,7 @@ try {
 }
 
 // ── 3. The running server must serve that code ────────────────────────────
-const html = get(`${parsed.origin}/${AUTH}`)
+const html = await session.open(baseUrl)
 if (html === null) {
   record('index', 'unreachable', false)
   problems.push(
@@ -123,7 +147,7 @@ if (html === null) {
   } else {
     const resource = row[1].replace(/&amp;/g, '&')
     record('boot manifest', /[?&]rev=([^&]+)/.exec(resource)?.[1] ?? '(no rev)', true)
-    const body = get(`${parsed.origin}/${resource}`)
+    const body = await session.get(`${parsed.origin}/${resource}`)
     if (body === null) {
       record('served by host', 'unreachable', false)
       problems.push(`The host did not serve ${resource}`)
