@@ -32,7 +32,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 /** The plugin package directory (`dsh-quote-chat/`), one level above `tools/`. */
 export const PACKAGE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -186,4 +186,37 @@ export function resolveFfmpeg() {
     '/usr/bin/ffmpeg',
   ]
   return candidates.find((candidate) => existsSync(candidate))
+}
+
+/**
+ * Print what each resolver found, when run directly.
+ *
+ * These four paths decide whether the browser suites can start at all, and the failure they
+ * produce when wrong ("cannot load Playwright", "no Chrome/Chromium found") names neither the
+ * resolver nor the alternative. One command that shows all four, and where each came from,
+ * turns that into a check you run before debugging anything else.
+ *
+ * Run: node tools/platform.mjs
+ */
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const rows = [
+    ['playwright', 'QC_PLAYWRIGHT', resolvePlaywright()],
+    ['profile', 'QC_PROFILE', resolveProfile()],
+    ['chrome', 'QC_CHROME', resolveChrome()],
+    ['ffmpeg', 'QC_FFMPEG', resolveFfmpeg()],
+  ]
+  const width = Math.max(...rows.map(([label]) => label.length))
+  for (const [label, variable, value] of rows) {
+    // An override is called out, because "why is it using that path" is the usual question.
+    const origin = process.env[variable] === undefined ? '' : `  (from ${variable})`
+    console.log(`  ${label.padEnd(width)}  ${value ?? '(not found)'}${origin}`)
+  }
+  const missing = rows.filter(([, , value]) => value === undefined).map(([label]) => label)
+  if (missing.length > 0) {
+    console.log('')
+    console.log(`! not resolved: ${missing.join(', ')}`)
+    if (missing.includes('playwright')) console.log('  npm install --save-dev playwright')
+    if (missing.includes('chrome')) console.log('  install Google Chrome, or set QC_CHROME')
+    if (missing.includes('ffmpeg')) console.log('  optional: only video-recording probes need it')
+  }
 }
