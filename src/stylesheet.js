@@ -22,7 +22,12 @@ export const STYLESHEET = `
 .qc-popup button{appearance:none;border:0;background:transparent;color:inherit;font:inherit;
   display:flex;align-items:center;gap:5px;padding:6px 9px;border-radius:7px;cursor:pointer;white-space:nowrap;position:relative}
 .qc-popup button:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2)}
+/* Disabled dims the whole button once. Without the second rule the icon ends up at .45 x .8 = .36
+ * while its label sits at .45, so the two halves of the same button fade by different amounts — the
+ * same double-opacity mistake the toolbar icons came out of. The state is a capability guard (the host
+ * not exposing setDraft), so it is rarely seen, which is exactly why it should not be left as a trap. */
 .qc-popup button:disabled{opacity:.45;cursor:default}
+.qc-popup button:disabled svg{opacity:1}
 /* The divider between the two actions.
  *
  * It used to be box-shadow: inset 1px 0 0 var(--dsw-alias-border-l1), and that had two problems: the
@@ -47,6 +52,14 @@ export const STYLESHEET = `
 .qc-popup button+button::before{content:'';position:absolute;left:-1.5px;top:6px;bottom:6px;width:1px;
   background:var(--dsw-alias-border-l2)}
 .qc-popup svg{flex:none;opacity:.8}
+/* Keyboard focus. This surface had no :focus-visible rule at all, so it fell through to the browser's
+ * own ring — measured by setting outline:none and getting a byte-identical screenshot, which proved the
+ * UA ring was the only thing being painted. The host draws its rings as outline:<width> solid <colour>
+ * with an offset, and it deliberately sets --dsw-focus-ring-color to transparent for pointer users, so
+ * reading the token keeps that policy instead of fighting it. Offset is negative: the buttons sit 3px
+ * inside the popup, and an outward ring would land exactly on the popup's edge.
+ */
+.qc-popup button:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
 
 /* The compose panel: a compact dialog, larger radii to match the composer it sits above.
  *
@@ -759,6 +772,27 @@ export const STYLESHEET = `
 .qc-btn-ghost{background:transparent;color:var(--dsw-alias-label-secondary);
   border:1px solid var(--dsw-alias-border-l2);font-weight:400}
 .qc-btn-ghost:hover{background:var(--dsw-alias-bg-layer-2)}
+
+/* Motion, for people who asked for less of it.
+ *
+ * The OS setting (macOS "Reduce motion", Windows "Animation effects" off) surfaces here as
+ * prefers-reduced-motion. This sheet had eleven animations and transitions and not one of them read
+ * it, so a user who turned the setting on still got the toolbar sliding in, the cards popping and the
+ * highlight sweeping. For someone with a vestibular disorder that is the difference between usable and
+ * not, and it costs nothing to respect.
+ *
+ * .01ms rather than none: several places wait on transitionend/animationend, and a value of none never
+ * them. This keeps the events and drops the motion.
+ */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms!important;
+    animation-delay:0ms!important;
+    animation-iteration-count:1!important;
+    transition-duration:.01ms!important;
+    transition-delay:0ms!important;
+  }
+}
 `
 
 

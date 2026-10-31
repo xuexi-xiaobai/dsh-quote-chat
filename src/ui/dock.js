@@ -128,6 +128,7 @@ export function annotationDock(deps) {
     overlayRef.current = overlay
 
     const labels = React.useMemo(() => ({
+      toolbarLabel: t('popup.toolbarLabel'),
       annotate: t('popup.annotate'),
       askInSide: t('popup.askInSide'),
       tooLong: t('popup.tooLong'),

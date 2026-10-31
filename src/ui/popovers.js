@@ -131,6 +131,9 @@ export function createPopovers({
         ref,
         className: 'qc-popup',
         role: 'toolbar',
+        // A role without a name announces "toolbar" and nothing else. The label says what the
+        // toolbar acts on, which is the part a screen-reader user cannot infer from the buttons.
+        'aria-label': labels.toolbarLabel,
         style: {
           left: `${position.left}px`,
           top: `${position.top}px`,

@@ -13,6 +13,7 @@
 
     /** Simplified Chinese dictionary. */
     export const zh = {
+      'popup.toolbarLabel': '选中文字的操作',
       'popup.annotate': '添加注释',
       'popup.askInSide': '侧边提问',
       'popup.tooLong': '选中的内容太长（最多 {max} 字）',
@@ -70,6 +71,7 @@
 
     /** English dictionary, keyed identically. */
     export const en = {
+      'popup.toolbarLabel': 'Actions for the selection',
       'popup.annotate': 'Add annotation',
       'popup.askInSide': 'Ask in side chat',
       'popup.tooLong': 'Selection is too long (max {max} characters)',

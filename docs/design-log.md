@@ -29,6 +29,53 @@
 
 ## 已记录的设计改动
 
+### D-6（已落地，issue #19）补上 prefers-reduced-motion 降级
+
+- **改动**：样式表末尾加一条全局 `@media (prefers-reduced-motion: reduce)`：动画/过渡时长压到 `.01ms`、
+  延迟归零、循环次数封顶 1。
+- **为什么**：11 处动画/过渡，**没有一处**读这个信号。用户打开系统开关（macOS「减弱动态效果」/
+  Windows 关闭「动画效果」）之后，浮窗照样从下方滑入、卡片照样弹、高亮照样扫过。
+  对前庭功能障碍的人是"能不能用"的问题，不是"好不好看"。
+- **没有选的做法**：
+  - `animation:none` / `transition:none`：几处代码在等 `transitionend` / `animationend`，
+    `none` 永远不会触发，会把交互挂死；
+  - 逐条给每个动画加降级：11 处容易漏，而且以后新加的动画没人记得加；
+  - 只压时长、不封顶循环：无限循环的动画在 `.01ms` 下会变成每帧重绘，比不动更糟。
+- **验证**：`tools/probe-a11y.mjs` 在真实浏览器里 `emulateMedia({ reducedMotion: 'reduce' })`，
+  `.qc-popup` 的 computed `animation-duration` 从 `0.1s` 变成 `1e-05s`（= `.01ms`），
+  循环次数 `1`。`test/accessibility.mjs` 5 条：必须有这个 media、必须覆盖 `*::before/*::after`、
+  两个时长都要压、必须是 `.01ms` 而不是 `none`、循环要封顶。变异验证过：把媒体查询改成
+  `no-preference`，5 条里 5 条红。
+- **副作用**：开了这个设置的用户拿不到任何入场动画，包括 `.qc-done` 那个 0.9s 的完成反馈。
+  反馈本身还在——`animationend` 照常触发、`forwards` 保留终态，只是瞬间完成。
+
+### D-5（已落地，issue #18）工具栏的三处规范问题
+
+- **改动**：
+  1. `role="toolbar"` 补 `aria-label`（中「选中文字的操作」/ 英 "Actions for the selection"）；
+  2. 补 `:focus-visible` 焦点环，读宿主的 `--dsw-focus-ring-width` / `--dsw-focus-ring-color`，
+     `outline-offset:-2px`；
+  3. 禁用态不再和图标自身的 `opacity:.8` 叠乘。
+- **为什么**：
+  - 没有名字的 `toolbar`，读屏只念"工具栏"，不说它作用于什么；
+  - 这个面原本一条 `:focus-visible` 规则都没有。实测：聚焦后把 `outline` 设成 `none`，
+    截图与未聚焦**逐字节相同**——说明当时画出来的只有浏览器默认环。而宿主其它组件用的是
+    `outline:<宽> solid <色>` + offset，两套语言；
+  - `.45 × .8 = .36`：同一个按钮里图标比文字更淡，正是 #15 那类叠乘。
+- **没有选的做法**：
+  - 焦点环自己挑一个颜色：宿主会按输入方式把 `--dsw-focus-ring-color` 设成 `transparent`
+    （鼠标用户不显示环），写死颜色等于推翻这条策略；
+  - `outline-offset` 用正的：按钮离浮窗边只有 3px，向外的环正好压在浮窗边上；
+  - 禁用态改成 `color` 变淡、保留图标的 `.8`：算下来图标还是 `.45 × .8 = .36`，没解决问题。
+    真正的解法是让图标在禁用态**不再二次变淡**。
+- **验证**：`tools/probe-a11y.mjs`、`tools/probe-modality.mjs` 在真实浏览器里量到：
+  `aria-label` 读回「选中文字的操作」；鼠标模态下环色 `rgba(0,0,0,0)`（宿主策略），
+  按一次 Tab 后 `data-input-modality` 变 `keyboard`、环色变成 `rgb(65,118,230)`；
+  禁用态 `button .45 / svg 1`。`test/accessibility.mjs` 9 条。变异验证过：去掉 `aria-label`、
+  改掉焦点规则、删掉禁用态那条 svg 规则，各自立刻红。
+- **副作用**：键盘用户看到的环是**内嵌**的（offset `-2px`），贴着按钮自己的圆角，
+  比宿主默认的外扩环更紧凑。这是为了不压到浮窗边框，属于取舍不是缺陷。
+
 ### D-4（已落地，issue #17）两个按钮之间的分隔线做成真的
 
 - **改动**：分隔线从 `box-shadow: inset 1px 0 0 var(--dsw-alias-border-l1)` 换成
