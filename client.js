@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:866e2bab9e1eeb35
+ * Artifact: sha256:bf0219db359eb4fb
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -70,7 +70,7 @@ function __dshQuoteChatFactory(hostRequire) {
     "card.count": "{n} 条注释",
     "card.clear": "全部清除",
     "card.missing": "这条注释对应的内容已不在当前对话中",
-    "card.limit": "最多 {max} 条注释",
+    "card.limit": "最多 {max} 条注释，删掉一条后再继续",
     "card.removed": "已删除一条注释",
     "card.removedMany": "已删除 {n} 条注释",
     "card.undo": "撤销",
@@ -117,7 +117,7 @@ function __dshQuoteChatFactory(hostRequire) {
     "card.count": "{n} annotation(s)",
     "card.clear": "Clear all",
     "card.missing": "The passage for this annotation is no longer in this conversation",
-    "card.limit": "At most {max} annotations",
+    "card.limit": "At most {max} annotations — delete one to add another",
     "card.removed": "Annotation removed",
     "card.removedMany": "{n} annotations removed",
     "card.undo": "Undo",
@@ -323,6 +323,12 @@ function __dshQuoteChatFactory(hostRequire) {
     const mine = (Array.isArray(occurrences) ? occurrences : []).filter((item) => item.source === source);
     const index = mine.findIndex((item) => item.ref === ref);
     return index < 0 ? null : index + 1;
+  }
+  function orphanedIds(annotations, occurrences, source) {
+    const live = new Set(
+      (Array.isArray(occurrences) ? occurrences : []).filter((item) => item.source === source).map((item) => item.ref)
+    );
+    return (Array.isArray(annotations) ? annotations : []).filter((item) => !live.has(item.id)).map((item) => item.id);
   }
   function withAppendedChip(draft, existing, addition, reference) {
     const base = draft;
@@ -4022,8 +4028,15 @@ function __dshQuoteChatFactory(hostRequire) {
         clearFlashRange();
         setOverlay(null);
       }, []);
+      const pruneOrphans = import_react8.default.useCallback(() => {
+        if (sessionId === void 0) return 0;
+        const dead = orphanedIds(annotations2, occurrences, CHIP_SOURCE);
+        for (const id of dead) removeAnnotation(sessionId, id);
+        return dead.length;
+      }, [annotations2, occurrences, removeAnnotation, sessionId]);
       const commit = import_react8.default.useCallback((source, comment) => {
         if (sessionId === void 0) return;
+        if (annotations2.length >= MAX_ANNOTATIONS2) pruneOrphans();
         const text = typeof comment === "string" ? comment.trim() : "";
         const stored = addAnnotation(sessionId, {
           kind: source.kind,
@@ -4048,7 +4061,7 @@ function __dshQuoteChatFactory(hostRequire) {
         const flow = findFlow();
         const range = flow === null ? null : resolveAnchor(flow, stored.anchor);
         if (range !== null) flashRange(range);
-      }, [sessionId, labels, writeChip]);
+      }, [annotations2, sessionId, labels, pruneOrphans, writeChip]);
       const annotateTable = import_react8.default.useCallback((table) => {
         const markdown = tableToMarkdown2(table);
         if (markdown === "") return;
@@ -4165,6 +4178,7 @@ function __dshQuoteChatFactory(hostRequire) {
         setUndoLeft(0);
         if (entry === null) return;
         const { annotation, site } = entry;
+        if (annotations2.length >= MAX_ANNOTATIONS2) pruneOrphans();
         const restored = addAnnotation(sessionId, {
           kind: annotation.kind,
           text: annotation.text,
@@ -4180,7 +4194,7 @@ function __dshQuoteChatFactory(hostRequire) {
         if (!chipBridge2.placeAt(inputActions, readLiveDraft, restored, labels, site)) {
           setNotice(labels.unavailable);
         }
-      }, [inputActions, labels, readLiveDraft, sessionId]);
+      }, [annotations2, inputActions, labels, pruneOrphans, readLiveDraft, sessionId]);
       const onUpdate = import_react8.default.useCallback((annotation, comment) => {
         if (sessionId === void 0) return;
         chipRegistry2.updateComment(annotation.id, comment);

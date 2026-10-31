@@ -99,6 +99,35 @@ export function chipOrdinal(occurrences, source, ref) {
 }
 
 /**
+ * Which annotations no longer have a chip in the draft.
+ *
+ * An annotation is supposed to live as long as its chip. Two paths break that promise and neither one tells the
+ * plugin: the Host clears the draft after a send, and Backspace removes a chip without calling back. The store keeps
+ * those entries — `markers.js` says so in a comment — and they are invisible: no chip means no marker bubble and no
+ * hover card, so there is nothing on screen to delete them from.
+ *
+ * That mattered because the annotation limit counted the STORE, not the draft: a session that had sent a dozen
+ * annotations could not add another, the notice only restated the limit, and the only way out was a page reload.
+ *
+ * Returning ids rather than entries keeps the decision here and the removal in the caller, which owns the store.
+ *
+ * @param annotations - the session's stored annotations.
+ * @param occurrences - the Host's live chip list.
+ * @param source - the chip source this plugin owns; other sources are not chips of ours.
+ * @returns the ids of annotations with no chip, in list order.
+ */
+export function orphanedIds(annotations, occurrences, source) {
+  const live = new Set(
+    (Array.isArray(occurrences) ? occurrences : [])
+      .filter((item) => item.source === source)
+      .map((item) => item.ref),
+  )
+  return (Array.isArray(annotations) ? annotations : [])
+    .filter((item) => !live.has(item.id))
+    .map((item) => item.id)
+}
+
+/**
  * Rebuild the whole draft with one more chip appended.
  *
  * A chip's `offset` is measured in the final draft text, so every insertion rebuilds the text

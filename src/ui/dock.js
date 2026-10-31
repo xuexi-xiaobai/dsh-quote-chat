@@ -34,7 +34,7 @@ import {
   squishText, sameText, textOfWithin, FLOW_SELECTOR, BLOCK_SELECTOR, isInsideTranscript,
 } from '../text-ranges.js'
 import {
-  serializeChipForModel, CHIP_SOURCE, CHIP_TRIGGER, CHIP_PLACEHOLDER, chipRemovalSite, chipOrdinal,
+  serializeChipForModel, CHIP_SOURCE, CHIP_TRIGGER, CHIP_PLACEHOLDER, chipRemovalSite, chipOrdinal, orphanedIds,
 } from '../chip-draft.js'
 import { useDraft, useDraftOccurrences } from './draft-hooks.js'
 import { FLASH_MS } from '../highlight.js'
@@ -328,9 +328,33 @@ export function annotationDock(deps) {
       setOverlay(null)
     }, [])
 
+    /**
+     * Drop the annotations whose chip is no longer in the draft.
+     *
+     * An annotation is meant to live as long as its chip, but two paths remove the chip without telling the plugin:
+     * the Host clears the draft after a send, and Backspace deletes a chip directly. What is left is invisible — no
+     * chip, so no marker bubble and no hover card, and therefore nothing on screen to delete it from — while still
+     * occupying a slot in the limit. A session that had sent a dozen annotations could not add another, and the notice
+     * only restated the limit.
+     *
+     * Called only when the limit is about to block. The store is bounded by the limit either way, so pruning on every
+     * commit would churn it for nothing.
+     *
+     * @returns how many entries were dropped, for logging and for the suites.
+     */
+    const pruneOrphans = React.useCallback(() => {
+      if (sessionId === undefined) return 0
+      const dead = orphanedIds(annotations, occurrences, CHIP_SOURCE)
+      for (const id of dead) removeAnnotation(sessionId, id)
+      return dead.length
+    }, [annotations, occurrences, removeAnnotation, sessionId])
+
     /** Store one annotation and mirror it into the draft as an inline chip. */
     const commit = React.useCallback((source, comment) => {
       if (sessionId === undefined) return
+      // The limit counts annotations the user can still SEE. Entries left behind by a sent draft or a Backspaced chip
+      // must not be what blocks the next one.
+      if (annotations.length >= MAX_ANNOTATIONS) pruneOrphans()
       const text = typeof comment === 'string' ? comment.trim() : ''
       const stored = addAnnotation(sessionId, {
         kind: source.kind,
@@ -357,7 +381,7 @@ export function annotationDock(deps) {
       const flow = findFlow()
       const range = flow === null ? null : resolveAnchor(flow, stored.anchor)
       if (range !== null) flashRange(range)
-    }, [sessionId, labels, writeChip])
+    }, [annotations, sessionId, labels, pruneOrphans, writeChip])
 
     /** Open the annotation editor for one table. */
     const annotateTable = React.useCallback((table) => {
@@ -571,6 +595,8 @@ export function annotationDock(deps) {
       setUndoLeft(0)
       if (entry === null) return
       const { annotation, site } = entry
+      // Same guard as `commit`: a restore must not be blocked by entries the user cannot see, let alone delete.
+      if (annotations.length >= MAX_ANNOTATIONS) pruneOrphans()
       const restored = addAnnotation(sessionId, {
         kind: annotation.kind,
         text: annotation.text,
@@ -590,7 +616,7 @@ export function annotationDock(deps) {
       if (!chipBridge.placeAt(inputActions, readLiveDraft, restored, labels, site)) {
         setNotice(labels.unavailable)
       }
-    }, [inputActions, labels, readLiveDraft, sessionId])
+    }, [annotations, inputActions, labels, pruneOrphans, readLiveDraft, sessionId])
 
     /**
      * Rewrite one annotation's comment from the bubble editor.

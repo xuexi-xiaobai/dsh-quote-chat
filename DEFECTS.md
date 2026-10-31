@@ -140,9 +140,9 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 
 ### 缺陷 2：满 12 条后再也无法添加，而提示语没有说明该怎么办
 
-> 追踪：issue [#2](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/2)
+> 追踪：issue [#2](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/2) —— **已修复**（见下方「修复」）
 
-**证据强度：`[已验证]`（行为）+ `[已修正]`（我上一轮的说法有误，见下）**
+**证据强度：`[已验证]`（真实浏览器，修复前后各一次）+ `[已修正]`（我上一轮的说法有误，见下）**
 
 - 位置：`src/index.js:34` `MAX_ANNOTATIONS = 12`，`src/annotation-store.js:140`
 - 事实（用真实 store 跑过）：
@@ -154,10 +154,13 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
   "nothing is written to storage and nothing is evicted"），发送消息**不会**清除已有注释。
   于是一个自然的工作流（划注释 → 发送 → 再划 → 再发送）会稳定地累积到 12 条，
   到第 13 次才报"最多 12 条注释"，而提示语**没有告诉用户需要先删**。
-- 修复方向（三选一，是产品决策，需要先问）：
-  1. 发送成功后清掉该会话的注释（`store.clear` 已经存在，**当前零调用点**）；
-  2. 满额时提示语改为可操作的文案（"最多 12 条注释，删除一条后可继续"）；
-  3. 提高上限或改为按草稿而非会话计数。
+- **比这条 issue 写的更糟（本轮查清）**：满额之后，用户**根本没有可删的东西**。
+  - 能删注释的只有两条路：气泡编辑器里的删除（`markers.js:908`）、悬浮卡上的删除
+    （`cards.js:459`），**两者都要求草稿里有芯片**。
+  - 而发送之后草稿被宿主清空，芯片就没了；用 Backspace 删掉芯片也一样。
+    `markers.js:631` 自己的注释就写着 "the store keeps an entry with no chip"。
+  - 所以：没有芯片 → 没有气泡 → 删不掉 → 额度永远回不来，**只能刷新页面**。
+  - 也就是说，原方案的"只改提示语文案"会指向一个用户做不到的操作。
 - 注意：`chip-registry.js:22-26` 解释了 **chip payload registry** 为何**故意不提供**
   delete/clear。那段理由是这条缺陷的上游，务必先读：
 
@@ -169,6 +172,40 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
   reference"这种情形，并选择用"永不回收"来规避它。缺陷 3 正是这条规避策略**覆盖不到**的
   场景（跨刷新，内存整个没了）。修缺陷 3 时不要顺手推翻这个设计——它保护的是页内生命周期，
   缺陷 3 是跨页面的，两者不冲突。
+
+  本次修复**没有**碰 payload registry：清掉的是"注释条目"（store），不是"芯片内容"（registry）。
+  已经发出去的消息仍然能渲染，因为它的 payload 还在。这两件事必须分开看。
+
+#### 修复
+
+选了「上限只数草稿里的芯片」，而不是另外两个方向：
+
+- **为什么不只改文案**：满额时屏幕上没有可删的东西，文案会指向一个不存在的操作。
+- **为什么不在发送后清空**：需要可靠识别"发送成功"，而且修不了 Backspace 删芯片留下的孤儿。
+
+实现：
+
+- `chip-draft.js` 新增 `orphanedIds(annotations, occurrences, source)` —— 纯函数，
+  返回"没有芯片的那些注释 id"。
+- `dock.js` 新增 `pruneOrphans()`，在 `commit()` 和 `onUndoRemove()` 里、
+  **且只在 `annotations.length >= MAX_ANNOTATIONS` 时**调用。
+  平时不清理：store 本来就被上限约束在 12 条以内，每次提交都扫一遍没有收益。
+- `locales.js`：提示语改成「最多 {max} 条注释，删掉一条后再继续」。
+
+结果：上限从"这个会话一共能加多少条"变成"这条消息里能放多少条"，和用户看到的一致。
+
+#### 真机验证
+
+`tools/probe-limit-recovery.mjs` —— 不需要发消息，清空草稿走的是同一条路径：
+
+```
+① 同一段落连续加 12 条 → 12 个芯片，满额
+② 再加一条            → 拒绝
+③ 全选草稿 + Backspace → 0 芯片、0 气泡，屏幕上没有任何可删的东西
+④ 再加一条            → 旧 bundle：永远加不上；新 bundle：芯片 1 个
+```
+
+旧 bundle 的提示语是「最多 12 条注释」，新的是「最多 12 条注释，删掉一条后再继续」。
 
 ### 缺陷 3：刷新后残留的草稿芯片会让发送被拒绝
 
@@ -341,7 +378,7 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 
 ```
 node build.mjs --check   → sha256:5848438bdcb1ec08，通过
-npm test                 → 655/655 通过，0 失败
+npm test                 → 667/667 通过，0 失败
 ```
 
 验收套件（需要 1.1 + 1.2 的前提）：
@@ -353,7 +390,7 @@ accept-lifecycle   68/73（QC_VIEWPORT=1440x1000）
 verify-web-build   OK — Web serves the current build
 ```
 
-修任何一个缺陷后，至少要保证 `npm test` 仍 655 通过，且 `--check` 的哈希变化
+修任何一个缺陷后，至少要保证 `npm test` 仍 667 通过，且 `--check` 的哈希变化
 **只能来自源码改动**。新增测试并入 `package.json` 的 `test` 脚本（注意是长
 `&&` 链，加在末尾）。
 
@@ -369,7 +406,8 @@ verify-web-build   OK — Web serves the current build
 2. **缺陷 1（pointerDown 卡死）**：影响最大（工具栏永久失效），但需要真实 pointer
    序列的探针——先写这个探针，它会同时成为回归保护。
 3. **缺陷 3（孤儿芯片）**：需要判断契约方向，可能需要问用户。
-4. **缺陷 2（12 条上限）**：三个方向都是产品决策，**动手前先问用户**。
+4. ~~**缺陷 2（12 条上限）**~~ **已完成**。三个方向里选了「上限只数草稿里的芯片」，
+   因为另外两个都修不了"满额时屏幕上没有可删的东西"这件事。
 5. **缺陷 5（pairs 下标）**：风险最低（已被兜住一部分），且改法需要确认属性里有没有 ref。
 
 ---
