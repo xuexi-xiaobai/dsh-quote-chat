@@ -476,12 +476,27 @@ const ComposeBody = React.memo(function ComposeBody(props) {
     // So the two directions use different thresholds. Once docked, the panel stays docked until it would be COMFORTABLY
     // visible again (a full panel-height of margin); once anchored, it only docks when it is clearly out of view. That
     // gap is wider than any single frame's reflow, so the state cannot flicker.
+    // VISIBILITY IS THE BAND, NOT THE CONTAINER.
+    //
+    // These three tests used to read `scrollerBox`, the scroll container's own box. That box extends BEHIND the composer:
+    // measured at a 1440x560 window, the container is 76..560 while the band the user can actually see is 76..438, so
+    // 122px — exactly the composer's height — counted as visible. A panel resting in that strip was therefore never
+    // rescued and was painted over the composer (measured: 102px, 65px and 29px of overlap on three consecutive
+    // scroll positions, rescued only after it had cleared 560).
+    //
+    // The dock slot already comes from `readableBand()` (see `snapPosition`), so testing visibility against anything
+    // else is what made one side of the panel behave differently from the other: at the TOP the two boxes coincide
+    // (the container starts at the header's bottom), so the bug was invisible there, and at the BOTTOM they differ by
+    // the whole composer.
+    const band = typeof readableBand === 'function' ? readableBand() : null
+    const visibleTop = band === null ? scrollerBox.top : band.top
+    const visibleBottom = band === null ? scrollerBox.bottom : band.bottom
     const DOCK_MARGIN = 24
     const wasDocked = dockedRef.current !== null
-    const clearlyOut = resting.top < scrollerBox.top - DOCK_MARGIN
-      || restingBottom > scrollerBox.bottom + DOCK_MARGIN
-    const comfortablyVisible = resting.top >= scrollerBox.top + DOCK_MARGIN
-      && restingBottom <= scrollerBox.bottom - DOCK_MARGIN
+    const clearlyOut = resting.top < visibleTop - DOCK_MARGIN
+      || restingBottom > visibleBottom + DOCK_MARGIN
+    const comfortablyVisible = resting.top >= visibleTop + DOCK_MARGIN
+      && restingBottom <= visibleBottom - DOCK_MARGIN
 
     // FREEZE the dock decision while the anchor is being REFLOWED — not while it is merely scrolled.
     //
@@ -512,7 +527,7 @@ const ComposeBody = React.memo(function ComposeBody(props) {
         ? wasDocked
         : wasDocked
           ? clearlyOut && comfortablyVisible === false
-          : resting.top < scrollerBox.top - 1 || restingBottom > scrollerBox.bottom + 1
+          : resting.top < visibleTop - 1 || restingBottom > visibleBottom + 1
     previousBlockRef.current = blockBox === undefined || blockBox === null
       ? null : Math.round(blockBox.top)
     previousScrollTopRef.current = scroller === null || scroller === undefined ? 0 : scroller.scrollTop
@@ -624,13 +639,23 @@ const ComposeBody = React.memo(function ComposeBody(props) {
         // scroll offset stayed put. A scroll-driven move is left alone: it must track the text exactly, and easing it is
         // the "panel trails the content" defect that was already fixed once.
         const reflowed = scrolled === false && previousEdge === dockedEdge
-        // Animate the MOVE INTO or OUT OF a dock (edgeChanged), and a reflow-driven move while anchored. While the panel
-        // is docked the target is a constant screen slot that does not follow the reflow at all, so a glide there only
-        // smears a settled position — measured stray tops of 132 and 109 on frames whose neighbours were steady at 84.
+        // Animate the move INTO a dock, and a reflow-driven move while anchored. NOT the move OUT of one.
+        //
+        // Leaving a dock is the panel going back to following its passage, and that has to be immediate for the same
+        // reason a scroll-driven move is: anything that trails the text is the defect. Gliding out also overshot —
+        // measured on the way back up, the frame that released the top dock drew the panel at viewport top 56 while the
+        // header's bottom edge is 76 and the slot is 84: 20px of the panel above the header, then it slid down. The
+        // glide starts from `delta`, the distance the panel moved since the previous frame, and on that frame the
+        // target has already jumped from the slot to the resting place, so the two disagree by the whole slot offset.
+        //
+        // While the panel is docked the target is a constant screen slot that does not follow a reflow at all, so a
+        // glide there only smears a settled position — measured stray tops of 132 and 109 on frames whose neighbours
+        // were steady at 84.
         const settledDocked = dockedEdge !== null && edgeChanged === false
+        const enteringDock = edgeChanged && dockedEdge !== null
         if (Math.abs(delta) > 2 && Math.abs(delta) < 400
           && typeof element.animate === 'function'
-          && settledDocked === false && (edgeChanged || reflowed)) {
+          && settledDocked === false && (enteringDock || reflowed)) {
           // A reflow can shove the block by 150px in one frame; easing that over 260ms would visibly lag the passage. The
           // reflow glide is therefore short — enough to remove the frame-to-frame shake without detaching from the text.
           // The 400px ceiling is a guard: a real move is never that large, so a bigger `delta` means the measurement is

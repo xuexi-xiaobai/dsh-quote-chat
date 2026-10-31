@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:f4543f40d21f5c79
+ * Artifact: sha256:6fd9264f633a1fcc
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -2524,14 +2524,17 @@ function __dshQuoteChatFactory(hostRequire) {
       const scrollerBox = scroller === null ? { top: 0, left: 0, bottom: typeof window === "undefined" ? 0 : window.innerHeight } : scroller.getBoundingClientRect();
       const hasInput = comment.trim() !== "";
       const restingBottom = resting.top + height;
+      const band = typeof readableBand === "function" ? readableBand() : null;
+      const visibleTop = band === null ? scrollerBox.top : band.top;
+      const visibleBottom = band === null ? scrollerBox.bottom : band.bottom;
       const DOCK_MARGIN = 24;
       const wasDocked = dockedRef.current !== null;
-      const clearlyOut = resting.top < scrollerBox.top - DOCK_MARGIN || restingBottom > scrollerBox.bottom + DOCK_MARGIN;
-      const comfortablyVisible = resting.top >= scrollerBox.top + DOCK_MARGIN && restingBottom <= scrollerBox.bottom - DOCK_MARGIN;
+      const clearlyOut = resting.top < visibleTop - DOCK_MARGIN || restingBottom > visibleBottom + DOCK_MARGIN;
+      const comfortablyVisible = resting.top >= visibleTop + DOCK_MARGIN && restingBottom <= visibleBottom - DOCK_MARGIN;
       const anchorMoved = blockBox !== void 0 && blockBox !== null && previousBlockRef.current !== null && Math.abs(Math.round(blockBox.top) - previousBlockRef.current) > 1;
       const scrollMoved = previousScrollTopRef.current !== null && Math.abs((scroller === null || scroller === void 0 ? 0 : scroller.scrollTop) - previousScrollTopRef.current) > 1;
       const frozen = anchorMoved && scrollMoved === false;
-      const needsRescue = hasInput === false ? false : frozen ? wasDocked : wasDocked ? clearlyOut && comfortablyVisible === false : resting.top < scrollerBox.top - 1 || restingBottom > scrollerBox.bottom + 1;
+      const needsRescue = hasInput === false ? false : frozen ? wasDocked : wasDocked ? clearlyOut && comfortablyVisible === false : resting.top < visibleTop - 1 || restingBottom > visibleBottom + 1;
       previousBlockRef.current = blockBox === void 0 || blockBox === null ? null : Math.round(blockBox.top);
       previousScrollTopRef.current = scroller === null || scroller === void 0 ? 0 : scroller.scrollTop;
       const lockedEdge = dockedEdgeRef.current;
@@ -2581,7 +2584,8 @@ function __dshQuoteChatFactory(hostRequire) {
           const delta = previousTop - viewportTop;
           const reflowed = scrolled === false && previousEdge === dockedEdge;
           const settledDocked = dockedEdge !== null && edgeChanged === false;
-          if (Math.abs(delta) > 2 && Math.abs(delta) < 400 && typeof element.animate === "function" && settledDocked === false && (edgeChanged || reflowed)) {
+          const enteringDock = edgeChanged && dockedEdge !== null;
+          if (Math.abs(delta) > 2 && Math.abs(delta) < 400 && typeof element.animate === "function" && settledDocked === false && (enteringDock || reflowed)) {
             glideRef.current = element.animate(
               [{ transform: `translateY(${delta}px)` }, { transform: "none" }],
               { duration: edgeChanged ? 260 : 90, easing: "cubic-bezier(.22,.61,.36,1)" }
