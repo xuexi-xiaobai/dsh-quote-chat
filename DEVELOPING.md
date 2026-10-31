@@ -325,3 +325,8 @@ gh issue create --repo xuexi-xiaobai/dsh-quote-chat --title "..." --label bug --
 `DEFECTS.md` stays the long-form handover (evidence strength, what was ruled out); the issue is the
 trackable entry. File the issue when the defect is first observed, and keep the document as the
 place where a claim is corrected after someone tests it.
+
+Features and front-end design changes are **not** defects: nothing is "violated", only traded off.
+They get an `enhancement` issue (or `needs-decision` while a choice is open) plus an entry in
+`docs/design-log.md`, which asks for what was rejected and why. Screenshots belong on the issue,
+not in the package.
