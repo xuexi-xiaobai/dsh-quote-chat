@@ -31,9 +31,25 @@ check('a linger delay is defined',
 check('leaving schedules a close instead of closing',
   /closeTimer = setTimeout\(\(\) => \{[\s\S]{0,120}setHover\(null\)/.test(cardsSource),
   'the pointer-out path closes immediately')
-check('the close is a timeout, not a synchronous clear',
-  /if \(annotation === undefined \|\| annotation === null\) \{[\s\S]{0,400}setTimeout/.test(cardsSource),
+check('the close goes through a shared timer, not a synchronous clear',
+  /const scheduleClose = \(linger\) => \{[\s\S]{0,400}?closeTimer = setTimeout/.test(cardsSource)
+    && /scheduleClose\(HOVER_LINGER_MS\)/.test(cardsSource),
   'the exit path does not use a timer')
+// The reported case: the chip walks away from a still pointer (typing in front of it). No pointer event fires for that,
+// so the hover has to be checked against the chip's LIVE box on a frame loop.
+check('the open hover is followed on a frame loop',
+  /if \(pointerOnChip\(pair\.chip\) === false\)/.test(cardsSource)
+    && /followFrame = requestAnimationFrame\(follow\)/.test(cardsSource),
+  'nothing re-checks whether the pointer is still on the chip')
+check('a chip that walks away closes the hover without a linger',
+  /scheduleClose\(0\)/.test(cardsSource),
+  'the card would linger after the chip moved out from under the pointer')
+check('the follow loop stops when no card is open',
+  /const current = hoverRef\.current\s*\n\s*if \(current === null\) return/.test(cardsSource),
+  'the frame loop would run forever')
+check('the anchor is re-measured from the chip on every follow frame',
+  /const rect = pair\.chip\.getBoundingClientRect\(\)[\s\S]{0,200}left: snap\(rect\.left\)/.test(cardsSource),
+  'the anchor is still a snapshot')
 check('coming back cancels the pending close',
   /if \(closeTimer !== 0\) \{\s*clearTimeout\(closeTimer\)/.test(cardsSource),
   're-entering does not cancel the close')
@@ -41,11 +57,14 @@ check('the pending close is cleared on unmount',
   /if \(closeTimer !== 0\) clearTimeout\(closeTimer\)/.test(cardsSource),
   'the close timer leaks on unmount')
 
-// The card must survive the trip from chip to card, so the pointer logic has to
-// treat both as "still on this annotation".
-check('the card counts as part of the hover',
-  /target\.closest\('\.qc-card'\) !== null/.test(cardsSource),
-  'the card is not treated as hoverable')
+// The × is drawn inside the chip's left slot, so reaching for it is not leaving the chip. The CARD is not: the
+// pointer is off the chip while it is over the card, and the requested rule is that the card closes then.
+check('the × counts as part of the chip it covers',
+  /target\.closest\('\.qc-chip-remove'\) !== null/.test(cardsSource),
+  'the × is not treated as part of the chip')
+check('the card no longer holds the hover open',
+  /target\.closest\('\.qc-card'\)/.test(cardsSource) === false,
+  'the card still keeps the hover alive after the pointer left the chip')
 
 // ── 3. No ordinal, no removal control in the card ─────────────────────────
 check('the card renders no number badge',

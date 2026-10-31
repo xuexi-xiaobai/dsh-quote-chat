@@ -85,6 +85,16 @@ export function createCards({ composerContainer }) {
     const hoverRef = React.useRef(null)
     hoverRef.current = hover
     /**
+     * The pointer's last known position, in viewport pixels.
+     *
+     * A ref, not a closure variable: the effect below re-runs whenever the draft changes — typing does that on every
+     * keystroke — and a closure variable would be reset to "unknown" on each run. Unknown has to mean "assume it is
+     * still on the chip" (the very first hover has no position yet), so resetting it made the card follow a chip that
+     * had long left the pointer behind. Measured: the chip walked 330px away and the × followed it, because every
+     * keystroke re-created the position object.
+     */
+    const pointerRef = React.useRef({ x: Number.NaN, y: Number.NaN, known: false, away: false })
+    /**
      * While `Date.now()` is below this, no card is shown. See SUPPRESS_MS.
      *
      * Declared HERE, not inside the effect below. It spent one revision inside the effect callback, which is a hook
@@ -257,10 +267,11 @@ export function createCards({ composerContainer }) {
   const hoverTargetOf = (event) => {
     const target = event.target instanceof Element ? event.target : null
     if (target === null) return undefined
-    const inFloating = target.closest('.qc-card') !== null
-      || target.closest('.qc-chip-remove') !== null
-    if (inFloating) {
-      // Inside the × or the card: keep whatever is showing (null = nothing).
+    // Only the × counts as "still on the chip": it is drawn INSIDE the chip's left slot. The card floats above the chip,
+    // so the pointer is off the chip while it is over the card — it no longer holds the hover open. That is deliberate:
+    // the card is a preview, and the requested rule is that it goes away when the pointer leaves the chip.
+    if (target.closest('.qc-chip-remove') !== null) {
+      // Keep whatever is showing (null = nothing).
       return hoverRef.current?.annotation ?? null
     }
     const chip = chipOf(event)
@@ -268,36 +279,79 @@ export function createCards({ composerContainer }) {
     return pairs().find((pair) => pair.chip === chip)?.annotation
   }
 
-  // One handler for the whole gesture. A pointer that is on neither the chip nor
-  // either floating piece clears the hover; anything else keeps it, so moving
-  // onto the × or up into the card never blinks the UI away. Handling this on
-  // `mouseover` alone also covers leaving the ×, which a chip-scoped `mouseout`
-  // could never see.
+  /**
+   * The pointer's last known position, in viewport pixels.
+   *
+   * The card and the × are anchored to the CHIP, and the requirement is that they disappear the moment the pointer is
+   * not over that chip. No DOM event fires for the case that broke this: typing in front of the chip pushes it to the
+   * right while the pointer does not move at all, so there is no `mouseover`, no `mouseout` and no `mousemove` — the
+   * chip simply travels out from under a stationary pointer. Measured: the chip moved 329px, the × did not move at all
+   * and sat on top of the text being typed.
+   *
+   * So the position is remembered here and compared against the chip's LIVE rectangle every frame while a card is open.
+   * That one comparison covers all three cases at once: the pointer moving away, the chip moving away, and the chip
+   * growing or re-wrapping under the pointer.
+   */
+  const notePointer = (event) => {
+    if (typeof event.clientX !== 'number') return
+    pointerRef.current.x = event.clientX
+    pointerRef.current.y = event.clientY
+    pointerRef.current.known = true
+    pointerRef.current.away = false
+  }
+
+  /** Whether the remembered pointer position is inside a chip's live box. */
+  const pointerOnChip = (chip) => {
+    const pointer = pointerRef.current
+    if (pointer.away) return false
+    if (pointer.known === false) return true
+    const box = chip.getBoundingClientRect()
+    return pointer.x >= box.left && pointer.x <= box.right
+      && pointer.y >= box.top && pointer.y <= box.bottom
+  }
+
+  /**
+   * Start the exit animation, then unmount.
+   *
+   * Re-checks at fire time: the decision to close was taken on an earlier frame (or on an earlier pointer event), and
+   * an open could have happened since — moving straight from one chip to the next used to close the NEW card.
+   *
+   * @param linger - ms to wait before starting the exit; 0 when the pointer has already left the chip.
+   */
+  const scheduleClose = (linger) => {
+    if (closeTimer !== 0) return
+    closeTimer = setTimeout(() => {
+      closeTimer = 0
+      const open = hoverRef.current
+      if (open === null) return
+      const pair = pairs().find((item) => item.annotation.id === open.annotation.id)
+      if (pair !== undefined && pointerOnChip(pair.chip)) return
+      // Mark it closing so the exit animation can run before unmount; the card would otherwise vanish between frames.
+      setHover((current) => (current === null ? current : { ...current, closing: true }))
+      closeTimer = setTimeout(() => {
+        closeTimer = 0
+        setHover(null)
+      }, CARD_EXIT_MS)
+    }, linger)
+  }
+
+  // One handler for the whole gesture. A pointer that is over a chip opens (or keeps) that chip's card; a pointer
+  // anywhere else starts the close. Handling this on `mouseover` alone also covers leaving the ×, which a chip-scoped
+  // `mouseout` could never see.
   const onPointer = (event) => {
     // A card that is still open swallows clicks aimed at anything it covers, because it is a portal in its own stacking
     // context. Nothing may be open during the window after a removal — see SUPPRESS_MS.
     if (Date.now() < suppressUntil.current) return
+    notePointer(event)
     const annotation = hoverTargetOf(event)
     // `undefined` = pointer is elsewhere; `null` = inside a piece with nothing
     // open. Both mean there is nothing to show.
     if (annotation === undefined || annotation === null) {
-      // Do not drop the card the instant the pointer leaves. A grace period
-      // lets the user travel from the chip to the card (or to the ×) across the
-      // gap between them, and returning inside the window cancels the close.
-      if (closeTimer === 0) {
-        closeTimer = setTimeout(() => {
-          closeTimer = 0
-          // Mark it closing so the exit animation can run before unmount; the
-          // card would otherwise vanish between two frames.
-          setHover((current) => (current === null
-            ? current
-            : { ...current, closing: true }))
-          closeTimer = setTimeout(() => {
-            closeTimer = 0
-            setHover(null)
-          }, CARD_EXIT_MS)
-        }, HOVER_LINGER_MS)
-      }
+      // The × is drawn INSIDE the chip's left slot, so reaching for it is not "leaving the chip" — the frame loop sees
+      // the pointer inside the chip's box and keeps the card open. The CARD, on the other hand, floats above the chip:
+      // the pointer is off the chip while it is over the card, so the card closes. That is the requested behaviour; it
+      // used to stay open so the pointer could travel into it.
+      scheduleClose(HOVER_LINGER_MS)
       return
     }
     if (closeTimer !== 0) {
@@ -327,30 +381,66 @@ export function createCards({ composerContainer }) {
         height: snap(rect.height),
       } }
     })
+    // The chip can move without any event (typing in front of it), so following starts here and stops itself when the
+    // card closes.
+    startFollow()
   }
-  // While open, follow the chip: the composer scrolls and grows as you type.
-  const reposition = () => {
-    setHover((current) => {
-      if (current === null) return current
-      const still = pairs().find((pair) => pair.annotation.id === current.annotation.id)
-      if (still === undefined) return null
-      const rect = still.chip.getBoundingClientRect()
-      const next = {
-        left: snap(rect.left),
-        top: snap(rect.top),
-        width: snap(rect.width),
-        height: snap(rect.height),
-      }
-      if (current.anchor.left === next.left && current.anchor.top === next.top
-        && current.anchor.width === next.width && current.anchor.height === next.height) {
-        return current
-      }
-      return { annotation: current.annotation, anchor: next }
-    })
+  /**
+   * While a card is open, keep it on its chip — and close it when the pointer is no longer over that chip.
+   *
+   * A frame loop rather than listeners, because the thing that moves is not an event: typing re-wraps the composer and
+   * the chip slides sideways with no pointer event and no scroll. The previous version listened for `scroll` and
+   * `resize`, which covers the composer growing but not the chip moving, and that is exactly the reported case.
+   *
+   * The loop only runs while a card is open: it starts when the first card opens and stops as soon as there is nothing
+   * to follow, so an idle composer costs nothing.
+   */
+  let followFrame = 0
+  const follow = () => {
+    followFrame = 0
+    const current = hoverRef.current
+    if (current === null) return
+    const pair = pairs().find((item) => item.annotation.id === current.annotation.id)
+    if (pair === undefined) {
+      setHover(null)
+      return
+    }
+    if (pointerOnChip(pair.chip) === false) {
+      // Off the chip: this is the reported case where the chip walks away from a still pointer. No linger — the card
+      // must go when the pointer is no longer on the chip.
+      scheduleClose(0)
+      followFrame = requestAnimationFrame(follow)
+      return
+    }
+    const rect = pair.chip.getBoundingClientRect()
+    const next = {
+      left: snap(rect.left),
+      top: snap(rect.top),
+      width: snap(rect.width),
+      height: snap(rect.height),
+    }
+    if (current.anchor.left !== next.left || current.anchor.top !== next.top
+      || current.anchor.width !== next.width || current.anchor.height !== next.height) {
+      setHover({ annotation: current.annotation, anchor: next })
+    }
+    followFrame = requestAnimationFrame(follow)
   }
+  const startFollow = () => {
+    if (followFrame === 0) followFrame = requestAnimationFrame(follow)
+  }
+  // This effect re-runs whenever the draft changes — which is exactly what typing does — and the cleanup cancels the
+  // loop. Without restarting it here, the card that was open when the first character was typed would never be
+  // followed again, and would never notice that its chip had moved away: measured, the chip slid 330px and the × did
+  // not move at all.
+  if (hoverRef.current !== null) startFollow()
   document.addEventListener('mouseover', onPointer, true)
-  document.addEventListener('scroll', reposition, true)
-  window.addEventListener('resize', reposition)
+  // Pointer left the window entirely: no further pointer events will arrive, so nothing else would ever close the card.
+  const onLeaveWindow = (event) => {
+    if (event.relatedTarget !== null) return
+    pointerRef.current.away = true
+    scheduleClose(0)
+  }
+  document.addEventListener('mouseout', onLeaveWindow, true)
 
   // Clicking the chip jumps. `openReference` covers the editor's own activation
   // path; this covers a plain click on the token itself.
@@ -395,8 +485,8 @@ export function createCards({ composerContainer }) {
     observer.disconnect()
     detachDrag()
     document.removeEventListener('mouseover', onPointer, true)
-    document.removeEventListener('scroll', reposition, true)
-    window.removeEventListener('resize', reposition)
+    document.removeEventListener('mouseout', onLeaveWindow, true)
+    if (followFrame !== 0) cancelAnimationFrame(followFrame)
     document.removeEventListener('click', onClick, true)
     // The chips are deliberately NOT unmarked here.
     //

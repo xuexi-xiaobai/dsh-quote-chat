@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:5c3842d71dee43d5
+ * Artifact: sha256:c8b700e6fd9c8171
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -3002,6 +3002,7 @@ function __dshQuoteChatFactory(hostRequire) {
       const [hover, setHover] = import_react4.default.useState(null);
       const hoverRef = import_react4.default.useRef(null);
       hoverRef.current = hover;
+      const pointerRef = import_react4.default.useRef({ x: Number.NaN, y: Number.NaN, known: false, away: false });
       const suppressUntil = import_react4.default.useRef(0);
       import_react4.default.useEffect(() => {
         if (typeof document === "undefined") return void 0;
@@ -3094,28 +3095,48 @@ function __dshQuoteChatFactory(hostRequire) {
         const hoverTargetOf = (event) => {
           const target = event.target instanceof Element ? event.target : null;
           if (target === null) return void 0;
-          const inFloating = target.closest(".qc-card") !== null || target.closest(".qc-chip-remove") !== null;
-          if (inFloating) {
+          if (target.closest(".qc-chip-remove") !== null) {
             return hoverRef.current?.annotation ?? null;
           }
           const chip = chipOf(event);
           if (chip === null) return void 0;
           return pairs().find((pair) => pair.chip === chip)?.annotation;
         };
+        const notePointer = (event) => {
+          if (typeof event.clientX !== "number") return;
+          pointerRef.current.x = event.clientX;
+          pointerRef.current.y = event.clientY;
+          pointerRef.current.known = true;
+          pointerRef.current.away = false;
+        };
+        const pointerOnChip = (chip) => {
+          const pointer = pointerRef.current;
+          if (pointer.away) return false;
+          if (pointer.known === false) return true;
+          const box = chip.getBoundingClientRect();
+          return pointer.x >= box.left && pointer.x <= box.right && pointer.y >= box.top && pointer.y <= box.bottom;
+        };
+        const scheduleClose = (linger) => {
+          if (closeTimer !== 0) return;
+          closeTimer = setTimeout(() => {
+            closeTimer = 0;
+            const open = hoverRef.current;
+            if (open === null) return;
+            const pair = pairs().find((item) => item.annotation.id === open.annotation.id);
+            if (pair !== void 0 && pointerOnChip(pair.chip)) return;
+            setHover((current) => current === null ? current : { ...current, closing: true });
+            closeTimer = setTimeout(() => {
+              closeTimer = 0;
+              setHover(null);
+            }, CARD_EXIT_MS);
+          }, linger);
+        };
         const onPointer = (event) => {
           if (Date.now() < suppressUntil.current) return;
+          notePointer(event);
           const annotation = hoverTargetOf(event);
           if (annotation === void 0 || annotation === null) {
-            if (closeTimer === 0) {
-              closeTimer = setTimeout(() => {
-                closeTimer = 0;
-                setHover((current) => current === null ? current : { ...current, closing: true });
-                closeTimer = setTimeout(() => {
-                  closeTimer = 0;
-                  setHover(null);
-                }, CARD_EXIT_MS);
-              }, HOVER_LINGER_MS);
-            }
+            scheduleClose(HOVER_LINGER_MS);
             return;
           }
           if (closeTimer !== 0) {
@@ -3134,28 +3155,46 @@ function __dshQuoteChatFactory(hostRequire) {
               height: snap(rect.height)
             } };
           });
+          startFollow();
         };
-        const reposition = () => {
-          setHover((current) => {
-            if (current === null) return current;
-            const still = pairs().find((pair) => pair.annotation.id === current.annotation.id);
-            if (still === void 0) return null;
-            const rect = still.chip.getBoundingClientRect();
-            const next = {
-              left: snap(rect.left),
-              top: snap(rect.top),
-              width: snap(rect.width),
-              height: snap(rect.height)
-            };
-            if (current.anchor.left === next.left && current.anchor.top === next.top && current.anchor.width === next.width && current.anchor.height === next.height) {
-              return current;
-            }
-            return { annotation: current.annotation, anchor: next };
-          });
+        let followFrame = 0;
+        const follow = () => {
+          followFrame = 0;
+          const current = hoverRef.current;
+          if (current === null) return;
+          const pair = pairs().find((item) => item.annotation.id === current.annotation.id);
+          if (pair === void 0) {
+            setHover(null);
+            return;
+          }
+          if (pointerOnChip(pair.chip) === false) {
+            scheduleClose(0);
+            followFrame = requestAnimationFrame(follow);
+            return;
+          }
+          const rect = pair.chip.getBoundingClientRect();
+          const next = {
+            left: snap(rect.left),
+            top: snap(rect.top),
+            width: snap(rect.width),
+            height: snap(rect.height)
+          };
+          if (current.anchor.left !== next.left || current.anchor.top !== next.top || current.anchor.width !== next.width || current.anchor.height !== next.height) {
+            setHover({ annotation: current.annotation, anchor: next });
+          }
+          followFrame = requestAnimationFrame(follow);
         };
+        const startFollow = () => {
+          if (followFrame === 0) followFrame = requestAnimationFrame(follow);
+        };
+        if (hoverRef.current !== null) startFollow();
         document.addEventListener("mouseover", onPointer, true);
-        document.addEventListener("scroll", reposition, true);
-        window.addEventListener("resize", reposition);
+        const onLeaveWindow = (event) => {
+          if (event.relatedTarget !== null) return;
+          pointerRef.current.away = true;
+          scheduleClose(0);
+        };
+        document.addEventListener("mouseout", onLeaveWindow, true);
         const onClick = (event) => {
           if (dragConsumedClick()) {
             event.preventDefault();
@@ -3187,8 +3226,8 @@ function __dshQuoteChatFactory(hostRequire) {
           observer.disconnect();
           detachDrag();
           document.removeEventListener("mouseover", onPointer, true);
-          document.removeEventListener("scroll", reposition, true);
-          window.removeEventListener("resize", reposition);
+          document.removeEventListener("mouseout", onLeaveWindow, true);
+          if (followFrame !== 0) cancelAnimationFrame(followFrame);
           document.removeEventListener("click", onClick, true);
         };
       }, [annotations, occurrences, labels]);
