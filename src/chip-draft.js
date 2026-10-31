@@ -72,6 +72,33 @@ export function chipLabel(annotation, labels) {
 }
 
 /**
+ * Which chip this is, counting from one in reading order.
+ *
+ * The number a chip shows is a POSITION: the third chip in the draft is "注释 3" no matter when it was created. The
+ * annotation store also carries a `number`, but that is a different thing — it is the annotation's index in the STORE,
+ * and it stops matching the draft as soon as a chip is deleted or restored in the middle. Both numbers agreed only
+ * while chips could only be appended and removed from the end.
+ *
+ * ## Why the Host's array order is trusted here
+ *
+ * The order is NOT re-sorted by `offset`, even though that is what reading order means. `pairs()` in `cards.js` and
+ * `chipOrdinals()` in `markers.js` both zip the DOM's chips — always in document order — against this same array by
+ * index, and that is where the number on the screen comes from. Deriving a different order here would make the model's
+ * number disagree with the screen's in exactly the case this function exists to fix. If the Host's order ever turns
+ * out to be unreliable, all three have to change together.
+ *
+ * @param occurrences - the Host's current chip list, in the Host's order.
+ * @param source - the chip source this plugin owns; other sources are not counted.
+ * @param ref - the chip id.
+ * @returns the 1-based position, or null when the chip is not in the draft.
+ */
+export function chipOrdinal(occurrences, source, ref) {
+  const mine = (Array.isArray(occurrences) ? occurrences : []).filter((item) => item.source === source)
+  const index = mine.findIndex((item) => item.ref === ref)
+  return index < 0 ? null : index + 1
+}
+
+/**
  * Rebuild the whole draft with one more chip appended.
  *
  * A chip's `offset` is measured in the final draft text, so every insertion rebuilds the text

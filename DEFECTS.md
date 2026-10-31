@@ -87,7 +87,7 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 
 ---
 
-## 2. 待修缺陷
+## 2. 缺陷清单
 
 每条缺陷在 GitHub issue 里有对应条目（仓库 `xuexi-xiaobai/dsh-quote-chat`）。
 **本文档是长文**：记证据强度、被证伪的旧说法、以及排查过程中排除掉的可能；
@@ -275,6 +275,41 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 - **与缺陷 1 无关**：`pointerDown` 卡死只会跳过"选区变化后的重求值"，不会让 Esc 失效；
   修缺陷 1 也修不好这条。
 
+### 缺陷 7：芯片编号对不上 —— 界面按位置算，模型按注册时的号码
+
+> 追踪：issue [#6](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/6) —— **已修复**（见下方「修复」）
+
+**证据强度：`[已验证]`（代码路径 + 真实浏览器抓包，修复前后各一次）**
+
+- 界面：`src/ui/cards.js` `pairs()` 把 DOM 里的芯片（文档顺序）和 `occurrences` **按下标拉链**，
+  序号就是位置；`src/ui/markers.js` 的 `chipOrdinals()` 是同一套写法。
+- 模型：`src/chip-registry.js` `register()` 把 `chipLabel(annotation, labels)` 存进 payload，
+  之后**没有任何路径更新它** —— 全仓库唯一的 payload 修改是 `updateComment()`，只动 comment。
+  `src/registrations.js` 的 `serialize` 直接 `serializeChipForModel(payload)`，用的是存下来的 `label`。
+- 两套只在"注册顺序 == 当前顺序"时一致。删掉中间一条注释，界面显示 1、2，模型收到 1、3，
+  而且可能出现**重复编号**（A=1、C=3、D=3）。
+
+#### 修复
+
+`chip-draft.js` 新增 `chipOrdinal(occurrences, source, ref)`：按宿主数组的下标算位置。
+**故意不按 `offset` 排序** —— `pairs()` 和 `chipOrdinals()` 都是按下标拉链的，这里换一种顺序
+反而会在更多情况下让模型和界面不一致；要改就得三处一起改。
+
+`registrations.js` 的 `serialize` 在组消息时通过 `labelHandler` 问一次当前位置，拿不到就退回
+存下来的 label（dock 没挂载时，例如从别的视图提交）。
+
+#### 真机验证
+
+`tools/probe-ordinal-submit.mjs` —— 抓发出去的请求体，而不是看界面：
+
+```
+三条注释 → 删第一条 → 界面 注释 1 / 注释 2
+旧 bundle：payload [注释 2] [注释 3]   ← 缺陷
+新 bundle：payload [注释 1] [注释 2]   ← 修复
+```
+
+顺带证实了 `serialize` 确实在草稿还在的时候跑（否则拿不到 `occurrences`，会退回旧行为）。
+
 ## 3. 不算缺陷，但会误导人的现状
 
 ### 3.1 `accept-lifecycle` 有 5 项固定失败
@@ -306,7 +341,7 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 
 ```
 node build.mjs --check   → sha256:5848438bdcb1ec08，通过
-npm test                 → 641/641 通过，0 失败
+npm test                 → 655/655 通过，0 失败
 ```
 
 验收套件（需要 1.1 + 1.2 的前提）：
@@ -318,7 +353,7 @@ accept-lifecycle   68/73（QC_VIEWPORT=1440x1000）
 verify-web-build   OK — Web serves the current build
 ```
 
-修任何一个缺陷后，至少要保证 `npm test` 仍 641 通过，且 `--check` 的哈希变化
+修任何一个缺陷后，至少要保证 `npm test` 仍 655 通过，且 `--check` 的哈希变化
 **只能来自源码改动**。新增测试并入 `package.json` 的 `test` 脚本（注意是长
 `&&` 链，加在末尾）。
 

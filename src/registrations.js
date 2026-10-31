@@ -74,11 +74,11 @@ export function registerSideChatTab({ ctx, t, TAB_ID, TAB_KIND, NS, SideChatTab 
  * `codec.serialize` on submit to turn the chip into the model's copy of the passage, and
  * `openReference` when the chip is clicked. Without it a chip is an inert token with no owner.
  *
- * @param options - `{ ctx, registry, jumpHandler, CHIP_TRIGGER, CHIP_SOURCE, CHIP_PLACEHOLDER,
- *   serializeChipForModel }`.
+ * @param options - `{ ctx, registry, jumpHandler, labelHandler, CHIP_TRIGGER, CHIP_SOURCE,
+ *   CHIP_PLACEHOLDER, serializeChipForModel }`.
  */
 export function registerReferenceSource({
-  ctx, registry, jumpHandler, CHIP_TRIGGER, CHIP_SOURCE, CHIP_PLACEHOLDER, serializeChipForModel,
+  ctx, registry, jumpHandler, labelHandler, CHIP_TRIGGER, CHIP_SOURCE, CHIP_PLACEHOLDER, serializeChipForModel,
 }) {
   ctx.effect(() => {
     const handle = ctx.inject(['inputTriggers'], (scope) => {
@@ -101,7 +101,18 @@ export function registerReferenceSource({
             if (payload === undefined) {
               return Promise.reject(new Error(`quote-chat: unknown chip "${ref}"`))
             }
-            return Promise.resolve(serializeChipForModel(payload))
+            // The ordinal is a POSITION, and the payload's copy of it was frozen when the chip was registered. The
+            // store's `number` is the annotation's index in the STORE, not in the draft, so the two diverge the moment
+            // a chip is deleted or restored in the middle — the model then reads "注释 3" for a chip displayed as
+            // "注释 2", and two chips can end up with the same number.
+            //
+            // So it is resolved here, from the live draft, at the moment the message is assembled. A null answer means
+            // the dock is not mounted for this session (the chip survives in a draft it cannot see); the stored label
+            // is then the best available guess and the old behaviour is preserved.
+            const live = typeof labelHandler?.current === 'function' ? labelHandler.current(ref) : null
+            return Promise.resolve(serializeChipForModel(
+              typeof live === 'string' && live !== '' ? { ...payload, label: live } : payload,
+            ))
           }
         }
       })

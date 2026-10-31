@@ -34,7 +34,7 @@ import {
   squishText, sameText, textOfWithin, FLOW_SELECTOR, BLOCK_SELECTOR, isInsideTranscript,
 } from '../text-ranges.js'
 import {
-  serializeChipForModel, CHIP_SOURCE, CHIP_TRIGGER, CHIP_PLACEHOLDER, chipRemovalSite,
+  serializeChipForModel, CHIP_SOURCE, CHIP_TRIGGER, CHIP_PLACEHOLDER, chipRemovalSite, chipOrdinal,
 } from '../chip-draft.js'
 import { useDraft, useDraftOccurrences } from './draft-hooks.js'
 import { FLASH_MS } from '../highlight.js'
@@ -78,7 +78,9 @@ export function annotationDock(deps) {
   } = annotations
   // The store's own methods, used directly: the entry's wrappers were identical pass-throughs.
   const { add: addAnnotation, remove: removeAnnotation, update: updateAnnotation } = annotationStore
-  const { registry: chipRegistry, bridge: chipBridge, jumpHandler: chipJumpHandler } = chips
+  const {
+    registry: chipRegistry, bridge: chipBridge, jumpHandler: chipJumpHandler, labelHandler: chipLabelHandler,
+  } = chips
   // The highlighter's own methods; the entry's wrappers added a default that no call site used.
   const {
     flash: flashRange, clear: clearFlashRange, hold: holdRange,
@@ -462,6 +464,27 @@ export function annotationDock(deps) {
         if (chipJumpHandler.current !== null) chipJumpHandler.current = null
       }
     }, [annotations, onJump])
+
+    /**
+     * Name a chip by its position in the draft, for the reference source.
+     *
+     * The number a chip shows is a POSITION — the third chip is "注释 3" no matter when it was created — but the copy
+     * stored with its payload is frozen at registration. Deleting a chip in the middle shifts every chip after it, so
+     * the frozen number stops matching what the user sees: the model read "注释 3" for a chip displayed as "注释 2",
+     * and two chips could carry the same number.
+     *
+     * Same shape as the jump above, for the same reason: the source is registered once per plugin while the draft is
+     * per-session, so it asks through this published handler instead of holding a closure over this session's list.
+     */
+    React.useEffect(() => {
+      chipLabelHandler.current = (ref) => {
+        const ordinal = chipOrdinal(occurrences, CHIP_SOURCE, ref)
+        return ordinal === null ? null : labels.content.replace('{n}', String(ordinal))
+      }
+      return () => {
+        if (chipLabelHandler.current !== null) chipLabelHandler.current = null
+      }
+    }, [occurrences, labels])
 
     /**
      * The draft as it is at this instant.

@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:c274c5d5dcfe0671
+ * Artifact: sha256:866e2bab9e1eeb35
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -318,6 +318,11 @@ function __dshQuoteChatFactory(hostRequire) {
   }
   function chipLabel(annotation, labels) {
     return labels.content.replace("{n}", String(annotation.number));
+  }
+  function chipOrdinal(occurrences, source, ref) {
+    const mine = (Array.isArray(occurrences) ? occurrences : []).filter((item) => item.source === source);
+    const index = mine.findIndex((item) => item.ref === ref);
+    return index < 0 ? null : index + 1;
   }
   function withAppendedChip(draft, existing, addition, reference) {
     const base = draft;
@@ -3847,7 +3852,12 @@ function __dshQuoteChatFactory(hostRequire) {
       store: annotationStore2
     } = annotations;
     const { add: addAnnotation, remove: removeAnnotation, update: updateAnnotation } = annotationStore2;
-    const { registry: chipRegistry2, bridge: chipBridge2, jumpHandler: chipJumpHandler2 } = chips;
+    const {
+      registry: chipRegistry2,
+      bridge: chipBridge2,
+      jumpHandler: chipJumpHandler2,
+      labelHandler: chipLabelHandler2
+    } = chips;
     const {
       flash: flashRange,
       clear: clearFlashRange,
@@ -4103,6 +4113,15 @@ function __dshQuoteChatFactory(hostRequire) {
           if (chipJumpHandler2.current !== null) chipJumpHandler2.current = null;
         };
       }, [annotations2, onJump]);
+      import_react8.default.useEffect(() => {
+        chipLabelHandler2.current = (ref) => {
+          const ordinal = chipOrdinal(occurrences, CHIP_SOURCE, ref);
+          return ordinal === null ? null : labels.content.replace("{n}", String(ordinal));
+        };
+        return () => {
+          if (chipLabelHandler2.current !== null) chipLabelHandler2.current = null;
+        };
+      }, [occurrences, labels]);
       const readLiveDraft = import_react8.default.useCallback(() => {
         const state = inputStateRef.current;
         return {
@@ -4318,6 +4337,7 @@ function __dshQuoteChatFactory(hostRequire) {
     ctx,
     registry,
     jumpHandler,
+    labelHandler,
     CHIP_TRIGGER: CHIP_TRIGGER2,
     CHIP_SOURCE: CHIP_SOURCE3,
     CHIP_PLACEHOLDER: CHIP_PLACEHOLDER2,
@@ -4342,7 +4362,10 @@ function __dshQuoteChatFactory(hostRequire) {
               if (payload === void 0) {
                 return Promise.reject(new Error(`quote-chat: unknown chip "${ref}"`));
               }
-              return Promise.resolve(serializeChipForModel2(payload));
+              const live = typeof labelHandler?.current === "function" ? labelHandler.current(ref) : null;
+              return Promise.resolve(serializeChipForModel2(
+                typeof live === "string" && live !== "" ? { ...payload, label: live } : payload
+              ));
             }
           }
         });
@@ -4602,6 +4625,7 @@ function __dshQuoteChatFactory(hostRequire) {
   var chipRegistry = createChipRegistry();
   var chipBridge = createDraftBridge({ registry: chipRegistry, source: CHIP_SOURCE });
   var chipJumpHandler = { current: null };
+  var chipLabelHandler = { current: null };
   function applyImpl(ctx) {
     installStyles(ctx);
     ctx.effect(() => ctx.locale.register(NS, { zh, en }), "quote-chat: dictionaries");
@@ -4611,6 +4635,7 @@ function __dshQuoteChatFactory(hostRequire) {
       ctx,
       registry: chipRegistry,
       jumpHandler: chipJumpHandler,
+      labelHandler: chipLabelHandler,
       CHIP_TRIGGER,
       CHIP_SOURCE,
       CHIP_PLACEHOLDER,
@@ -4624,7 +4649,12 @@ function __dshQuoteChatFactory(hostRequire) {
         // The annotation lifecycle: one store, plus the React binding over it.
         annotations: { store: annotationStore, useAnnotations },
         // Chip identity and the draft seam.
-        chips: { registry: chipRegistry, bridge: chipBridge, jumpHandler: chipJumpHandler },
+        chips: {
+          registry: chipRegistry,
+          bridge: chipBridge,
+          jumpHandler: chipJumpHandler,
+          labelHandler: chipLabelHandler
+        },
         // Painting: the transient glow and the held editor highlight.
         highlights: highlighter,
         // Restoring a stored passage into view.

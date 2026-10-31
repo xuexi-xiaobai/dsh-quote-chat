@@ -231,6 +231,15 @@ const chipBridge = createDraftBridge({ registry: chipRegistry, source: CHIP_SOUR
  */
 const chipJumpHandler = { current: null }
 
+/**
+ * The dock's label function, published for the reference source.
+ *
+ * Same reason as the jump above, for a different symptom: a chip's number is its position in the draft, and the copy
+ * stored with its payload is frozen at registration. The dock knows the current positions, the source is registered
+ * outside it, so the source asks through this handler while assembling a message.
+ */
+const chipLabelHandler = { current: null }
+
 // #endregion
 
 // #region apply
@@ -255,6 +264,7 @@ function applyImpl(ctx) {
     ctx,
     registry: chipRegistry,
     jumpHandler: chipJumpHandler,
+    labelHandler: chipLabelHandler,
     CHIP_TRIGGER,
     CHIP_SOURCE,
     CHIP_PLACEHOLDER,
@@ -269,7 +279,9 @@ function applyImpl(ctx) {
         // The annotation lifecycle: one store, plus the React binding over it.
         annotations: { store: annotationStore, useAnnotations },
         // Chip identity and the draft seam.
-        chips: { registry: chipRegistry, bridge: chipBridge, jumpHandler: chipJumpHandler },
+        chips: {
+          registry: chipRegistry, bridge: chipBridge, jumpHandler: chipJumpHandler, labelHandler: chipLabelHandler,
+        },
         // Painting: the transient glow and the held editor highlight.
         highlights: highlighter,
         // Restoring a stored passage into view.
