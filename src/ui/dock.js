@@ -162,11 +162,17 @@ export function annotationDock(deps) {
       delete: t('bubble.delete'),
     }), [t])
 
-    // Dismissal: a press inside the TRANSCRIPT closes the open surface; the surrounding chrome does not.
+    // Dismissal. TWO surfaces, TWO rules — they are not the same thing and must not share one.
     //
-    // The rule used to be "a press anywhere outside the open surface closes it", which threw away a draft comment for
-    // the slightest reason — adjusting a side panel, glancing at the header, or reaching for the composer. The draft is
-    // the user's work, so only moving on to another part of the transcript may discard it.
+    // `compose` holds a comment the user is typing, and is reached through two deliberate steps (select a passage, then
+    // press "annotate"). Its rule is the conservative one: only a press inside the TRANSCRIPT closes it, so adjusting a
+    // side panel or glancing at the header cannot throw the draft away.
+    //
+    // `actions` is the annotation toolbar that appears beside a selection. It appears on a SINGLE gesture, so it is
+    // produced by accident far more easily, and it holds no draft — closing it loses nothing. It therefore closes on
+    // any press outside itself. Measured before this: pressing the left rail left the toolbar up with the selection
+    // still highlighted, and pressing the header or the composer left it up with no selection at all — after which its
+    // buttons still opened an annotation panel for the abandoned 335-character passage.
     //
     // The test lives in `isInsideTranscript` so this handler and the popover's own one cannot disagree. Before it was
     // shared, this handler closed the panel on every outside press, which made the popover's own rule unreachable.
@@ -175,6 +181,16 @@ export function annotationDock(deps) {
       const onPointerDown = (event) => {
         const surface = document.querySelector('.qc-popup, .qc-compose')
         if (surface !== null && surface.contains(event.target)) return
+        const open = overlayRef.current
+        if (open !== null && open.kind === 'actions') {
+          // Clearing the ranges matters as much as closing: a press that does not clear the selection (the left rail
+          // does not) would otherwise be followed by its own mouseup, which re-reads the selection and re-opens the
+          // toolbar immediately — the same shape of bug as #1's Esc.
+          const selection = document.getSelection()
+          if (selection !== null) selection.removeAllRanges()
+          cancelCompose()
+          return
+        }
         if (!isInsideTranscript(event.target)) return
         // Dismissing must go through cancelCompose, not setOverlay: the compose step paints the
         // passage, and only cancelCompose clears it. Calling setOverlay here unmounted the popover
@@ -210,7 +226,12 @@ export function annotationDock(deps) {
       let releasePoint = null
       const evaluate = () => {
         frame = 0
-        if (overlayRef.current !== null) return
+        // The compose panel owns the draft, so the selection is not consulted while it is open. The actions toolbar does
+        // not: when its selection goes away (the browser clears it on a press in the chrome, Escape, a programmatic
+        // change) the toolbar has to go with it. Returning early for BOTH kinds is what left a toolbar on screen with
+        // nothing selected, ready to annotate a passage the user had already let go.
+        const open = overlayRef.current
+        if (open !== null && open.kind !== 'actions') return
         if (pointerDown) return
         const next = readSelection(releasePoint)
         if (next === null) {

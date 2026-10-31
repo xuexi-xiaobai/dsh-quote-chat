@@ -640,7 +640,7 @@ node tools/probe-chip-hover-follow.mjs <url>     # 2/4，两条 FAIL
 
 ### 缺陷 12：划词工具栏点外部不消失（侧栏按下连选区都还在）
 
-> 追踪：issue [#14](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/14) —— **未修复**
+> 追踪：issue [#14](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/14) —— **已修复**（见下方「修复」）
 
 **证据强度：`[已验证]`（真实浏览器矩阵 + 两处代码路径 + 后果实测）**
 
@@ -663,10 +663,37 @@ node tools/probe-chip-hover-follow.mjs <url>     # 2/4，两条 FAIL
 顺带说明：**「添加注释」面板保持打开是对的**（用户确认），它需要"划选 + 点按钮"两步，不易误触。
 所以修法是**把两种浮层的关闭规则分开**，而不是把面板也改成"外部一点就关"。
 
+#### 修复
+
+两种浮层是两种东西，`overlay.kind` 分开处理：
+
+- **`actions`（划词工具栏）**：任何不在它自身的按下都关，并且**顺手清掉选区**
+  （左栏那种按下不会自然清选区，不清的话紧接着的 mouseup 会重新读选区、把工具栏又打开——和 #1 的 Esc 同一个形状）；
+- **`compose`（添加注释面板）**：保持原来的规则，只有正文内的按下才关。
+
+选区跟踪那边，`evaluate()` 的提前返回从"任何浮层"收窄成"非 actions 的浮层"：
+`compose` 开着时不读选区（保护草稿），`actions` 开着时照常读——选区被浏览器清掉就跟着关。
+
+测试：`test/toolbar-dismiss.mjs`（8 条），钉住"工具栏分支在正文判断**之前**""关的时候清选区""面板仍然只认正文内的按下"
+这三件事；反向验证过（把 `actions` 分支去掉 → 3 条 FAIL）。
+
+#### 真机验证
+
+```
+修复前：左侧栏 → 工具栏还在、选区 335 字仍高亮；头部/作曲器 → 工具栏还在、选区 0 字
+修复后：五个区域（正文空白条/另一段正文/左侧栏/头部/作曲器）全部 → 工具栏消失、选区清空
+```
+
+`tools/probe-toolbar-dismiss.mjs` **10/10**（原来 5/11；最后一条"过期工具栏还能开面板"的检查现在不再触发，
+因为工具栏根本不在了）。
+
+另有对照：`tools/probe-compose-dismiss.mjs` 显示「添加注释」面板仍然**只**在正文内按下时关闭
+（点头部 `painted:true, compose:true`，点正文 `painted:false, compose:false`）——用户要求的防误触没被改掉。
+
 #### 复现
 
 ```
-node tools/probe-toolbar-dismiss.mjs <url>     # 5/11
+node tools/probe-toolbar-dismiss.mjs <url>     # 修复后 10/10
 ```
 
 ---
@@ -701,8 +728,8 @@ node tools/probe-toolbar-dismiss.mjs <url>     # 5/11
 ## 4. 当前基线（修复前请先复现这个）
 
 ```
-node build.mjs --check   → sha256:5c3842d71dee43d5，通过
-npm test                 → 748/748 通过，0 失败
+node build.mjs --check   → sha256:04c7a2e5406edbc9，通过
+npm test                 → 761/761 通过，0 失败
 ```
 
 验收套件（需要 1.1 + 1.2 的前提）：
@@ -714,7 +741,7 @@ accept-lifecycle   68/73（QC_VIEWPORT=1440x1000）
 verify-web-build   OK — Web serves the current build
 ```
 
-修任何一个缺陷后，至少要保证 `npm test` 仍 748 通过，且 `--check` 的哈希变化
+修任何一个缺陷后，至少要保证 `npm test` 仍 761 通过，且 `--check` 的哈希变化
 **只能来自源码改动**。新增测试并入 `package.json` 的 `test` 脚本（注意是长
 `&&` 链，加在末尾）。
 

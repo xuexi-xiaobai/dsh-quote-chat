@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:c8b700e6fd9c8171
+ * Artifact: sha256:04c7a2e5406edbc9
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -4151,6 +4151,13 @@ function __dshQuoteChatFactory(hostRequire) {
         const onPointerDown = (event) => {
           const surface = document.querySelector(".qc-popup, .qc-compose");
           if (surface !== null && surface.contains(event.target)) return;
+          const open = overlayRef.current;
+          if (open !== null && open.kind === "actions") {
+            const selection2 = document.getSelection();
+            if (selection2 !== null) selection2.removeAllRanges();
+            cancelCompose();
+            return;
+          }
           if (!isInsideTranscript(event.target)) return;
           cancelCompose();
         };
@@ -4171,7 +4178,8 @@ function __dshQuoteChatFactory(hostRequire) {
         let releasePoint = null;
         const evaluate = () => {
           frame = 0;
-          if (overlayRef.current !== null) return;
+          const open = overlayRef.current;
+          if (open !== null && open.kind !== "actions") return;
           if (pointerDown) return;
           const next = readSelection2(releasePoint);
           if (next === null) {
