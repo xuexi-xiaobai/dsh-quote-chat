@@ -29,9 +29,11 @@
 
 ## 已记录的设计改动
 
-### D-2（提案，待拍板）划词工具栏的两个图标要重做（issue #15）
+### D-2（已落地，issue #15）划词工具栏的两个图标换成 Lucide 一对
 
-- **改动**：把「注释」「侧边提问」两个 14px 图标重画，使它们在 1:1 下可辨、成对成体系。
+- **改动**：`IconAnnotate` 换成 Lucide 的 `message-square-plus`，`IconSideChat` 换成 Lucide 的 `panel-right`。
+  路径原样使用，只把 `width`/`height` 设成 14；两者共用同一个 `LUCIDE` 几何对象（24 网格、2 笔画、圆角连接），
+  因此成对成体系。原来自绘的一对全部删除，没有保留开关。
 - **为什么**：现在的 `IconAnnotate` 是"气泡 + 挂在右上角的加号"，`IconSideChat` 是"大方框 + 右侧一个向内折的钩"。
   14px、16 画布、1.3 笔画下实际笔画约 1.14px，而加号只有 3.3px 长、与气泡的笔画还重叠约 1.1 个单位；
   侧边那个形状放大后更像括号而不是第二个面板。再加上 `svg{opacity:.8}` 与加号自身的 `opacity:.7` 叠乘（0.56），
@@ -40,10 +42,16 @@
   - 把图标放大到 16–18px：按钮高度会变，工具栏的相对位置与 composer 的对齐要跟着调；
   - 加投影/描边来"提亮"：在 14px 下只会更糊，且把注意力从形状挪到了效果上；
   - 用 emoji：跨平台渲染不可控，和现有线性语言冲突。
-- **验证（计划）**：1:1 与 10× 两组渲染对照；`test/` 里加一条静态契约——两个图标必须共用同一 `viewBox`、
-  同一 stroke、且不出现"两个图标各自不同的圆角"这类偏移。
-- **副作用**：14px 线描的下限就在那里——方向 B（局部实心）能更清晰，但会比周围 UI 更"重"，
-  这一条要等拍板。
+- **验证**：`tools/probe-icon-swap.mjs` 把「之前/现在」两组图标塞进同一个真实 `.qc-popup` 克隆里同帧渲染，
+  并在 1:1 与 3× 两档截图对照；`test/icons.mjs` 新增 15 条静态契约——共用一个 `LUCIDE` 对象、
+  同 `viewBox`、同笔画、路径内不得再出现 `stroke-width`/`opacity`、两条上游路径逐字固定、
+  `IconCheck` 仍留在 16 网格、`icons.js` 必须指向许可文件。做过变异验证：给任一路径加回
+  `opacity` 或 `stroke-width`，测试立刻红（13/15）。`npm test` 776 项通过。
+- **副作用**：14px 线描的下限仍然在——只是这次没有再往下压，而是直接借上游已经按这个尺寸调好的形状。
+  Lucide 的圆角语言比自绘那版更"圆"，和 `IconCheck`（16 网格、手绘、更尖）不是一套；
+  两者不在同一个面上出现（`IconCheck` 只用在 `.qc-compose` 的确认键，这两个只在 `.qc-popup`），可以接受。
+  另外 `.qc-popup svg{opacity:.8}` 保留未动：之前 0.56 的灰来自 `.8 × .7` 叠乘，现在只剩 `.8` 一层，
+  实测与 12.5px 文字并排时层次是对的；去掉反而让图标比文字更抢眼。
 - **调研（可复现，2026-10-31）**：三个库都能直接取单个 SVG，不需要引依赖、不需要图标字体——
   - Lucide（ISC）：`https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/<name>.svg`
   - Tabler（MIT）：`https://cdn.jsdelivr.net/npm/@tabler/icons@latest/icons/outline/<name>.svg`
@@ -63,8 +71,10 @@
     > `highlighter` > Phosphor Bold `note-pencil`；`quote`、`pilcrow`、`messages-square` 在 14px 下全糊。
   - 侧边提问：`panel-right` > Tabler `layout-sidebar-right` > Phosphor `sidebar-simple`（分隔条靠左，方向相反）
     > `panel-right-open`（内含箭头，14px 下像文件夹）。
-- **倾向**：注释用 Lucide `message-square-plus`、侧边提问用 Lucide `panel-right`。两者同源（同 24 网格、同 2 笔画、
-  同圆角），一次性解决"不成体系"；落地时在 `src/icons.js` 顶部保留上游版权与许可行（ISC 要求保留声明）。
+- **拍板**：按上面这一对落地，2026-10-31 由用户确认保留（"相比于前一个，我认为这个图标确实更令人满意了"）。
+  同源是关键——跨库混搭在 1:1 下能看出圆角与笔画的细微差别。
+  许可落地：`src/icons.js` 顶部注明来源并指向 `docs/third-party-notices.md`，后者收录 ISC 声明原文与
+  用到的两个图形名，并已加进 `package.json` 的 `files`。
 
 ### D-1 面板与作曲器之间把 8px 间距还回来（缺陷 10）
 
