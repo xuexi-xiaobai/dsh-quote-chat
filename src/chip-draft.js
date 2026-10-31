@@ -11,11 +11,12 @@
  *      text the model reads. That shape is a wire format: changing a newline changes every
  *      submitted message, which is why the suite pins it byte for byte.
  *
- * ## Why these four live together
+ * ## Why these five live together
  *
  * They all answer "how is a chip represented in the draft?" — the label it shows, the block it
- * becomes, the snapshot that adds it, the snapshot that removes it. None of them needs React,
- * a DOM, or a mutable registry, so all four are directly testable.
+ * becomes, the snapshots that add it (at the end, or back where it came from), the place a
+ * removal cuts, the snapshot that removes it. None of them needs React, a DOM, or a mutable
+ * registry, so all five are directly testable.
  *
  * What this module does NOT do: mint ids, write the payload registry, call the Host's
  * `setDraft`, or decide when a chip should jump. Those are effects with their own lifecycle
@@ -108,6 +109,94 @@ export function withAppendedChip(draft, existing, addition, reference) {
 }
 
 /**
+ * Rebuild the whole draft with one chip inserted at a chosen point.
+ *
+ * This is `withAppendedChip`'s counterpart and it exists because undo has to put a chip back where it came from: the
+ * only insertion the plugin had was the append above, so undoing the removal of a chip in the middle of a draft
+ * dropped that chip at the end of the draft instead. The passage and the comment went with it, which made undo look
+ * like it had shuffled the draft rather than restored it.
+ *
+ * ## The reference list stays ordered by offset
+ *
+ * The Host may hand references back in any order, but `pairs()` in `cards.js` zips the DOM's chips — always in
+ * document order — against `occurrences` **by array position**, and derives the ordinal from that pairing. Appending
+ * the new reference to the end of the array (the obvious thing, and safe for `withAppendedChip` because that one
+ * appends to the text too) would number a chip restored to the front as the last chip in the draft. So the new
+ * reference is spliced in at the point that keeps the list ordered.
+ *
+ * @param draft - current draft text.
+ * @param existing - references already in that draft.
+ * @param addition - the text to insert; its LAST `reference.length` units are the chip's placeholder.
+ * @param reference - the new reference without its offset filled in.
+ * @param at - where to insert, in the current draft's coordinates.
+ * @returns the complete snapshot for the Host's `setDraft`.
+ */
+export function withChipAt(draft, existing, addition, reference, at) {
+  // The offset a caller holds was measured in a draft that may have been typed in since. Clamping keeps a stale index
+  // from writing a snapshot the composer cannot parse; it cannot recover the exact spot, and nothing here pretends to.
+  const point = Math.max(0, Math.min(Number.isFinite(at) ? at : draft.length, draft.length))
+  const shift = addition.length
+  const moved = existing.map((item) => (
+    item.offset >= point ? { ...item, offset: item.offset + shift } : item
+  ))
+  const placed = { ...reference, offset: point + shift - reference.length }
+  // Everything that was at or after `point` has just moved past the new chip, so the first reference with a greater
+  // offset is exactly where this one belongs.
+  const index = moved.findIndex((item) => item.offset > placed.offset)
+  const references = [...moved]
+  references.splice(index < 0 ? references.length : index, 0, placed)
+  return {
+    text: `${draft.slice(0, point)}${addition}${draft.slice(point)}`,
+    references,
+  }
+}
+
+/**
+ * Where removing one chip would cut the draft, and what that cut takes with it.
+ *
+ * Split out of `withoutChip` so the undo record is built from the SAME arithmetic that performs the removal. A caller
+ * that re-derived the cut would drift from it the first time either side changed.
+ *
+ * The cut is not always the placeholder alone. A chip standing by itself on its line takes the break before it as
+ * well, or the removal would leave an empty paragraph behind — so `lead` reports that break, and putting the chip
+ * back without it lands the chip at the end of the line above.
+ *
+ * @param draft - current draft text.
+ * @param references - the references in that draft.
+ * @param source - the chip source this plugin owns; other sources are never touched.
+ * @param ref - the annotation id the chip carries.
+ * @returns `{ index, start, stop, removed, lead }`, or null when the chip is no longer in the draft.
+ */
+export function chipRemovalSite(draft, references, source, ref) {
+  const index = references.findIndex((item) => item.source === source && item.ref === ref)
+  if (index < 0) return null
+  const target = references[index]
+  let start = target.offset
+  const stop = target.offset + target.length
+  // When the chip occupies a line by itself, removing it would leave that line empty.
+  // "Occupies a line" means it is bounded by a break or the draft edge on both sides; exactly
+  // one break then goes with it, preferring the one before when both exist.
+  const brokenBefore = start > 0 && draft[start - 1] === '\n'
+  const brokenAfter = stop < draft.length && draft[stop] === '\n'
+  // Only a chip that sits ALONE between two breaks owns its line.
+  //
+  // The earlier rule also accepted "at the start or end of the draft", which was right when every chip was appended on
+  // its own line but is wrong now that chips share a line: removing the first of two chips on one line would have taken
+  // the line break of the text above it with it, pulling that text down onto the chip's line.
+  const ownsLine = brokenBefore && brokenAfter
+  if (ownsLine) start -= 1
+  return {
+    index,
+    // Where the cut begins — and, once it is made, where the seam is. A chip put back goes here.
+    start,
+    stop,
+    removed: draft.slice(start, stop),
+    // The break the cut took, if any. A chip put back has to bring it along.
+    lead: ownsLine ? '\n' : '',
+  }
+}
+
+/**
  * Remove one chip occurrence from a draft and reference list.
  *
  * Only the chip and its placeholder go: the comment lives inside the chip's payload rather
@@ -125,29 +214,13 @@ export function withAppendedChip(draft, existing, addition, reference) {
  * @returns the snapshot with the chip gone, or null when the chip is no longer in the draft.
  */
 export function withoutChip(draft, references, source, ref) {
-  const index = references.findIndex((item) => item.source === source && item.ref === ref)
-  if (index < 0) return null
-  const target = references[index]
-  let start = target.offset
-  let stop = target.offset + target.length
-  // When the chip occupies a line by itself, removing it would leave that line empty.
-  // "Occupies a line" means it is bounded by a break or the draft edge on both sides; exactly
-  // one break then goes with it, preferring the one before when both exist.
-  const brokenBefore = start > 0 && draft[start - 1] === '\n'
-  const brokenAfter = stop < draft.length && draft[stop] === '\n'
-  // Only a chip that sits ALONE between two breaks owns its line.
-  //
-  // The earlier rule also accepted "at the start or end of the draft", which was right when every chip was appended on
-  // its own line but is wrong now that chips share a line: removing the first of two chips on one line would have taken
-  // the line break of the text above it with it, pulling that text down onto the chip's line.
-  const ownsLine = brokenBefore && brokenAfter
-  if (ownsLine) start -= 1
-  const removed = draft.slice(start, stop)
-  const nextText = `${draft.slice(0, start)}${draft.slice(stop)}`
+  const site = chipRemovalSite(draft, references, source, ref)
+  if (site === null) return null
+  const nextText = `${draft.slice(0, site.start)}${draft.slice(site.stop)}`
   // Everything after the cut moves left by the removed length.
-  const shift = removed.length
+  const shift = site.removed.length
   const kept = references
-    .filter((_, position) => position !== index)
-    .map((item) => (item.offset >= stop ? { ...item, offset: item.offset - shift } : item))
+    .filter((_, position) => position !== site.index)
+    .map((item) => (item.offset >= site.stop ? { ...item, offset: item.offset - shift } : item))
   return { text: nextText, references: kept }
 }

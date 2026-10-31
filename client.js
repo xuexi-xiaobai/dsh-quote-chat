@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:5848438bdcb1ec08
+ * Artifact: sha256:c274c5d5dcfe0671
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -326,20 +326,45 @@ function __dshQuoteChatFactory(hostRequire) {
       references: [...existing, { ...reference, offset: base.length }]
     };
   }
-  function withoutChip(draft, references, source, ref) {
+  function withChipAt(draft, existing, addition, reference, at) {
+    const point = Math.max(0, Math.min(Number.isFinite(at) ? at : draft.length, draft.length));
+    const shift = addition.length;
+    const moved = existing.map((item) => item.offset >= point ? { ...item, offset: item.offset + shift } : item);
+    const placed = { ...reference, offset: point + shift - reference.length };
+    const index = moved.findIndex((item) => item.offset > placed.offset);
+    const references = [...moved];
+    references.splice(index < 0 ? references.length : index, 0, placed);
+    return {
+      text: `${draft.slice(0, point)}${addition}${draft.slice(point)}`,
+      references
+    };
+  }
+  function chipRemovalSite(draft, references, source, ref) {
     const index = references.findIndex((item) => item.source === source && item.ref === ref);
     if (index < 0) return null;
     const target = references[index];
     let start = target.offset;
-    let stop = target.offset + target.length;
+    const stop = target.offset + target.length;
     const brokenBefore = start > 0 && draft[start - 1] === "\n";
     const brokenAfter = stop < draft.length && draft[stop] === "\n";
     const ownsLine = brokenBefore && brokenAfter;
     if (ownsLine) start -= 1;
-    const removed = draft.slice(start, stop);
-    const nextText = `${draft.slice(0, start)}${draft.slice(stop)}`;
-    const shift = removed.length;
-    const kept = references.filter((_, position) => position !== index).map((item) => item.offset >= stop ? { ...item, offset: item.offset - shift } : item);
+    return {
+      index,
+      // Where the cut begins — and, once it is made, where the seam is. A chip put back goes here.
+      start,
+      stop,
+      removed: draft.slice(start, stop),
+      // The break the cut took, if any. A chip put back has to bring it along.
+      lead: ownsLine ? "\n" : ""
+    };
+  }
+  function withoutChip(draft, references, source, ref) {
+    const site = chipRemovalSite(draft, references, source, ref);
+    if (site === null) return null;
+    const nextText = `${draft.slice(0, site.start)}${draft.slice(site.stop)}`;
+    const shift = site.removed.length;
+    const kept = references.filter((_, position) => position !== site.index).map((item) => item.offset >= site.stop ? { ...item, offset: item.offset - shift } : item);
     return { text: nextText, references: kept };
   }
 
@@ -452,6 +477,36 @@ function __dshQuoteChatFactory(hostRequire) {
         try {
           const reference = registry.register(annotation, chipLabel(annotation, labels));
           port.setDraft(withAppendedChip(draft, occurrences, CHIP_PLACEHOLDER, reference));
+          return true;
+        } catch (failure) {
+          console.error("[dsh-quote-chat] chip insertion failed:", failure);
+          return false;
+        }
+      },
+      /**
+       * Place one annotation in the draft at a chosen point rather than at the end.
+       *
+       * This is `place` for a chip that is going back where it came from. The ordering rule is
+       * the same one — register first, write second, report failure without rolling the payload
+       * back — because it protects the same invariant: a payload with no chip is harmless, a chip
+       * with no payload is unrenderable.
+       *
+       * @param port - `{ setDraft }` from the Host's input actions; may be absent.
+       * @param read - getter for `{ draft, occurrences }`.
+       * @param annotation - the annotation to place.
+       * @param labels - the active locale's card labels.
+       * @param site - `{ start, lead }` from `chipRemovalSite`: where the chip came out, and the
+       *   line break the cut took with it. Without one the chip is appended, since a caller with
+       *   no site has no place to restore to.
+       * @returns true when the draft accepted the chip.
+       */
+      placeAt(port, read, annotation, labels, site) {
+        if (typeof port?.setDraft !== "function") return false;
+        const { draft, occurrences } = liveDraft(read);
+        try {
+          const reference = registry.register(annotation, chipLabel(annotation, labels));
+          const addition = `${site?.lead ?? ""}${CHIP_PLACEHOLDER}`;
+          port.setDraft(withChipAt(draft, occurrences, addition, reference, site?.start ?? draft.length));
           return true;
         } catch (failure) {
           console.error("[dsh-quote-chat] chip insertion failed:", failure);
@@ -4048,22 +4103,24 @@ function __dshQuoteChatFactory(hostRequire) {
           if (chipJumpHandler2.current !== null) chipJumpHandler2.current = null;
         };
       }, [annotations2, onJump]);
+      const readLiveDraft = import_react8.default.useCallback(() => {
+        const state = inputStateRef.current;
+        return {
+          draft: typeof state?.draft === "string" ? state.draft : "",
+          occurrences: Array.isArray(state?.occurrences) ? state.occurrences : []
+        };
+      }, []);
       const onRemove = import_react8.default.useCallback((annotation) => {
         if (sessionId === void 0) return;
-        chipBridge2.release(
-          inputActions,
-          () => ({
-            draft: inputStateRef.current?.draft ?? "",
-            occurrences: inputStateRef.current?.occurrences
-          }),
-          annotation.id
-        );
+        const live = readLiveDraft();
+        const site = chipRemovalSite(live.draft, live.occurrences, CHIP_SOURCE, annotation.id);
+        chipBridge2.release(inputActions, () => live, annotation.id);
         removeAnnotation(sessionId, annotation.id);
-        undoRef.current = annotation;
+        undoRef.current = { annotation, site };
         setUndoPending(true);
         setUndoLeft(Math.ceil(UNDO_MS / 1e3));
         setUndoToken((value) => value + 1);
-      }, [inputActions, sessionId]);
+      }, [inputActions, readLiveDraft, sessionId]);
       import_react8.default.useEffect(() => {
         if (!undoPending) return void 0;
         const deadline = Date.now() + UNDO_MS;
@@ -4088,28 +4145,23 @@ function __dshQuoteChatFactory(hostRequire) {
         setUndoPending(false);
         setUndoLeft(0);
         if (entry === null) return;
+        const { annotation, site } = entry;
         const restored = addAnnotation(sessionId, {
-          kind: entry.kind,
-          text: entry.text,
-          previewText: entry.previewText,
-          previewHtml: entry.previewHtml,
-          comment: entry.comment,
-          anchor: entry.anchor
+          kind: annotation.kind,
+          text: annotation.text,
+          previewText: annotation.previewText,
+          previewHtml: annotation.previewHtml,
+          comment: annotation.comment,
+          anchor: annotation.anchor
         });
         if (restored === null) {
           setNotice(labels.limit.replace("{max}", String(MAX_ANNOTATIONS2)));
           return;
         }
-        if (!chipBridge2.place(
-          inputActions,
-          () => ({
-            draft: inputStateRef.current?.draft ?? "",
-            occurrences: inputStateRef.current?.occurrences
-          }),
-          restored,
-          labels
-        )) setNotice(labels.unavailable);
-      }, [inputActions, labels, sessionId]);
+        if (!chipBridge2.placeAt(inputActions, readLiveDraft, restored, labels, site)) {
+          setNotice(labels.unavailable);
+        }
+      }, [inputActions, labels, readLiveDraft, sessionId]);
       const onUpdate = import_react8.default.useCallback((annotation, comment) => {
         if (sessionId === void 0) return;
         chipRegistry2.updateComment(annotation.id, comment);

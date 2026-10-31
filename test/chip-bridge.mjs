@@ -111,6 +111,55 @@ function makePort({ draft = '', occurrences = [], throws = null } = {}) {
     placed === false, 'place() rethrew instead of reporting')
 }
 
+// ── Placing at a point ─────────────────────────────────────────────────────
+// Undo restores a chip where it came out. The bridge must honour the site instead of appending, and must still
+// register the payload before it writes.
+{
+  const registry = createChipRegistry()
+  const bridge = createDraftBridge({ registry, source: CHIP_SOURCE })
+  const occurrences = [{ source: CHIP_SOURCE, ref: 'qc-2', offset: 0, length: 1 }]
+  const { port, calls } = makePort({ draft: '\uFFFC', occurrences })
+
+  const placed = bridge.placeAt(port, () => ({ draft: '\uFFFC', occurrences }),
+    annotation({ id: 'qc-1' }), LABELS, { start: 0, lead: '' })
+  check('placing at a point reports success', placed === true, String(placed))
+  check('placing at a point writes the draft once', calls.length === 1, String(calls.length))
+  check('the chip lands at the point rather than at the end',
+    calls[0].text === '\uFFFC\uFFFC'
+      && calls[0].references[0].ref === 'qc-1'
+      && calls[0].references[0].offset === 0,
+    JSON.stringify(calls[0]))
+  check('the chip that was there moves right',
+    calls[0].references[1].ref === 'qc-2' && calls[0].references[1].offset === 1,
+    JSON.stringify(calls[0].references))
+  check('placing at a point registers before the draft is written',
+    registry.has('qc-1') === true, 'the payload was missing after a successful write')
+}
+
+// A site carrying the break the cut took has to put that break back too.
+{
+  const registry = createChipRegistry()
+  const bridge = createDraftBridge({ registry, source: CHIP_SOURCE })
+  const { port, calls } = makePort({ draft: 'head\ntail' })
+  bridge.placeAt(port, () => ({ draft: 'head\ntail', occurrences: [] }),
+    annotation(), LABELS, { start: 4, lead: '\n' })
+  check('a site with a leading break puts the chip back on its own line',
+    calls[0].text === 'head\n\uFFFC\ntail', JSON.stringify(calls[0].text))
+  check('the reference points at the placeholder, not at the break',
+    calls[0].references[0].offset === 5, String(calls[0].references[0].offset))
+}
+
+// No site means the chip was already gone when the annotation was removed: there is nowhere to restore to, so it is
+// appended rather than dropped.
+{
+  const registry = createChipRegistry()
+  const bridge = createDraftBridge({ registry, source: CHIP_SOURCE })
+  const { port, calls } = makePort({ draft: 'abc' })
+  bridge.placeAt(port, () => ({ draft: 'abc', occurrences: [] }), annotation(), LABELS, null)
+  check('placing at a point with no site appends',
+    calls[0].text === 'abc\uFFFC', JSON.stringify(calls[0].text))
+}
+
 // ── Releasing ──────────────────────────────────────────────────────────────
 {
   const registry = createChipRegistry()

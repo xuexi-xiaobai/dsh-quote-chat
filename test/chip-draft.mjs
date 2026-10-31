@@ -17,6 +17,8 @@ import {
   serializeChipForModel,
   chipLabel,
   withAppendedChip,
+  withChipAt,
+  chipRemovalSite,
   withoutChip,
 } from '../src/chip-draft.js'
 import { zh, en } from '../src/locales.js'
@@ -157,6 +159,55 @@ check('references of other sources are carried through',
   })(),
   'a foreign reference was dropped or rewritten')
 
+// ── Inserting at a point ───────────────────────────────────────────────────
+// Undo puts a removed chip back where it came from. The module used to have only `withAppendedChip`, so the chip
+// came back at the end of the draft and the passage appeared to have been shuffled.
+check('inserting at a point splits the text there',
+  withChipAt('head tail', [], '\uFFFC', ref('a'), 4).text === 'head\uFFFC tail',
+  JSON.stringify(withChipAt('head tail', [], '\uFFFC', ref('a'), 4).text))
+
+check('the inserted reference points at its placeholder',
+  (() => {
+    const snapshot = withChipAt('head tail', [], '\uFFFC', ref('a'), 4)
+    return snapshot.text.indexOf('\uFFFC') === snapshot.references[0].offset
+  })(),
+  'the offset does not locate the placeholder')
+
+check('references at or after the point shift right by the inserted length',
+  (() => {
+    const snapshot = withChipAt('ab\uFFFC', [ref('b', { offset: 2 })], '\uFFFC', ref('a'), 0)
+    return snapshot.text === '\uFFFCab\uFFFC'
+      && snapshot.references.find((item) => item.ref === 'b').offset === 3
+  })(),
+  JSON.stringify(withChipAt('ab\uFFFC', [ref('b', { offset: 2 })], '\uFFFC', ref('a'), 0)))
+
+check('references before the point keep their offset and their identity',
+  (() => {
+    const first = ref('a', { offset: 0 })
+    const snapshot = withChipAt('\uFFFC tail', [first], '\uFFFC', ref('b'), 1)
+    return snapshot.references[0] === first && snapshot.references[0].offset === 0
+  })(),
+  'an earlier reference was rewritten')
+
+// `pairs()` in cards.js zips the DOM's chips — always in document order — against `occurrences` BY ARRAY POSITION and
+// takes the ordinal from that pairing. A reference appended to the array for a chip restored to the front would be
+// numbered as the last chip in the draft, so the array has to stay ordered by offset.
+check('the new reference is spliced in by offset, not appended to the array',
+  (() => {
+    const snapshot = withChipAt('ab\uFFFC', [ref('b', { offset: 2 })], '\uFFFC', ref('a'), 0)
+    return snapshot.references.map((item) => item.ref).join(',') === 'a,b'
+  })(),
+  withChipAt('ab\uFFFC', [ref('b', { offset: 2 })], '\uFFFC', ref('a'), 0).references
+    .map((item) => item.ref).join(','))
+
+check('an insertion point past the end is clamped to the draft',
+  withChipAt('abc', [], '\uFFFC', ref('a'), 99).text === 'abc\uFFFC',
+  JSON.stringify(withChipAt('abc', [], '\uFFFC', ref('a'), 99).text))
+
+check('a negative insertion point is clamped to the start',
+  withChipAt('abc', [], '\uFFFC', ref('a'), -5).text === '\uFFFCabc',
+  JSON.stringify(withChipAt('abc', [], '\uFFFC', ref('a'), -5).text))
+
 // ── Removing ───────────────────────────────────────────────────────────────
 // Offsets are UTF-16 indices into the draft string, which is what the composer reports.
 check('removing the only chip empties the draft',
@@ -277,6 +328,41 @@ check('a CJK passage does not disturb its own offsets',
     return snapshot !== null && snapshot.text === '中文'
   })(),
   'CJK characters were counted incorrectly')
+
+// ── Cut, then put back ─────────────────────────────────────────────────────
+// The property undo depends on: cutting a chip out and putting it back at the site the cut reported reproduces the
+// draft exactly — text and every offset. The chip alone on its line is the case that catches a naive restore, because
+// the cut takes the break before it; a restore that ignores `lead` lands the chip at the end of the line above.
+const roundTrip = (draft, references, target) => {
+  const site = chipRemovalSite(draft, references, CHIP_SOURCE, target)
+  if (site === null) return null
+  const cut = withoutChip(draft, references, CHIP_SOURCE, target)
+  const removed = references.find((item) => item.ref === target)
+  const back = withChipAt(cut.text, cut.references, `${site.lead}\uFFFC`, removed, site.start)
+  return { site, cut, back }
+}
+
+const roundTrips = [
+  ['a chip in the middle of a line', 'head \uFFFC tail', [ref('a', { offset: 5 })]],
+  ['a chip alone on its own line', 'head\n\uFFFC\ntail', [ref('a', { offset: 5 })]],
+  ['a chip at the very start', '\uFFFC\ntail', [ref('a', { offset: 0 })]],
+  ['a chip at the very end', 'head\n\uFFFC', [ref('a', { offset: 5 })]],
+  ['the first of two chips on one line', '\uFFFC\uFFFC', [ref('a', { offset: 0 }), ref('b', { offset: 1 })]],
+  ['a chip after an emoji', '🙂\uFFFC', [ref('a', { offset: 2 })]],
+]
+
+for (const [label, draft, references] of roundTrips) {
+  const trip = roundTrip(draft, references, references[0].ref)
+  check(`cut then put back restores the text: ${label}`,
+    trip !== null && trip.back.text === draft,
+    JSON.stringify(trip?.back.text))
+  check(`cut then put back restores every offset: ${label}`,
+    trip !== null
+      && trip.back.references.length === references.length
+      && references.every((item) => trip.back.references
+        .find((back) => back.ref === item.ref)?.offset === item.offset),
+    JSON.stringify(trip?.back.references.map((item) => `${item.ref}@${item.offset}`)))
+}
 
 let failed = 0
 for (const item of cases) {

@@ -34,7 +34,7 @@ import {
   squishText, sameText, textOfWithin, FLOW_SELECTOR, BLOCK_SELECTOR, isInsideTranscript,
 } from '../text-ranges.js'
 import {
-  serializeChipForModel, CHIP_SOURCE, CHIP_TRIGGER, CHIP_PLACEHOLDER,
+  serializeChipForModel, CHIP_SOURCE, CHIP_TRIGGER, CHIP_PLACEHOLDER, chipRemovalSite,
 } from '../chip-draft.js'
 import { useDraft, useDraftOccurrences } from './draft-hooks.js'
 import { FLASH_MS } from '../highlight.js'
@@ -464,6 +464,20 @@ export function annotationDock(deps) {
     }, [annotations, onJump])
 
     /**
+     * The draft as it is at this instant.
+     *
+     * Never a captured value. Every callback below that touches the draft runs after the user may have typed, and
+     * `setDraft` replaces the composer wholesale, so a stale read destroys text instead of merely missing an update.
+     */
+    const readLiveDraft = React.useCallback(() => {
+      const state = inputStateRef.current
+      return {
+        draft: typeof state?.draft === 'string' ? state.draft : '',
+        occurrences: Array.isArray(state?.occurrences) ? state.occurrences : [],
+      }
+    }, [])
+
+    /**
      * Remove an annotation's chip, keeping the annotation for a few seconds so the removal can be undone.
      *
      * THE DRAFT IS ALWAYS READ THROUGH `inputStateRef`, NEVER FROM THIS CALLBACK'S CLOSURE.
@@ -479,18 +493,18 @@ export function annotationDock(deps) {
      */
     const onRemove = React.useCallback((annotation) => {
       if (sessionId === undefined) return
+      // One read for both the cut and the record of it. Reading twice would let the two disagree, and the record has
+      // to describe the draft the cut was actually made in.
+      const live = readLiveDraft()
+      // Where the chip is about to come out of, and the break the cut will take with it. Measured BEFORE the rewrite
+      // because the offset stops existing the moment the chip is gone — which is exactly why undo used to append.
+      const site = chipRemovalSite(live.draft, live.occurrences, CHIP_SOURCE, annotation.id)
       // Removing the annotation removes its chip; prose typed after that chip stays.
-      chipBridge.release(
-        inputActions,
-        () => ({
-          draft: inputStateRef.current?.draft ?? '',
-          occurrences: inputStateRef.current?.occurrences,
-        }),
-        annotation.id,
-      )
+      chipBridge.release(inputActions, () => live, annotation.id)
       removeAnnotation(sessionId, annotation.id)
-      // One entry, replaced by each removal. The live record carries the passage, the comment and the anchor.
-      undoRef.current = annotation
+      // One entry, replaced by each removal. The live record carries the passage, the comment and the anchor, plus the
+      // place the chip came out of so the undo can put it back there instead of at the end.
+      undoRef.current = { annotation, site }
       setUndoPending(true)
       setUndoLeft(Math.ceil(UNDO_MS / 1000))
       // Restart the countdown for EVERY removal, including one that lands while the bar is already showing.
@@ -499,7 +513,7 @@ export function annotationDock(deps) {
       // change does not re-run the effect, so the new entry inherited the FIRST removal's deadline and could expire in
       // under five seconds. A counter always changes, so the effect always restarts with a fresh deadline.
       setUndoToken((value) => value + 1)
-    }, [inputActions, sessionId])
+    }, [inputActions, readLiveDraft, sessionId])
 
     /**
      * Count the undo window down and close it.
@@ -525,7 +539,7 @@ export function annotationDock(deps) {
       return () => clearInterval(timer)
     }, [undoPending, undoToken])
 
-    /** Put the most recently removed annotation back, chip and all. */
+    /** Put the most recently removed annotation back, chip and all — in the place it came out of. */
     const onUndoRemove = React.useCallback(() => {
       if (sessionId === undefined) return
       const entry = undoRef.current
@@ -533,29 +547,27 @@ export function annotationDock(deps) {
       setUndoPending(false)
       setUndoLeft(0)
       if (entry === null) return
+      const { annotation, site } = entry
       const restored = addAnnotation(sessionId, {
-        kind: entry.kind,
-        text: entry.text,
-        previewText: entry.previewText,
-        previewHtml: entry.previewHtml,
-        comment: entry.comment,
-        anchor: entry.anchor,
+        kind: annotation.kind,
+        text: annotation.text,
+        previewText: annotation.previewText,
+        previewHtml: annotation.previewHtml,
+        comment: annotation.comment,
+        anchor: annotation.anchor,
       })
       if (restored === null) {
         setNotice(labels.limit.replace('{max}', String(MAX_ANNOTATIONS)))
         return
       }
-      // Read the CURRENT draft: the user may have typed since the removal.
-      if (!chipBridge.place(
-        inputActions,
-        () => ({
-          draft: inputStateRef.current?.draft ?? '',
-          occurrences: inputStateRef.current?.occurrences,
-        }),
-        restored,
-        labels,
-      )) setNotice(labels.unavailable)
-    }, [inputActions, labels, sessionId])
+      // Read the CURRENT draft: the user may have typed since the removal. `site` is where the chip came out, measured
+      // in the draft as it stood right after the cut; if the user typed before that point the index is stale, and
+      // `withChipAt` clamps it rather than writing an offset the composer cannot resolve. A null site means the chip
+      // was already gone when the annotation was removed, so there is no place to restore to and the chip is appended.
+      if (!chipBridge.placeAt(inputActions, readLiveDraft, restored, labels, site)) {
+        setNotice(labels.unavailable)
+      }
+    }, [inputActions, labels, readLiveDraft, sessionId])
 
     /**
      * Rewrite one annotation's comment from the bubble editor.

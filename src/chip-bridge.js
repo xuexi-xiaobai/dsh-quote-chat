@@ -6,6 +6,9 @@
  *   - **place**: register the payload, then rewrite the draft with one more chip appended.
  *   - **release**: rewrite the draft with one chip removed, leaving the payload alone.
  *
+ * `placeAt` is `place` for a chip going back where it came from: same ordering and the same
+ * failure behaviour, different point of insertion.
+ *
  * Everything else about a chip — its label, its serialized form, its payload — is decided
  * elsewhere. This module exists so the *ordering* of the side effects is written down in one
  * place instead of being implied by the shape of two callbacks in a component.
@@ -25,7 +28,7 @@
  * highlight ranges, or remove annotations. It reports outcome and lets the caller act on it.
  */
 
-import { CHIP_PLACEHOLDER, chipLabel, withAppendedChip, withoutChip } from './chip-draft.js'
+import { CHIP_PLACEHOLDER, chipLabel, withAppendedChip, withChipAt, withoutChip } from './chip-draft.js'
 
 /**
  * Create the draft bridge for one plugin instance.
@@ -78,6 +81,37 @@ export function createDraftBridge({ registry, source }) {
       } catch (failure) {
         // Reported, not rethrown: the caller shows a notice and keeps the annotation, which is
         // what the existing UI does. The payload registered above is intentionally left behind.
+        console.error('[dsh-quote-chat] chip insertion failed:', failure)
+        return false
+      }
+    },
+
+    /**
+     * Place one annotation in the draft at a chosen point rather than at the end.
+     *
+     * This is `place` for a chip that is going back where it came from. The ordering rule is
+     * the same one — register first, write second, report failure without rolling the payload
+     * back — because it protects the same invariant: a payload with no chip is harmless, a chip
+     * with no payload is unrenderable.
+     *
+     * @param port - `{ setDraft }` from the Host's input actions; may be absent.
+     * @param read - getter for `{ draft, occurrences }`.
+     * @param annotation - the annotation to place.
+     * @param labels - the active locale's card labels.
+     * @param site - `{ start, lead }` from `chipRemovalSite`: where the chip came out, and the
+     *   line break the cut took with it. Without one the chip is appended, since a caller with
+     *   no site has no place to restore to.
+     * @returns true when the draft accepted the chip.
+     */
+    placeAt(port, read, annotation, labels, site) {
+      if (typeof port?.setDraft !== 'function') return false
+      const { draft, occurrences } = liveDraft(read)
+      try {
+        const reference = registry.register(annotation, chipLabel(annotation, labels))
+        const addition = `${site?.lead ?? ''}${CHIP_PLACEHOLDER}`
+        port.setDraft(withChipAt(draft, occurrences, addition, reference, site?.start ?? draft.length))
+        return true
+      } catch (failure) {
         console.error('[dsh-quote-chat] chip insertion failed:', failure)
         return false
       }

@@ -21,21 +21,38 @@ const check = (name, ok, detail) => cases.push({ name, ok, detail })
 // `chipBridge.place` rebuilds the whole draft from the string it is handed, so a stale string does not merely fail to
 // update — it replaces the composer with an older version of itself. The first attempt at undo did exactly that:
 // `writeChip` closed over the render-time draft, and pressing undo wiped whatever had been typed since.
-check('undo reads the draft from inputStateRef, not a closure',
-  /draft: inputStateRef\.current\?\.draft \?\? ''/.test(dock),
+check('the draft is read through inputStateRef at call time',
+  /const readLiveDraft = React\.useCallback\(\(\) => \{\s*\n\s*const state = inputStateRef\.current/.test(dock),
   'undo captured the draft instead of reading the current one')
 
 check('the restore does not call a callback that could hold a stale draft',
   /writeChip\(restored\)/.test(dock) === false,
   'the restore goes through writeChip, whose closure may be stale')
 
-check('the restore writes through chipBridge.place with the live read',
-  /chipBridge\.place\([\s\S]{0,320}inputStateRef\.current\?\.draft/.test(dock),
+check('the restore writes through the bridge with the live read',
+  /chipBridge\.placeAt\(inputActions, readLiveDraft/.test(dock),
   'the restore does not place the chip against the current draft')
+
+// ── The restore goes back where the chip came from ─────────────────────────
+// The chip used to come back at the end of the draft: `withAppendedChip` is the only insertion the plugin had, so the
+// undo wrote `offset: base.length` no matter where the chip had been. The offset exists only until the rewrite, so the
+// record has to be taken before it.
+check('the undo record keeps where the chip came out, not just the annotation',
+  /undoRef\.current = \{ annotation, site \}/.test(dock),
+  'the record holds only the annotation, so the restore has no place to put the chip back')
+
+check('the removal site is measured before the draft is rewritten',
+  dock.indexOf('const site = chipRemovalSite(') !== -1
+    && dock.indexOf('const site = chipRemovalSite(') < dock.indexOf('chipBridge.release('),
+  'the site was read after the chip was already gone, so there was nothing to measure')
+
+check('the restore inserts at that site instead of appending',
+  /chipBridge\.placeAt\(inputActions, readLiveDraft, restored, labels, site\)/.test(dock),
+  'the restore still goes through the append-only placement')
 
 // ── One entry, five seconds ────────────────────────────────────────────────
 check('exactly one removal is remembered',
-  /undoRef\.current = annotation/.test(dock) && /undoRef\.current\.push\(/.test(dock) === false,
+  /undoRef\.current = \{ annotation, site \}/.test(dock) && /undoRef\.current\.push\(/.test(dock) === false,
   'the undo offer keeps more than the most recent removal')
 
 check('the window is five seconds, defined once at module scope',

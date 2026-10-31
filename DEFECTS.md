@@ -192,22 +192,43 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 
 ### 缺陷 4：撤销把芯片放回草稿末尾，而不是原来的位置
 
-> 追踪：issue [#4](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/4)
+> 追踪：issue [#4](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/4) —— **已修复**（见下方「修复」）
 
-**证据强度：`[已验证]`（代码路径）**
+**证据强度：`[已验证]`（代码路径 + 真实浏览器复现，修复前后各跑一次）**
 
-- 位置：`src/ui/dock.js:549` `onUndoRemove` → `chipBridge.place` →
-  `src/chip-draft.js:106` `withAppendedChip`：`offset: base.length`，即**永远追加到末尾**。
-- `undoRef.current = annotation`（`dock.js:493`）只保存注释本身，
-  **没有保存它原来在草稿里的 offset**；`add()` 返回的对象里也没有 offset 概念。
+- 位置：`src/ui/dock.js` `onUndoRemove` → `chipBridge.place` →
+  `src/chip-draft.js` `withAppendedChip`：`offset: base.length`，即**永远追加到末尾**。
+- `undoRef.current = annotation` 只保存注释本身，**没有保存它原来在草稿里的 offset**；
+  `add()` 返回的对象里也没有 offset 概念。
 - 后果：删除草稿中间的一个芯片再撤销，它会跑到句子末尾。文本占位符与 comment 一起移动。
-- 修复方向：删除时把 `occurrence.offset` 一并存进 undo 记录（`dock.js:491` 附近已经有
-  `occurrences` 可用），撤销时按该 offset 拼接而不是走 `withAppendedChip`。
-  注意 `chip-draft.js` **目前只有两个拼接函数**：`withAppendedChip`（追加，就是本缺陷的成因）
-  和 `withoutChip`（按 offset 删除，并修正其后所有 reference 的 offset）。**没有**"按指定
-  offset 插入"的函数，需要新写一个——可以照 `withoutChip` 里 offset 位移的写法反过来做
-  （`chip-draft.js:131-151`）。这也说明这条缺陷的修复不是一行改动，而是要在 `chip-draft.js`
-  增加一个对称的插入函数，并为它写单元测试。
+
+#### 修复
+
+`chip-draft.js` 增加两个纯函数，`chip-bridge.js` 增加一个入口：
+
+- `withChipAt(draft, existing, addition, reference, at)` —— `withAppendedChip` 的对称面：
+  在 `at` 处插入，`offset >= at` 的 reference 右移 `addition.length`。
+- `chipRemovalSite(draft, references, source, ref)` —— 把"这次删除会切掉哪一段"从
+  `withoutChip` 里拆出来。撤销记录和真正的删除读**同一份算术**，两边不会漂移。
+  它同时报告 `lead`：芯片独占一行时删除会连带切掉前面那个换行，恢复时必须一起放回去，
+  否则芯片会落在上一行的末尾。
+- `chipBridge.placeAt(port, read, annotation, labels, site)` —— 注册先于写入的顺序不变。
+
+一个 issue 里没写、但会踩到的点：**新 reference 必须按 offset 插进数组，不能 append**。
+`cards.js` 的 `pairs()` 是按数组下标把 DOM 里的芯片和 `occurrences` 对起来的，append 会让
+"恢复到最前面"的芯片被编成最后一个号（显示成"注释 2 在第一个位置"）。
+
+#### 真机验证
+
+同一个脚本 `tools/probe-undo-position.mjs`，只换 `client.js`：
+
+```
+旧 bundle：[A,B] → 删 A → [B] → 撤销 → [B,A']   ← 缺陷
+新 bundle：[A,B] → 删 A → [B] → 撤销 → [A',B]   ← 修复
+```
+
+测试 641 条全过；新增 `withChipAt` 7 条、删除-恢复往返 12 条、`placeAt` 8 条、
+撤销契约 3 条。
 
 ### 缺陷 5：`pairs()` 按下标拉链，长度不等时静默错配
 
@@ -285,7 +306,7 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 
 ```
 node build.mjs --check   → sha256:5848438bdcb1ec08，通过
-npm test                 → 611/611 通过，0 失败
+npm test                 → 641/641 通过，0 失败
 ```
 
 验收套件（需要 1.1 + 1.2 的前提）：
@@ -297,7 +318,7 @@ accept-lifecycle   68/73（QC_VIEWPORT=1440x1000）
 verify-web-build   OK — Web serves the current build
 ```
 
-修任何一个缺陷后，至少要保证 `npm test` 仍 611 通过，且 `--check` 的哈希变化
+修任何一个缺陷后，至少要保证 `npm test` 仍 641 通过，且 `--check` 的哈希变化
 **只能来自源码改动**。新增测试并入 `package.json` 的 `test` 脚本（注意是长
 `&&` 链，加在末尾）。
 
@@ -307,8 +328,9 @@ verify-web-build   OK — Web serves the current build
 
 按"复现成本低、影响面小、能先建立信心"排：
 
-1. **缺陷 4（撤销位置）**：纯逻辑，`undo-contract.mjs` 已有 14 项可以直接扩写，
-   不需要浏览器。改动局限在 `dock.js` 一处。
+1. ~~**缺陷 4（撤销位置）**~~ **已完成**。原来以为"改动局限在 `dock.js` 一处"，
+   实际需要在 `chip-draft.js` 新增对称的插入函数、在 `chip-bridge.js` 新增 `placeAt`，
+   并注意 reference 数组必须按 offset 排序（否则编号错位）。
 2. **缺陷 1（pointerDown 卡死）**：影响最大（工具栏永久失效），但需要真实 pointer
    序列的探针——先写这个探针，它会同时成为回归保护。
 3. **缺陷 3（孤儿芯片）**：需要判断契约方向，可能需要问用户。
@@ -319,7 +341,7 @@ verify-web-build   OK — Web serves the current build
 
 ## 6. 我明确没有做的事
 
-- **没有**修改任何产品代码来修上述缺陷（本文档只是记录）。
+- 本文档本身不含代码改动。缺陷 4 已单独修复，见该节的「修复」与对应 issue。
 - **没有**端到端复现缺陷 1、3（只读了代码路径和宿主契约）。
 - **没有**查明会话级模型覆盖 `our-free-model` 的来源（见 1.2）。
 - **没有**验证缺陷 2 在真实浏览器里"发送后注释不清除"的时序——只用 store 层验证了额度行为。
