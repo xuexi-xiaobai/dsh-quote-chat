@@ -20,10 +20,23 @@ export const STYLESHEET = `
   animation:qc-pop .1s ease-out;box-sizing:border-box}
 @keyframes qc-pop{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:none}}
 .qc-popup button{appearance:none;border:0;background:transparent;color:inherit;font:inherit;
-  display:flex;align-items:center;gap:5px;padding:6px 9px;border-radius:7px;cursor:pointer;white-space:nowrap}
+  display:flex;align-items:center;gap:5px;padding:6px 9px;border-radius:7px;cursor:pointer;white-space:nowrap;position:relative}
 .qc-popup button:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2)}
 .qc-popup button:disabled{opacity:.45;cursor:default}
-.qc-popup button+button{box-shadow:inset 1px 0 0 var(--dsw-alias-border-l1)}
+/* The divider between the two actions.
+ *
+ * It used to be box-shadow: inset 1px 0 0 var(--dsw-alias-border-l1), and that had two problems: the
+ * token resolves to 4% black, which is invisible on this popup's #E9ECF2; and an inset shadow runs the
+ * full height of the button, so the line butted into the 7px corner radius and read as a rendering
+ * artefact rather than as structure. A pseudo-element can be inset from both ends, so it now stops 6px
+ * short of the top and bottom and stays clear of the corners.
+ *
+ * 8% rather than a token: border-l1 is 4% (too faint) and border-l2 is 10% (the same weight as the
+ * popup's own border, which would make the inside as loud as the outside). It sits in the 2px flex gap
+ * rather than inside the button, so the hover pill never covers it.
+ */
+.qc-popup button+button::before{content:'';position:absolute;left:-1px;top:6px;bottom:6px;width:1px;
+  background:rgba(0,0,0,.08)}
 .qc-popup svg{flex:none;opacity:.8}
 
 /* The compose panel: a compact dialog, larger radii to match the composer it sits above.

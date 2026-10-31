@@ -14,7 +14,7 @@
     /** Simplified Chinese dictionary. */
     export const zh = {
       'popup.annotate': '添加注释',
-      'popup.askInSide': '在侧边聊天中提问',
+      'popup.askInSide': '侧边提问',
       'popup.tooLong': '选中的内容太长（最多 {max} 字）',
       'popup.unavailable': '这段内容无法写入输入框',
 
@@ -65,7 +65,7 @@
       'side.errorPrefix': '回答失败：',
       'side.you': '你',
       'side.assistant': '助手',
-      'side.noQuote': '从一个回答里划选一段文字，再点“在侧边聊天中提问”。',
+      'side.noQuote': '从一个回答里划选一段文字，再点“侧边提问”。',
     }
 
     /** English dictionary, keyed identically. */

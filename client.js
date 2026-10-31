@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:9881831bc67d945a
+ * Artifact: sha256:2d12c4bd3b94cd51
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -55,7 +55,7 @@ function __dshQuoteChatFactory(hostRequire) {
   // src/locales.js
   var zh = {
     "popup.annotate": "添加注释",
-    "popup.askInSide": "在侧边聊天中提问",
+    "popup.askInSide": "侧边提问",
     "popup.tooLong": "选中的内容太长（最多 {max} 字）",
     "popup.unavailable": "这段内容无法写入输入框",
     "compose.title": "添加注释",
@@ -100,7 +100,7 @@ function __dshQuoteChatFactory(hostRequire) {
     "side.errorPrefix": "回答失败：",
     "side.you": "你",
     "side.assistant": "助手",
-    "side.noQuote": "从一个回答里划选一段文字，再点“在侧边聊天中提问”。"
+    "side.noQuote": "从一个回答里划选一段文字，再点“侧边提问”。"
   };
   var en = {
     "popup.annotate": "Add annotation",
@@ -1575,10 +1575,23 @@ function __dshQuoteChatFactory(hostRequire) {
     animation:qc-pop .1s ease-out;box-sizing:border-box}
   @keyframes qc-pop{from{opacity:0;transform:translateY(2px)}to{opacity:1;transform:none}}
   .qc-popup button{appearance:none;border:0;background:transparent;color:inherit;font:inherit;
-    display:flex;align-items:center;gap:5px;padding:6px 9px;border-radius:7px;cursor:pointer;white-space:nowrap}
+    display:flex;align-items:center;gap:5px;padding:6px 9px;border-radius:7px;cursor:pointer;white-space:nowrap;position:relative}
   .qc-popup button:hover:not(:disabled){background:var(--dsw-alias-bg-layer-2)}
   .qc-popup button:disabled{opacity:.45;cursor:default}
-  .qc-popup button+button{box-shadow:inset 1px 0 0 var(--dsw-alias-border-l1)}
+  /* The divider between the two actions.
+   *
+   * It used to be box-shadow: inset 1px 0 0 var(--dsw-alias-border-l1), and that had two problems: the
+   * token resolves to 4% black, which is invisible on this popup's #E9ECF2; and an inset shadow runs the
+   * full height of the button, so the line butted into the 7px corner radius and read as a rendering
+   * artefact rather than as structure. A pseudo-element can be inset from both ends, so it now stops 6px
+   * short of the top and bottom and stays clear of the corners.
+   *
+   * 8% rather than a token: border-l1 is 4% (too faint) and border-l2 is 10% (the same weight as the
+   * popup's own border, which would make the inside as loud as the outside). It sits in the 2px flex gap
+   * rather than inside the button, so the hover pill never covers it.
+   */
+  .qc-popup button+button::before{content:'';position:absolute;left:-1px;top:6px;bottom:6px;width:1px;
+    background:rgba(0,0,0,.08)}
   .qc-popup svg{flex:none;opacity:.8}
 
   /* The compose panel: a compact dialog, larger radii to match the composer it sits above.
