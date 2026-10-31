@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:bf0219db359eb4fb
+ * Artifact: sha256:a7fbf967fd54b27b
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -71,6 +71,8 @@ function __dshQuoteChatFactory(hostRequire) {
     "card.clear": "全部清除",
     "card.missing": "这条注释对应的内容已不在当前对话中",
     "card.limit": "最多 {max} 条注释，删掉一条后再继续",
+    "card.stale": "有 {n} 条注释在页面刷新后失效，已从草稿中移除",
+    "card.staleSend": "注释在页面刷新后已失效，删掉草稿里的注释芯片后再发送",
     "card.removed": "已删除一条注释",
     "card.removedMany": "已删除 {n} 条注释",
     "card.undo": "撤销",
@@ -118,6 +120,8 @@ function __dshQuoteChatFactory(hostRequire) {
     "card.clear": "Clear all",
     "card.missing": "The passage for this annotation is no longer in this conversation",
     "card.limit": "At most {max} annotations — delete one to add another",
+    "card.stale": "{n} annotation(s) were lost when the page reloaded and have been removed from the draft",
+    "card.staleSend": "These annotations were lost when the page reloaded — remove their chips from the draft, then send",
     "card.removed": "Annotation removed",
     "card.removedMany": "{n} annotations removed",
     "card.undo": "Undo",
@@ -323,6 +327,9 @@ function __dshQuoteChatFactory(hostRequire) {
     const mine = (Array.isArray(occurrences) ? occurrences : []).filter((item) => item.source === source);
     const index = mine.findIndex((item) => item.ref === ref);
     return index < 0 ? null : index + 1;
+  }
+  function staleChipRefs(occurrences, has, source) {
+    return (Array.isArray(occurrences) ? occurrences : []).filter((item) => item.source === source && !has(item.ref)).map((item) => item.ref);
   }
   function orphanedIds(annotations, occurrences, source) {
     const live = new Set(
@@ -3919,6 +3926,7 @@ function __dshQuoteChatFactory(hostRequire) {
         clear: t("card.clear"),
         missing: t("card.missing"),
         limit: t("card.limit"),
+        stale: t("card.stale"),
         removed: t("card.removed"),
         undo: t("card.undo"),
         jump: t("marker.jump"),
@@ -4028,6 +4036,23 @@ function __dshQuoteChatFactory(hostRequire) {
         clearFlashRange();
         setOverlay(null);
       }, []);
+      import_react8.default.useEffect(() => {
+        if (sessionId === void 0) return;
+        const stale = staleChipRefs(occurrences, (ref) => chipRegistry2.has(ref), CHIP_SOURCE);
+        if (stale.length === 0) return;
+        if (typeof inputActions?.setDraft !== "function") return;
+        let snapshot = { text: draft, references: occurrences };
+        let removed = 0;
+        for (const ref of stale) {
+          const next = withoutChip(snapshot.text, snapshot.references, CHIP_SOURCE, ref);
+          if (next === null) continue;
+          snapshot = next;
+          removed += 1;
+        }
+        if (removed === 0) return;
+        inputActions.setDraft(snapshot);
+        setNotice(labels.stale.replace("{n}", String(removed)));
+      }, [chipRegistry2, draft, inputActions, labels, occurrences, sessionId]);
       const pruneOrphans = import_react8.default.useCallback(() => {
         if (sessionId === void 0) return 0;
         const dead = orphanedIds(annotations2, occurrences, CHIP_SOURCE);
@@ -4352,6 +4377,7 @@ function __dshQuoteChatFactory(hostRequire) {
     registry,
     jumpHandler,
     labelHandler,
+    t,
     CHIP_TRIGGER: CHIP_TRIGGER2,
     CHIP_SOURCE: CHIP_SOURCE3,
     CHIP_PLACEHOLDER: CHIP_PLACEHOLDER2,
@@ -4374,7 +4400,8 @@ function __dshQuoteChatFactory(hostRequire) {
             serialize(ref) {
               const payload = registry.get(ref);
               if (payload === void 0) {
-                return Promise.reject(new Error(`quote-chat: unknown chip "${ref}"`));
+                const reason = typeof t === "function" ? t("card.staleSend") : `quote-chat: no payload for chip "${ref}" (the draft outlived the page)`;
+                return Promise.reject(new Error(reason));
               }
               const live = typeof labelHandler?.current === "function" ? labelHandler.current(ref) : null;
               return Promise.resolve(serializeChipForModel2(
@@ -4650,6 +4677,7 @@ function __dshQuoteChatFactory(hostRequire) {
       registry: chipRegistry,
       jumpHandler: chipJumpHandler,
       labelHandler: chipLabelHandler,
+      t,
       CHIP_TRIGGER,
       CHIP_SOURCE,
       CHIP_PLACEHOLDER,

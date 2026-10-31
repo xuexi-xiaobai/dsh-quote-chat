@@ -74,7 +74,7 @@ check('the caller\'s array is left alone',
  * @param options - `{ registry, labelHandler }`.
  * @returns the registered source, with `codec.serialize`.
  */
-function mountSource({ registry, labelHandler }) {
+function mountSource({ registry, labelHandler, t = undefined }) {
   let source
   registerReferenceSource({
     ctx: {
@@ -86,6 +86,7 @@ function mountSource({ registry, labelHandler }) {
     registry,
     jumpHandler: { current: null },
     labelHandler,
+    t,
     CHIP_TRIGGER: '#',
     CHIP_SOURCE,
     CHIP_PLACEHOLDER: '\uFFFC',
@@ -144,14 +145,27 @@ check('two chips get consecutive numbers in reading order',
   first.startsWith('\n[注释 1]\n') && second.startsWith('\n[注释 2]\n'),
   `${JSON.stringify(first)} / ${JSON.stringify(second)}`)
 
+// A chip with no payload is still refused — the Host depends on that to avoid sending a message with a hole in it.
+// What changed is the message: it is the user-facing string, not an internal id.
+const localized = mountSource({ registry, labelHandler: { current: null }, t: (key) => (key === 'card.staleSend' ? 'STALE' : key) })
 let rejected = null
 try {
-  await source.codec.serialize('missing')
+  await localized.codec.serialize('missing')
 } catch (error) {
   rejected = error
 }
-check('an unknown chip still rejects',
-  rejected !== null && /unknown chip/.test(String(rejected?.message)), String(rejected))
+check('a chip with no payload is still refused, with a message the user can act on',
+  rejected !== null && rejected.message === 'STALE', String(rejected?.message))
+
+let fallbackRejected = null
+try {
+  await source.codec.serialize('missing')
+} catch (error) {
+  fallbackRejected = error
+}
+check('without a dictionary the refusal still names the chip',
+  fallbackRejected !== null && /no payload for chip/.test(String(fallbackRejected?.message)),
+  String(fallbackRejected?.message))
 
 let failed = 0
 for (const item of cases) {

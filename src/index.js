@@ -265,6 +265,7 @@ function applyImpl(ctx) {
     registry: chipRegistry,
     jumpHandler: chipJumpHandler,
     labelHandler: chipLabelHandler,
+    t,
     CHIP_TRIGGER,
     CHIP_SOURCE,
     CHIP_PLACEHOLDER,

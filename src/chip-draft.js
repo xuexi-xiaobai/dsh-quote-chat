@@ -99,6 +99,27 @@ export function chipOrdinal(occurrences, source, ref) {
 }
 
 /**
+ * Which chips in the draft have no payload behind them.
+ *
+ * The Host persists the composer draft; the payload registry does not — it is built when the plugin loads. After a
+ * reload the chip is still drawn (the Host restores its own label), but nothing can serialize it, and the Host treats
+ * an unresolvable reference as a hard error: it refuses the whole send and puts the draft back.
+ *
+ * Such a chip cannot be repaired. The passage it stood for is gone with the page, so the only useful thing to do with
+ * it is to take it out of the draft — and that has to be decided from the same list the removal will edit.
+ *
+ * @param occurrences - the Host's live chip list.
+ * @param has - whether this page load still holds a payload for a ref.
+ * @param source - the chip source this plugin owns; other sources are not ours to judge.
+ * @returns the refs of chips with no payload, in list order.
+ */
+export function staleChipRefs(occurrences, has, source) {
+  return (Array.isArray(occurrences) ? occurrences : [])
+    .filter((item) => item.source === source && !has(item.ref))
+    .map((item) => item.ref)
+}
+
+/**
  * Which annotations no longer have a chip in the draft.
  *
  * An annotation is supposed to live as long as its chip. Two paths break that promise and neither one tells the

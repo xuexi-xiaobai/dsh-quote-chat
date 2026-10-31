@@ -35,6 +35,7 @@ import {
 } from '../text-ranges.js'
 import {
   serializeChipForModel, CHIP_SOURCE, CHIP_TRIGGER, CHIP_PLACEHOLDER, chipRemovalSite, chipOrdinal, orphanedIds,
+  staleChipRefs, withoutChip,
 } from '../chip-draft.js'
 import { useDraft, useDraftOccurrences } from './draft-hooks.js'
 import { FLASH_MS } from '../highlight.js'
@@ -144,6 +145,7 @@ export function annotationDock(deps) {
       clear: t('card.clear'),
       missing: t('card.missing'),
       limit: t('card.limit'),
+      stale: t('card.stale'),
       removed: t('card.removed'),
       undo: t('card.undo'),
       jump: t('marker.jump'),
@@ -327,6 +329,38 @@ export function annotationDock(deps) {
       clearFlashRange()
       setOverlay(null)
     }, [])
+
+    /**
+     * Take out of the draft the chips this page load has no payload for.
+     *
+     * The Host persists the draft; the payload registry does not — it is built when the plugin loads. After a reload
+     * the chip is still drawn, because the Host restores its own label, but `registry.get(ref)` answers nothing and the
+     * codec rejects. The Host treats an unresolvable reference as a hard error: it refuses the whole send and puts the
+     * draft back, so the user is stuck with a chip that looks fine and a send button that does nothing but show an
+     * internal id.
+     *
+     * The chip cannot be repaired — the passage went with the page — so the only thing to do is remove it. That is not
+     * data loss, there is nothing left to lose; the notice is what keeps it from being silent.
+     */
+    React.useEffect(() => {
+      if (sessionId === undefined) return
+      const stale = staleChipRefs(occurrences, (ref) => chipRegistry.has(ref), CHIP_SOURCE)
+      if (stale.length === 0) return
+      if (typeof inputActions?.setDraft !== 'function') return
+      // One snapshot, not one `release` per chip: `release` reads the live draft on every call, so a second call would
+      // still see the first chip's placeholder and cut at the wrong offsets.
+      let snapshot = { text: draft, references: occurrences }
+      let removed = 0
+      for (const ref of stale) {
+        const next = withoutChip(snapshot.text, snapshot.references, CHIP_SOURCE, ref)
+        if (next === null) continue
+        snapshot = next
+        removed += 1
+      }
+      if (removed === 0) return
+      inputActions.setDraft(snapshot)
+      setNotice(labels.stale.replace('{n}', String(removed)))
+    }, [chipRegistry, draft, inputActions, labels, occurrences, sessionId])
 
     /**
      * Drop the annotations whose chip is no longer in the draft.

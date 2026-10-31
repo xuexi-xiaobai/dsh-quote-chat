@@ -209,23 +209,67 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 
 ### 缺陷 3：刷新后残留的草稿芯片会让发送被拒绝
 
-> 追踪：issue [#3](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/3)
+> 追踪：issue [#3](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/3) —— **已修复**（见下方「修复」）
 
-**证据强度：`[已验证]`（宿主行为 + 插件行为），`[未验证]`（端到端复现）**
+**证据强度：`[已验证]`（真实浏览器，修复前后各一次；宿主行为从 `app.asar` 读出）**
 
-- 插件侧：`src/registrations.js:102` —— `registry.get(ref)` 取不到 payload 时
+- 插件侧：`src/registrations.js` —— `registry.get(ref)` 取不到 payload 时
   `Promise.reject(new Error('quote-chat: unknown chip "<ref>"'))`。
 - 宿主侧（从 `app.asar` 里 `@deepseek-ai/dsh-client-ui-conversation/lib/client.js` 读出，非推断）：
   - 宿主持久化草稿时存 `{ text, references: [...] }`，其中 `references[].offset`
     必须与 `text` 中的占位文本严格对齐（`snapshotSchema` 的 `refine` 校验）。
-  - 提交时对每个 reference 调 `inputTriggers.serializeReference(source, ref, signal)`；
-    该 Promise 一旦 reject，走 `settleDetachedFailure(attempt, message)`，**整次提交失败**。
-- 后果：草稿跨刷新存活，但芯片 payload 是内存里的，刷新即丢。用户看到一个正常的芯片，
-  点发送却得到 `quote-chat: unknown chip "qc-…"`，且**没有办法自愈**——删掉芯片会
-  同时删掉文本？需要执行者确认，但至少"发送按钮看起来正常、点了报错"是可复现的。
-- 修复方向：`serialize` 遇到未知 ref 时降级为 `CHIP_PLACEHOLDER`（或纯文本），
-  而不是 reject。这属于"宿主契约允许降级"还是"插件应保证 payload 可重建"，
-  需要先看 `DEVELOPING.md` 里对 codec 契约的描述。
+  - `sinkSerialized` 对每个 occurrence 调 `inputTriggers.serializeReference(source, ref, signal)`，
+    把草稿里那一段**替换**成返回的文本；任何一个 reject 就整次提交失败，
+    走 `settleDetachedFailure` —— 把草稿放回编辑器并显示那条 error 的 message。
+  - 它自己的注释写得很明白："Owner missing or serialization failure rejects the detached send
+    and restores its editor snapshot."
+- **端到端复现（本轮）**：标注一段 → 打字 → 刷新页面 →
+  - 芯片还在，而且**看起来正常**（宿主按自己存的 label 渲染出「@注释 1」）；
+  - 但插件侧 `data-qc-label` / `data-qc-num` / `data-qc-ref` 全被抹掉（注释库是空的）；
+  - 按回车：**0 个请求离开页面**，屏幕上出现 `quote-chat: unknown chip "qc-…"`；
+  - 草稿被放回编辑器，用户重试多少次都一样。
+
+#### 修复
+
+**没有选"降级"**。issue 里建议 `serialize` 遇到未知 ref 时返回占位符，但宿主是**故意**把
+无法解析的引用当硬错误的：宁可拒绝发送，也不要发出一条"引用静默消失"的消息。降级会让
+用户以为引用发出去了，而模型看到的是一段没有出处的正文。这条设计要保留。
+
+改成**把死的芯片从草稿里拿掉**：
+
+- `chip-draft.js` 新增 `staleChipRefs(occurrences, has, source)` —— 纯函数，
+  返回"这次页面加载没有 payload 的芯片 ref"。
+- `dock.js` 新增一个 effect：发现这种芯片就用**一份快照**把它们从草稿里移除，
+  并弹提示「有 {n} 条注释在页面刷新后失效，已从草稿中移除」。
+  - 一份快照，不是逐个 `chipBridge.release`：`release` 每次都读实时草稿，
+    第二个芯片会按"还含着第一个占位符"的文本去切，offset 就错了。
+  - 这不是数据丢失——那个芯片对应的段落早就没了，留下的只是一个必然失败的雷。
+- `registrations.js`：万一还是走到拒绝（例如拿不到 `setDraft`），message 改成用户能看懂的
+  文案（`card.staleSend`），而不是把内部 id 抛给用户。
+
+#### 验证时抓到的一个 bug
+
+第一版写完后，芯片被正确移除了，但**提示没出现**：`labels.stale` 没有加进 `dock.js` 的
+`labels` memo，`labels.stale` 是 `undefined`，effect 在 `setDraft` 之后抛在
+`undefined.replace` 上——芯片没了，却没人告诉用户。
+
+补了一条通用断言：**dock 里读到的每个 `labels.<key>` 都必须在这个 memo 里定义**。
+反向验证过：删掉那一行，测试报 `missing from the memo: stale`。
+
+#### 真机验证
+
+`tools/probe-stale-chip.mjs`，同一段脚本、只换 `client.js`：
+
+```
+旧 bundle：芯片还在 / 无提示 / 0 个请求 / 屏幕上 quote-chat: unknown chip "qc-…"   （3/7）
+新 bundle：芯片被移除 / 有提示 / 1 个请求 / 屏幕上没有内部 id                      （7/7）
+```
+
+#### 没有做的事
+
+把 payload 持久化（localStorage）能让刷新后**完全正常**，但那是另一个量级的功能：还要连带
+持久化注释库（气泡、悬浮卡、跳转都依赖它），否则只会得到一个"能发送但点不动"的半残状态。
+先记在这里，不并进本次修复。
 
 ### 缺陷 4：撤销把芯片放回草稿末尾，而不是原来的位置
 
@@ -378,7 +422,7 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 
 ```
 node build.mjs --check   → sha256:5848438bdcb1ec08，通过
-npm test                 → 667/667 通过，0 失败
+npm test                 → 678/678 通过，0 失败
 ```
 
 验收套件（需要 1.1 + 1.2 的前提）：
@@ -390,7 +434,7 @@ accept-lifecycle   68/73（QC_VIEWPORT=1440x1000）
 verify-web-build   OK — Web serves the current build
 ```
 
-修任何一个缺陷后，至少要保证 `npm test` 仍 667 通过，且 `--check` 的哈希变化
+修任何一个缺陷后，至少要保证 `npm test` 仍 678 通过，且 `--check` 的哈希变化
 **只能来自源码改动**。新增测试并入 `package.json` 的 `test` 脚本（注意是长
 `&&` 链，加在末尾）。
 
@@ -405,7 +449,8 @@ verify-web-build   OK — Web serves the current build
    并注意 reference 数组必须按 offset 排序（否则编号错位）。
 2. **缺陷 1（pointerDown 卡死）**：影响最大（工具栏永久失效），但需要真实 pointer
    序列的探针——先写这个探针，它会同时成为回归保护。
-3. **缺陷 3（孤儿芯片）**：需要判断契约方向，可能需要问用户。
+3. ~~**缺陷 3（孤儿芯片）**~~ **已完成**。契约方向已经问清楚：宿主**故意**把无法解析的引用
+   当硬错误，所以不降级，改成把死芯片从草稿里移除并告知用户。
 4. ~~**缺陷 2（12 条上限）**~~ **已完成**。三个方向里选了「上限只数草稿里的芯片」，
    因为另外两个都修不了"满额时屏幕上没有可删的东西"这件事。
 5. **缺陷 5（pairs 下标）**：风险最低（已被兜住一部分），且改法需要确认属性里有没有 ref。

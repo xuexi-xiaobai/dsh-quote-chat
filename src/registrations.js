@@ -74,11 +74,11 @@ export function registerSideChatTab({ ctx, t, TAB_ID, TAB_KIND, NS, SideChatTab 
  * `codec.serialize` on submit to turn the chip into the model's copy of the passage, and
  * `openReference` when the chip is clicked. Without it a chip is an inert token with no owner.
  *
- * @param options - `{ ctx, registry, jumpHandler, labelHandler, CHIP_TRIGGER, CHIP_SOURCE,
+ * @param options - `{ ctx, registry, jumpHandler, labelHandler, t, CHIP_TRIGGER, CHIP_SOURCE,
  *   CHIP_PLACEHOLDER, serializeChipForModel }`.
  */
 export function registerReferenceSource({
-  ctx, registry, jumpHandler, labelHandler, CHIP_TRIGGER, CHIP_SOURCE, CHIP_PLACEHOLDER, serializeChipForModel,
+  ctx, registry, jumpHandler, labelHandler, t, CHIP_TRIGGER, CHIP_SOURCE, CHIP_PLACEHOLDER, serializeChipForModel,
 }) {
   ctx.effect(() => {
     const handle = ctx.inject(['inputTriggers'], (scope) => {
@@ -99,7 +99,13 @@ export function registerReferenceSource({
           serialize(ref) {
             const payload = registry.get(ref)
             if (payload === undefined) {
-              return Promise.reject(new Error(`quote-chat: unknown chip "${ref}"`))
+              // The message reaches the user: the Host surfaces a rejected reference as the send's failure reason. It
+              // used to be `unknown chip "qc-1793…"`, which told them nothing they could act on. The dock takes these
+              // chips out of the draft on load, so this is the path for the case where it could not.
+              const reason = typeof t === 'function'
+                ? t('card.staleSend')
+                : `quote-chat: no payload for chip "${ref}" (the draft outlived the page)`
+              return Promise.reject(new Error(reason))
             }
             // The ordinal is a POSITION, and the payload's copy of it was frozen when the chip was registered. The
             // store's `number` is the annotation's index in the STORE, not in the draft, so the two diverge the moment
