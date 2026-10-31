@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:04c7a2e5406edbc9
+ * Artifact: sha256:9881831bc67d945a
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -2297,38 +2297,29 @@ function __dshQuoteChatFactory(hostRequire) {
   // src/icons.js
   var import_react2 = __toESM(require("react"), 1);
   var h = import_react2.default.createElement;
+  var LUCIDE = {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    "stroke-width": 2,
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round"
+  };
   function IconAnnotate() {
     return h(
       "svg",
-      { width: 14, height: 14, viewBox: "0 0 16 16", fill: "none", "aria-hidden": "true" },
-      h("path", {
-        d: "M2.6 4.4h6a1.3 1.3 0 0 1 1.3 1.3v3.6a1.3 1.3 0 0 1-1.3 1.3H5.3L3 12.8V5.7",
-        stroke: "currentColor",
-        "stroke-width": 1.3,
-        "stroke-linecap": "round",
-        "stroke-linejoin": "round"
-      }),
-      h("path", {
-        d: "M12 3.1v3.8M10.1 5h3.8",
-        stroke: "currentColor",
-        "stroke-width": 1.3,
-        "stroke-linecap": "round",
-        opacity: 0.7
-      })
+      { width: 14, height: 14, ...LUCIDE, "aria-hidden": "true" },
+      h("path", { d: "M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" }),
+      h("path", { d: "M12 8v6" }),
+      h("path", { d: "M9 11h6" })
     );
   }
   function IconSideChat() {
     return h(
       "svg",
-      { width: 14, height: 14, viewBox: "0 0 16 16", fill: "none", "aria-hidden": "true" },
-      h("rect", { x: 1.8, y: 2.6, width: 8.2, height: 8.9, rx: 1.4, stroke: "currentColor", "stroke-width": 1.3 }),
-      h("path", {
-        d: "M10.1 5.2h2.6a1.3 1.3 0 0 1 1.3 1.3v6.2l-2.1-1.6",
-        stroke: "currentColor",
-        "stroke-width": 1.3,
-        "stroke-linecap": "round",
-        "stroke-linejoin": "round"
-      })
+      { width: 14, height: 14, ...LUCIDE, "aria-hidden": "true" },
+      h("rect", { x: 3, y: 3, width: 18, height: 18, rx: 2 }),
+      h("path", { d: "M15 3v18" })
     );
   }
   function IconCheck() {
