@@ -357,7 +357,78 @@ export function createLayout() {
   }
 
   /**
+   * How far above the input's editable the painted surface is allowed to start.
+   *
+   * The surface is the card the editable sits in. Its top edge is padding: part of the composer visually, but not of
+   * the editable's box. Measured in the shipped build, the editable starts at 438 while its card starts at 430.
+   * The bound is a guard, not a measurement: a page-level wrapper must never be mistaken for that card.
+   */
+  const COMPOSER_SURFACE_INSET = 160
+
+  /**
+   * Whether a computed style paints a surface at its own top edge.
+   *
+   * A background colour, a background image or a top border only. A `box-shadow` is deliberately excluded: it is
+   * painted OUTSIDE the box, so counting it as a surface would move the composer's visible edge the wrong way.
+   *
+   * Field-by-field defaults matter here: this runs against real computed styles in the app and against the partial
+   * stub the layout tests install, so every read has to survive being `undefined`.
+   *
+   * @param style - a computed style (possibly a partial stub).
+   * @returns true when the element's top edge reads as a surface.
+   */
+  function paintsSurface(style) {
+    const background = style.backgroundColor ?? ''
+    const opaque = background !== '' && background !== 'transparent' && background !== 'rgba(0, 0, 0, 0)'
+    const image = style.backgroundImage ?? ''
+    const border = Number.parseFloat(style.borderTopWidth ?? '0')
+    const bordered = Number.isFinite(border) && border > 0 && (style.borderTopStyle ?? 'none') !== 'none'
+    return opaque || (image !== '' && image !== 'none') || bordered
+  }
+
+  /**
+   * The element that PAINTS the composer's top edge.
+   *
+   * Why the editable's box is not enough: the band's bottom decides where a docked panel stops, and the editable is
+   * the INPUT inside the composer, not its edge. The card around it carries padding — measured 8px above the editable
+   * in the shipped build — and that padding is opaque. A dock slot computed from the editable therefore lands exactly
+   * on the card's own surface: measured, the panel's bottom edge sat 0.5px BELOW the card's top, while the same rule
+   * at the top of the band leaves 8px under the header. That asymmetry is what reads as "there is no gap at the
+   * bottom" — the gap was there, but it was inside the composer's painted surface.
+   *
+   * So walk up to the nearest ancestor that actually paints, with three bounds so this cannot run away:
+   *
+   *   - only boxes that start above the editable's top and within `COMPOSER_SURFACE_INSET` of it;
+   *   - never a box taller than 60% of the viewport (that is the page, and its top would collapse the band);
+   *   - at most six levels, then give up and keep the editable.
+   *
+   * @param editable - the composer's visible editable.
+   * @returns the painted surface element, or the editable itself when nothing above it paints.
+   */
+  function composerSurface(editable) {
+    const own = editable.getBoundingClientRect()
+    const viewportHeight = typeof window === 'undefined' ? 0 : window.innerHeight
+    const limit = own.top - COMPOSER_SURFACE_INSET
+    let node = editable.parentElement
+    for (let step = 0; node !== null && node !== undefined && node !== document.body
+      && step < 6; step += 1, node = node.parentElement) {
+      const box = node.getBoundingClientRect()
+      if (box.width <= 0 || box.height <= 0) continue
+      if (viewportHeight > 0 && box.height > viewportHeight * 0.6) continue
+      if (box.top > own.top || box.top < limit) continue
+      const style = typeof getComputedStyle === 'function' ? getComputedStyle(node) : null
+      if (style === null || paintsSurface(style) === false) continue
+      return node
+    }
+    return editable
+  }
+
+  /**
    * The composer's dock, which bounds the transcript from below.
+   *
+   * The returned element's TOP EDGE is the bottom of the readable band, so it is the painted surface rather than the
+   * editable — see `composerSurface`.
+   *
    * @returns the element, or null when it is not in the DOM.
    */
   function findComposerDock() {
@@ -372,7 +443,8 @@ export function createLayout() {
 
     // None of the slot wrappers has a box in this build — all three measure 0x0 — so without this the
     // band's bottom fell through to the scroller's own bottom and extended under the composer. The
-    // visible editable is the reliable anchor: its top edge is the composer's top edge.
+    // visible editable is the reliable anchor, and the nearest painted ancestor above it is the surface
+    // whose top edge bounds the band (the editable alone sits 8px inside that surface).
     const editables = [...document.querySelectorAll('[contenteditable="true"]')]
       .filter((element) => element.closest(SIDEBAR_TAB_SELECTOR) === null)
       .filter((element) => {
@@ -389,7 +461,7 @@ export function createLayout() {
         lowest = element
       }
     }
-    return lowest
+    return lowest === null ? null : composerSurface(lowest)
   }
 
   /**

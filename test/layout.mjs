@@ -112,6 +112,12 @@ function withDocument(root, run) {
   globalThis.getComputedStyle = (node) => ({
     position: node.computed?.position ?? 'static',
     overflowY: node.computed?.overflowY ?? 'visible',
+    // Surface fields, so `findComposerDock` can tell a painted input card from a transparent wrapper. Every existing
+    // case leaves them unset, which reads as "paints nothing" and keeps the old behaviour.
+    backgroundColor: node.computed?.backgroundColor ?? 'rgba(0, 0, 0, 0)',
+    backgroundImage: node.computed?.backgroundImage ?? 'none',
+    borderTopWidth: node.computed?.borderTopWidth ?? '0px',
+    borderTopStyle: node.computed?.borderTopStyle ?? 'none',
   })
   try {
     return run()
@@ -567,6 +573,76 @@ function scene(overrides = {}) {
   withDocument(element({ children: [] }), () => {
     check('no composer dock reads as null', layout.findComposerDock() === null,
       String(layout.findComposerDock()))
+  })
+}
+
+// ── The composer's PAINTED edge ────────────────────────────────────────────
+//
+// The band's bottom decides where a docked panel stops. Measuring it at the editable's box put the panel 0.5px below
+// the input card's own surface — the card starts 8px above the editable in the shipped build — while the same rule at
+// the top leaves 8px under the header. That asymmetry is the reported "no gap at the bottom".
+{
+  const layout = createLayout()
+  const card = element({
+    rect: { left: 0, top: 690, width: 1400, height: 100 },
+    computed: { backgroundColor: 'rgb(255, 255, 255)' },
+  })
+  const input = element({
+    selectors: ['[contenteditable="true"]'],
+    rect: { left: 0, top: 698, width: 1380, height: 40 },
+  })
+  card.children = [input]
+  input.parentElement = card
+  const scroller = element({
+    rect: { left: 0, top: 0, width: 1400, height: 700 },
+    computed: { position: 'static', overflowY: 'auto' },
+    scrollHeight: 2000,
+    clientHeight: 700,
+    clientWidth: 1400,
+  })
+  const root = element({ children: [scroller, card] })
+  withDocument(root, () => {
+    check('the composer dock is the painted surface above the editable',
+      layout.findComposerDock() === card, `found ${layout.findComposerDock()?.rect?.top}`)
+    const area = layout.visibleChatArea(scroller)
+    check('the band ends at the painted surface, not at the editable',
+      area.top + area.height === 690, String(area.top + area.height))
+  })
+}
+
+{
+  // Guards: a transparent wrapper is skipped, and a page-sized one is refused even when it paints. Without them the
+  // walk would climb to a full-height container and collapse the band to nothing.
+  const layout = createLayout()
+  const page = element({
+    rect: { left: 0, top: 0, width: 1400, height: 900 },
+    computed: { backgroundColor: 'rgb(255, 255, 255)' },
+  })
+  const wrapper = element({
+    rect: { left: 0, top: 690, width: 1400, height: 120 },
+    computed: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+  })
+  const input = element({
+    selectors: ['[contenteditable="true"]'],
+    rect: { left: 0, top: 698, width: 1380, height: 40 },
+  })
+  wrapper.children = [input]
+  input.parentElement = wrapper
+  page.children = [wrapper]
+  wrapper.parentElement = page
+  const scroller = element({
+    rect: { left: 0, top: 0, width: 1400, height: 700 },
+    computed: { position: 'static', overflowY: 'auto' },
+    scrollHeight: 2000,
+    clientHeight: 700,
+    clientWidth: 1400,
+  })
+  const root = element({ children: [scroller, page] })
+  withDocument(root, () => {
+    check('a transparent wrapper is not a composer surface',
+      layout.findComposerDock() === input, `found ${layout.findComposerDock()?.rect?.top}`)
+    check('a page-sized box is never taken for the composer surface',
+      layout.findComposerDock() === input, `found ${layout.findComposerDock()?.rect?.top}`)
   })
 }
 

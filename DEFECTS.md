@@ -422,6 +422,98 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 
 顺带证实了 `serialize` 确实在草稿还在的时候跑（否则拿不到 `occurrences`，会退回旧行为）。
 
+### 缺陷 8：吸附判断在 23px 的缝隙里每帧翻转（"小幅高频抖动"的一半）
+
+> 追踪：issue [#11](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/11) —— **未修复**（本轮只定位并建 issue）
+
+**证据强度：`[已验证]`（真实浏览器：定点扫描 + 逐帧采样，两种方法互不依赖）**
+
+`needsRescue` 的两个分支用的是**反过来的阈值**：
+
+- 未吸附 → 越界 1px 就吸附（`resting.top < visibleTop - 1`）；
+- 已吸附 → 必须越界 24px 才算"还该吸着"（`clearlyOut`），否则松开。
+
+于是 `visibleTop-24 .. visibleTop-1` 这 23px 里，"松开"和"吸附"的条件**同时成立**，每次渲染翻一次。
+代码里的 `comfortablyVisible` 在这个位置恒为 false（`clearlyOut` 已蕴含它），所以写了但没起作用。
+
+实测（1440×560，滚动范围 0..657，头部底边 76）：
+
+```
+每滚 1px 落定一次：
+  343:top 344:- 345:top 346:- ... 364:- 365:top 366:top
+  ↑ 23 次翻转，之后才稳定
+逐帧（1px/帧，120 帧）：state changes 23，相对位置 -24..+35
+```
+
+逐帧表里，面板被两个状态轮流拖着，从头部底边下面 2px 一路滑到上面 24px，
+然后在 366 那一帧啪一下落回槽位（+7）。`tools/probe-dock-jitter.mjs` 的两条断言 FAIL。
+
+顺带：`tools/probe-compose-band.mjs`（#9 的回归探针）在 scroll 365 读到的"藏在头部下面 24px"
+就是同一个现象——HEAD 和新构建都一样，不是本轮改动引入的。
+
+#### 修复方向（未做）
+
+进入也用 `DOCK_MARGIN`（24px），离开改成 `comfortablyVisible === false`。见 issue #11。
+
+---
+
+### 缺陷 9：吸附槽位在亚像素滚动下漂移 1px 再弹回（"小幅高频抖动"的另一半）
+
+> 追踪：issue [#12](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/12) —— **未修复**
+
+**证据强度：`[已验证]`（真实浏览器；滚动由定时器驱动，避开 rAF 回调顺序）**
+
+两处叠加：
+
+1. 每帧跑的 `watch` 只在**锚点区块的整数盒子**变化时 `setViewportTick`，`scroller.scrollTop` 没参与比较。
+   滚动 0.5px 时，区块取整后的 `top` 每两帧才变一次；中间那一帧面板作为一个内容空间的绝对定位元素
+   被容器一起卷走——吸附状态下这是纯误差。
+2. `target.top` 又被 `Math.round` 到整数，`scrollTop` 是小数时抵消不干净。
+
+实测（顶部吸附，定时器每 tick 滚 0.5px）：
+
+```
+scrollTop  625.00 → 625.50 → 626.00 → 626.00
+相对头部     8.00     7.50     7.00     8.00   ← 重算，弹回
+60 帧：spread 1.00px，方向反转 19 次，animations 0/60
+静置对照：spread 0.00px
+```
+
+底部吸附同样（`7.50 / 8.00 / 8.50`，19 次反转）。
+
+#### 修复方向（未做）
+
+`watch` 里把 `scroller.scrollTop` 也纳入比较；吸附时**不要取整内容空间的 `top`**，
+要取整就取整视口里的槽位——`containerTop + (slot - containerTop + scrollTop) - scrollTop` 正好等于槽位。
+
+---
+
+### 缺陷 10：面板和作曲器之间没有间距（已修复，按用户要求不开 issue）
+
+`readableBand()` 的下边界来自 `findComposerDock()`，而它在本构建里走的是
+「三个 `data-slot` 包装都是 0×0」的兜底分支：取**最低的那个 contenteditable**。
+editable 不是作曲器的边——它外面那张卡（白底、圆角 28、`padding-top 8px`）比它高 8px。
+于是"距作曲器 8px"的槽位正好落在卡的边上，看起来就是贴住了。
+
+实测（1440×560，底部吸附）：
+
+```
+修复前：面板底边 430.5   卡片顶边 430.0   →  间距 -0.5px（压在卡的边上）
+顶部同规则：面板顶边 84.0   头部底边 76.0  →  间距 +8px
+修复后：面板底边 422.5   卡片顶边 430.0   →  间距 +7.5px（差的 0.5px 是缺陷 9 的取整）
+```
+
+#### 修复
+
+`src/layout.js` 新增 `composerSurface(editable)`：从 editable 往上找**第一个真的画了东西**的祖先
+（背景色 / 背景图 / 上边框），带三个边界——只在 editable 上方 160px 内找、高度超过视口 60% 的盒子不算
+（那是页面）、最多 6 层。`findComposerDock()` 的兜底分支返回它。
+
+测试：`test/layout.mjs` 新增 4 条（画了东西的祖先是作曲器的边、透明包装不算、整页盒子不算、
+band 底边跟着走），该套件 45 条。探针：`tools/probe-compose-gap.mjs`（gitignore），2/2。
+
+---
+
 ## 3. 不算缺陷，但会误导人的现状
 
 ### 3.1 `accept-lifecycle` 有 5 项固定失败
@@ -452,8 +544,8 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 ## 4. 当前基线（修复前请先复现这个）
 
 ```
-node build.mjs --check   → sha256:5848438bdcb1ec08，通过
-npm test                 → 712/712 通过，0 失败
+node build.mjs --check   → sha256:ba307592ca8b0f83，通过
+npm test                 → 724/724 通过，0 失败
 ```
 
 验收套件（需要 1.1 + 1.2 的前提）：
@@ -465,7 +557,7 @@ accept-lifecycle   68/73（QC_VIEWPORT=1440x1000）
 verify-web-build   OK — Web serves the current build
 ```
 
-修任何一个缺陷后，至少要保证 `npm test` 仍 712 通过，且 `--check` 的哈希变化
+修任何一个缺陷后，至少要保证 `npm test` 仍 724 通过，且 `--check` 的哈希变化
 **只能来自源码改动**。新增测试并入 `package.json` 的 `test` 脚本（注意是长
 `&&` 链，加在末尾）。
 

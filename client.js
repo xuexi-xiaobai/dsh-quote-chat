@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:6fd9264f633a1fcc
+ * Artifact: sha256:ba307592ca8b0f83
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -1077,6 +1077,31 @@ function __dshQuoteChatFactory(hostRequire) {
       if (found !== null) containerCache.set(flow, found);
       return found;
     }
+    const COMPOSER_SURFACE_INSET = 160;
+    function paintsSurface(style) {
+      const background = style.backgroundColor ?? "";
+      const opaque = background !== "" && background !== "transparent" && background !== "rgba(0, 0, 0, 0)";
+      const image = style.backgroundImage ?? "";
+      const border = Number.parseFloat(style.borderTopWidth ?? "0");
+      const bordered = Number.isFinite(border) && border > 0 && (style.borderTopStyle ?? "none") !== "none";
+      return opaque || image !== "" && image !== "none" || bordered;
+    }
+    function composerSurface2(editable) {
+      const own = editable.getBoundingClientRect();
+      const viewportHeight = typeof window === "undefined" ? 0 : window.innerHeight;
+      const limit = own.top - COMPOSER_SURFACE_INSET;
+      let node = editable.parentElement;
+      for (let step = 0; node !== null && node !== void 0 && node !== document.body && step < 6; step += 1, node = node.parentElement) {
+        const box = node.getBoundingClientRect();
+        if (box.width <= 0 || box.height <= 0) continue;
+        if (viewportHeight > 0 && box.height > viewportHeight * 0.6) continue;
+        if (box.top > own.top || box.top < limit) continue;
+        const style = typeof getComputedStyle === "function" ? getComputedStyle(node) : null;
+        if (style === null || paintsSurface(style) === false) continue;
+        return node;
+      }
+      return editable;
+    }
     function findComposerDock() {
       if (typeof document === "undefined") return null;
       for (const selector of COMPOSER_SELECTORS2) {
@@ -1099,7 +1124,7 @@ function __dshQuoteChatFactory(hostRequire) {
           lowest = element;
         }
       }
-      return lowest;
+      return lowest === null ? null : composerSurface2(lowest);
     }
     function visibleChatArea(scroller) {
       const box = scroller.getBoundingClientRect();
