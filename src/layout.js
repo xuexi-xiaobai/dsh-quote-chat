@@ -82,6 +82,7 @@ const PANEL_COLUMN_INSET = 8
 const PANEL_MIN_WIDTH = 240
 
 import { FLOW_SELECTORS, findFlowElement } from './text-ranges.js'
+import { dockSlotTop } from './dock-decision.js'
 
 /** Surfaces that must never be mistaken for the transcript. */
 const SIDEBAR_TAB_SELECTOR = '[data-sidebar-right-tab]'
@@ -710,8 +711,11 @@ export function createLayout() {
     const margin = options.margin ?? 8
     const viewportWidth = typeof window === 'undefined' ? 0 : window.innerWidth
     const band = readableBand()
-    const top = band.top + gap
-    const bottom = Math.max(band.top + gap, band.bottom - gap - size.height)
+    // Rounded in VIEWPORT space (see `dockSlotTop`): the panel is positioned in the container's content space, so
+    // rounding there instead leaves an integer `top` fighting a fractional `scrollTop` — measured as 1px of drift and
+    // a snap back on every sub-pixel scroll step.
+    const top = dockSlotTop('top', band, size, gap)
+    const bottom = dockSlotTop('bottom', band, size, gap)
     // Distance to each docked slot from where it rests now.
     const toTop = Math.abs(restingTop - top)
     const toBottom = Math.abs(bottom - restingTop)

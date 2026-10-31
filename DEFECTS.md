@@ -424,7 +424,7 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 
 ### 缺陷 8：吸附判断在 23px 的缝隙里每帧翻转（"小幅高频抖动"的一半）
 
-> 追踪：issue [#11](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/11) —— **未修复**（本轮只定位并建 issue）
+> 追踪：issue [#11](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/11) —— **已修复**（见下方「修复」）
 
 **证据强度：`[已验证]`（真实浏览器：定点扫描 + 逐帧采样，两种方法互不依赖）**
 
@@ -451,15 +451,37 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 顺带：`tools/probe-compose-band.mjs`（#9 的回归探针）在 scroll 365 读到的"藏在头部下面 24px"
 就是同一个现象——HEAD 和新构建都一样，不是本轮改动引入的。
 
-#### 修复方向（未做）
+#### 修复
 
-进入也用 `DOCK_MARGIN`（24px），离开改成 `comfortablyVisible === false`。见 issue #11。
+判断本身抽成纯模块 `src/dock-decision.js`（`dockDecision()`），两个阈值分开：
+
+- **进入**：越界 `ENTER_SLOP = 1px` 就吸附；
+- **离开**：只有"舒服地回到带内"（上下各留 `DOCK_MARGIN = 24px`）才松开。
+
+两个条件不再重叠：`r < bandTop-1`（进入）和 `r ≥ bandTop+24`（离开）之间有 25px 的稳定缝隙。
+进入**故意**不用 24px——那一版试过，滞后变成 48px，代价是面板可以先钻到头部底下 24px 才弹回槽位，
+也就是 #9 抱怨的那个现象；实测 `probe-compose-band` 又会红。所以滞后放在"离开"这一侧。
+
+抽成模块的直接理由是**可测**：原来这段是渲染体里的一个表达式，没法断言。
+`test/dock-decision.mjs` 现在把静止位置一像素一像素扫过阈值，数"状态变了几次"——
+有滞后的规则只变一次，重叠的规则每像素变一次。
+
+#### 真机验证
+
+```
+定点扫描（每滚 1px 落定，offset 135..403，共 269 个位置）
+  修复前：343:top 344:- 345:top ... 365:top     ← 23 次翻转
+  修复后：135:- … 365:- 366:top 367:top … 403:top ← 1 次
+逐帧（1px/帧）：state changes 0，相对头部底边 8.00..8.00（spread 0.00px）
+```
+
+顺带：`probe-compose-band` 的 `scroll 365` 那一条从 FAIL 回到 **5/5**（worst 头部重叠 -8px、作曲器重叠 -15px）。
 
 ---
 
 ### 缺陷 9：吸附槽位在亚像素滚动下漂移 1px 再弹回（"小幅高频抖动"的另一半）
 
-> 追踪：issue [#12](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/12) —— **未修复**
+> 追踪：issue [#12](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/12) —— **已修复**（见下方「修复」）
 
 **证据强度：`[已验证]`（真实浏览器；滚动由定时器驱动，避开 rAF 回调顺序）**
 
@@ -481,10 +503,33 @@ scrollTop  625.00 → 625.50 → 626.00 → 626.00
 
 底部吸附同样（`7.50 / 8.00 / 8.50`，19 次反转）。
 
-#### 修复方向（未做）
+#### 修复
 
-`watch` 里把 `scroller.scrollTop` 也纳入比较；吸附时**不要取整内容空间的 `top`**，
-要取整就取整视口里的槽位——`containerTop + (slot - containerTop + scrollTop) - scrollTop` 正好等于槽位。
+三处，缺一不可：
+
+1. **让滚动参与重算触发**：每帧的 `watch` 现在也比 `scroller.scrollTop`。
+2. **槽位在视口空间取整**：`dock-decision.js` 的 `dockSlotTop()` 负责取整，`layout.js` 的 `snapPosition()` 用它；
+   内容空间的 `top` **不再**取整，这样小数 `scrollTop` 正好被抵消，画出来还是整数像素。
+3. **在本帧内提交**：`watch` 里用 `flushSync` 包住 `setViewportTick`。
+
+第 3 点是量出来的，不是想出来的。修好前两条以后逐帧采样仍然有 1.5px 的锯齿，用截图看**真正画出来的**帧才发现：
+`setState` 在帧回调里是**被调度的**（React 18 走 scheduler 的通道），DOM 在**这一帧画完之后**才更新——
+于是每一帧面板都晚一帧落位。用真滚轮 + `Page.captureScreenshot` 抓画出来的帧，
+面板顶边在"滚动刚发生"的那几帧里比槽位高 **9px**，下一帧才回到槽位。
+
+`flushSync` 让渲染和提交发生在同一个回调里、样式与绘制之前。宿主提供的 React 没有这个 API 时退回原来的调用。
+
+#### 真机验证
+
+```
+probe-dock-jitter（逐帧，滚动由定时器驱动 = 帧之间，和真实输入一致）
+  修复前：0.5px/帧 → spread 1.00px / 19 次反转；静置 0.00px
+  修复后：1px/帧、0.5px/帧 → spread 0.00px / 0 次反转；静置 0.00px
+  6/6 checks passed
+probe-paint-lag（真滚轮 + 截图，看画出来的帧）
+  修复前：面板顶边最坏偏离槽位 9px（左边缘法）
+  修复后：最坏 1.5 CSS px（含合成器取整噪声），2/2
+```
 
 ---
 
@@ -544,8 +589,8 @@ band 底边跟着走），该套件 45 条。探针：`tools/probe-compose-gap.m
 ## 4. 当前基线（修复前请先复现这个）
 
 ```
-node build.mjs --check   → sha256:ba307592ca8b0f83，通过
-npm test                 → 724/724 通过，0 失败
+node build.mjs --check   → sha256:5c3842d71dee43d5，通过
+npm test                 → 748/748 通过，0 失败
 ```
 
 验收套件（需要 1.1 + 1.2 的前提）：
@@ -557,7 +602,7 @@ accept-lifecycle   68/73（QC_VIEWPORT=1440x1000）
 verify-web-build   OK — Web serves the current build
 ```
 
-修任何一个缺陷后，至少要保证 `npm test` 仍 724 通过，且 `--check` 的哈希变化
+修任何一个缺陷后，至少要保证 `npm test` 仍 748 通过，且 `--check` 的哈希变化
 **只能来自源码改动**。新增测试并入 `package.json` 的 `test` 脚本（注意是长
 `&&` 链，加在末尾）。
 

@@ -21,10 +21,11 @@
  */
 
 import React from 'react'
-import { createPortal } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 import { IconAnnotate, IconSideChat, IconCheck } from '../icons.js'
 import { findFlowElement, isInsideTranscript } from '../text-ranges.js'
 import { panelMaxWidth } from '../layout.js'
+import { dockDecision, DOCK_MARGIN } from '../dock-decision.js'
 
 /** createElement, bound once. */
 const h = React.createElement
@@ -337,6 +338,16 @@ const ComposeBody = React.memo(function ComposeBody(props) {
       let lastLeft = null
       let lastHeight = null
       let lastWidth = null
+      /**
+       * The container's scroll offset on the previous frame.
+       *
+       * The panel's position depends on it DIRECTLY while docked: the slot is a viewport coordinate, so the content
+       * space `top` has to be `slot - containerTop + scrollTop` and it has to be recomputed whenever `scrollTop`
+       * changes. Comparing only the anchor block's rounded box misses exactly the frames where the scroll moved by a
+       * fraction of a pixel: the block's rounded top stays put, no re-render happens, and the docked panel is carried
+       * along by the container instead of staying pinned — measured as 1px of drift and a snap back per step.
+       */
+      let lastScroll = null
 
       const watch = () => {
         frame = window.requestAnimationFrame(watch)
@@ -352,20 +363,36 @@ const ComposeBody = React.memo(function ComposeBody(props) {
         const width = Math.round(box.width)
         // The first reading only records the baseline: the render that mounted the panel already placed it against
         // this box, so re-rendering here would be wasted work.
+        const scrollNow = scroller === null || scroller === undefined ? 0 : scroller.scrollTop
         if (primed === false) {
           primed = true
           lastTop = top
           lastLeft = left
           lastHeight = height
           lastWidth = width
+          lastScroll = scrollNow
           return
         }
-        if (top === lastTop && left === lastLeft && height === lastHeight && width === lastWidth) return
+        if (top === lastTop && left === lastLeft && height === lastHeight && width === lastWidth
+          && scrollNow === lastScroll) return
         lastTop = top
         lastLeft = left
         lastHeight = height
         lastWidth = width
-        setViewportTick((tick) => tick + 1)
+        lastScroll = scrollNow
+        // COMMIT IN THIS FRAME, not in the next one.
+        //
+        // A plain `setState` from a frame callback is scheduled (React 18 runs it off the scheduler's channel), so the
+        // DOM is updated AFTER this frame has been painted: the panel is drawn with the previous scroll offset for one
+        // frame, every frame. Measured with real wheel input and a screenshot of the painted frame: the panel's top
+        // edge was 9px above its slot on the frames where the scroll had just moved, then back on the slot.
+        //
+        // That lag is the part of "the docked panel is not still" that no amount of threshold tuning fixes: the
+        // position is right, it is just applied one frame late. `flushSync` renders and commits inside this callback,
+        // before the browser styles and paints the frame. Guarded because the host supplies React, and a build without
+        // `flushSync` should degrade to the old timing rather than throw.
+        if (typeof flushSync === 'function') flushSync(() => setViewportTick((tick) => tick + 1))
+        else setViewportTick((tick) => tick + 1)
       }
 
       frame = window.requestAnimationFrame(watch)
@@ -491,12 +518,7 @@ const ComposeBody = React.memo(function ComposeBody(props) {
     const band = typeof readableBand === 'function' ? readableBand() : null
     const visibleTop = band === null ? scrollerBox.top : band.top
     const visibleBottom = band === null ? scrollerBox.bottom : band.bottom
-    const DOCK_MARGIN = 24
     const wasDocked = dockedRef.current !== null
-    const clearlyOut = resting.top < visibleTop - DOCK_MARGIN
-      || restingBottom > visibleBottom + DOCK_MARGIN
-    const comfortablyVisible = resting.top >= visibleTop + DOCK_MARGIN
-      && restingBottom <= visibleBottom - DOCK_MARGIN
 
     // FREEZE the dock decision while the anchor is being REFLOWED — not while it is merely scrolled.
     //
@@ -521,13 +543,20 @@ const ComposeBody = React.memo(function ComposeBody(props) {
     //
     // The last branch originally carried that condition and lost it while the hysteresis was added, which made an EMPTY
     // panel dock to the header and the composer as soon as it was scrolled past either one.
-    const needsRescue = hasInput === false
-      ? false
-      : frozen
-        ? wasDocked
-        : wasDocked
-          ? clearlyOut && comfortablyVisible === false
-          : resting.top < visibleTop - 1 || restingBottom > visibleBottom + 1
+    // Two thresholds, and they are NOT the same one — see `dock-decision.js`. Entering needs the panel to be clearly
+    // out (a whole margin); leaving needs it to be comfortably inside (the same margin on both sides). The previous
+    // version of this expression asked "is it still out by a margin?" in the leaving branch, which overlaps the entry
+    // threshold: between the two, both branches held, and the state flipped on every render.
+    const needsRescue = dockDecision({
+      hasInput,
+      frozen,
+      wasDocked,
+      restingTop: resting.top,
+      restingBottom,
+      bandTop: visibleTop,
+      bandBottom: visibleBottom,
+      margin: DOCK_MARGIN,
+    })
     previousBlockRef.current = blockBox === undefined || blockBox === null
       ? null : Math.round(blockBox.top)
     previousScrollTopRef.current = scroller === null || scroller === undefined ? 0 : scroller.scrollTop
@@ -574,11 +603,19 @@ const ComposeBody = React.memo(function ComposeBody(props) {
     const inViewport = docked ?? { left: resting.left, top: resting.top }
 
     // Convert to the container's content space: content = viewport - containerTop + scrollOffset.
+    // The DOCKED top is deliberately not rounded here.
+    //
+    // `dockSlotTop` already rounded the slot in VIEWPORT space, which is where it lives. Rounding again after converting
+    // to the container's content space breaks the cancellation: an integer `top` minus a fractional `scrollTop` paints
+    // half a pixel off, and the error alternates as the offset moves. Measured before this: 8.00 / 7.50 / 7.00 of
+    // clearance from the header across three consecutive sub-pixel scroll frames.
     const target = scroller === null
       ? inViewport
       : {
         left: Math.round(inViewport.left - scrollerBox.left + scroller.scrollLeft),
-        top: Math.round(inViewport.top - scrollerBox.top + scroller.scrollTop),
+        top: docked === null
+          ? Math.round(inViewport.top - scrollerBox.top + scroller.scrollTop)
+          : inViewport.top - scrollerBox.top + scroller.scrollTop,
       }
 
     // Glide across a dock-state change; track scroll frame-by-frame.

@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:ba307592ca8b0f83
+ * Artifact: sha256:5c3842d71dee43d5
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -948,6 +948,44 @@ function __dshQuoteChatFactory(hostRequire) {
     return { offset: from, length: to - from + 1 };
   }
 
+  // src/dock-decision.js
+  var DOCK_MARGIN = 24;
+  var ENTER_SLOP = 1;
+  function comfortablyVisible(restingTop, restingBottom, bandTop, bandBottom, margin) {
+    const fitsWithMargin = bandBottom - bandTop >= restingBottom - restingTop + margin * 2;
+    if (fitsWithMargin) {
+      return restingTop >= bandTop + margin && restingBottom <= bandBottom - margin;
+    }
+    return restingTop >= bandTop && restingBottom <= bandBottom;
+  }
+  function outOfBand(restingTop, restingBottom, bandTop, bandBottom, slop) {
+    return restingTop < bandTop - slop || restingBottom > bandBottom + slop;
+  }
+  function dockDecision(state) {
+    const {
+      hasInput,
+      frozen,
+      wasDocked,
+      restingTop,
+      restingBottom,
+      bandTop,
+      bandBottom,
+      margin = DOCK_MARGIN
+    } = state;
+    if (hasInput === false) return false;
+    if (frozen === true) return wasDocked === true;
+    if (wasDocked === true) {
+      return comfortablyVisible(restingTop, restingBottom, bandTop, bandBottom, margin) === false;
+    }
+    return outOfBand(restingTop, restingBottom, bandTop, bandBottom, ENTER_SLOP);
+  }
+  function dockSlotTop(edge, band, size, gap = 8) {
+    if (edge === "bottom") {
+      return Math.round(Math.max(band.top + gap, band.bottom - gap - size.height));
+    }
+    return Math.round(band.top + gap);
+  }
+
   // src/layout.js
   var ANCHOR_INSET = 8;
   var PANEL_BUBBLE_GAP = 10;
@@ -1242,8 +1280,8 @@ function __dshQuoteChatFactory(hostRequire) {
       const margin = options.margin ?? 8;
       const viewportWidth = typeof window === "undefined" ? 0 : window.innerWidth;
       const band = readableBand();
-      const top = band.top + gap;
-      const bottom = Math.max(band.top + gap, band.bottom - gap - size.height);
+      const top = dockSlotTop("top", band, size, gap);
+      const bottom = dockSlotTop("bottom", band, size, gap);
       const toTop = Math.abs(restingTop - top);
       const toBottom = Math.abs(bottom - restingTop);
       const edge = options.edge === "top" || options.edge === "bottom" ? options.edge : toTop <= toBottom ? "top" : "bottom";
@@ -2494,6 +2532,7 @@ function __dshQuoteChatFactory(hostRequire) {
         let lastLeft = null;
         let lastHeight = null;
         let lastWidth = null;
+        let lastScroll = null;
         const watch = () => {
           frame = window.requestAnimationFrame(watch);
           if (block === null || block === void 0 || block.isConnected !== true) return;
@@ -2502,20 +2541,24 @@ function __dshQuoteChatFactory(hostRequire) {
           const left = Math.round(box.left);
           const height2 = Math.round(box.height);
           const width2 = Math.round(box.width);
+          const scrollNow = scroller === null || scroller === void 0 ? 0 : scroller.scrollTop;
           if (primed === false) {
             primed = true;
             lastTop = top;
             lastLeft = left;
             lastHeight = height2;
             lastWidth = width2;
+            lastScroll = scrollNow;
             return;
           }
-          if (top === lastTop && left === lastLeft && height2 === lastHeight && width2 === lastWidth) return;
+          if (top === lastTop && left === lastLeft && height2 === lastHeight && width2 === lastWidth && scrollNow === lastScroll) return;
           lastTop = top;
           lastLeft = left;
           lastHeight = height2;
           lastWidth = width2;
-          setViewportTick((tick) => tick + 1);
+          lastScroll = scrollNow;
+          if (typeof import_react_dom.flushSync === "function") (0, import_react_dom.flushSync)(() => setViewportTick((tick) => tick + 1));
+          else setViewportTick((tick) => tick + 1);
         };
         frame = window.requestAnimationFrame(watch);
         return () => {
@@ -2552,14 +2595,20 @@ function __dshQuoteChatFactory(hostRequire) {
       const band = typeof readableBand === "function" ? readableBand() : null;
       const visibleTop = band === null ? scrollerBox.top : band.top;
       const visibleBottom = band === null ? scrollerBox.bottom : band.bottom;
-      const DOCK_MARGIN = 24;
       const wasDocked = dockedRef.current !== null;
-      const clearlyOut = resting.top < visibleTop - DOCK_MARGIN || restingBottom > visibleBottom + DOCK_MARGIN;
-      const comfortablyVisible = resting.top >= visibleTop + DOCK_MARGIN && restingBottom <= visibleBottom - DOCK_MARGIN;
       const anchorMoved = blockBox !== void 0 && blockBox !== null && previousBlockRef.current !== null && Math.abs(Math.round(blockBox.top) - previousBlockRef.current) > 1;
       const scrollMoved = previousScrollTopRef.current !== null && Math.abs((scroller === null || scroller === void 0 ? 0 : scroller.scrollTop) - previousScrollTopRef.current) > 1;
       const frozen = anchorMoved && scrollMoved === false;
-      const needsRescue = hasInput === false ? false : frozen ? wasDocked : wasDocked ? clearlyOut && comfortablyVisible === false : resting.top < visibleTop - 1 || restingBottom > visibleBottom + 1;
+      const needsRescue = dockDecision({
+        hasInput,
+        frozen,
+        wasDocked,
+        restingTop: resting.top,
+        restingBottom,
+        bandTop: visibleTop,
+        bandBottom: visibleBottom,
+        margin: DOCK_MARGIN
+      });
       previousBlockRef.current = blockBox === void 0 || blockBox === null ? null : Math.round(blockBox.top);
       previousScrollTopRef.current = scroller === null || scroller === void 0 ? 0 : scroller.scrollTop;
       const lockedEdge = dockedEdgeRef.current;
@@ -2580,7 +2629,7 @@ function __dshQuoteChatFactory(hostRequire) {
       const inViewport = docked ?? { left: resting.left, top: resting.top };
       const target = scroller === null ? inViewport : {
         left: Math.round(inViewport.left - scrollerBox.left + scroller.scrollLeft),
-        top: Math.round(inViewport.top - scrollerBox.top + scroller.scrollTop)
+        top: docked === null ? Math.round(inViewport.top - scrollerBox.top + scroller.scrollTop) : inViewport.top - scrollerBox.top + scroller.scrollTop
       };
       const dockedEdge = docked === null ? null : docked.edge;
       const previousEdgeRef = import_react3.default.useRef(void 0);
@@ -3322,17 +3371,17 @@ function __dshQuoteChatFactory(hostRequire) {
       const bandBottom = rel === null || rel.bandBottom === void 0 ? 0 : rel.bandBottom;
       const panelHeight = measured || rel?.gap || 0;
       const anchoredBottom = anchoredTop + panelHeight;
-      const DOCK_MARGIN = 24;
+      const DOCK_MARGIN2 = 24;
       const wasDocked = dockedRef.current !== null;
-      const clearlyOut = anchoredTop < bandTop - DOCK_MARGIN || anchoredBottom > bandBottom + DOCK_MARGIN;
-      const comfortablyVisible = anchoredTop >= bandTop + DOCK_MARGIN && anchoredBottom <= bandBottom - DOCK_MARGIN;
+      const clearlyOut = anchoredTop < bandTop - DOCK_MARGIN2 || anchoredBottom > bandBottom + DOCK_MARGIN2;
+      const comfortablyVisible2 = anchoredTop >= bandTop + DOCK_MARGIN2 && anchoredBottom <= bandBottom - DOCK_MARGIN2;
       const hasGeometry = rel !== null && rel.bubbleTop !== void 0;
       const panelScrollerNow = localScrollerOf(findFlowElement());
       const scrollerTopNow = panelScrollerNow === null || panelScrollerNow === void 0 ? 0 : panelScrollerNow.scrollTop;
       const anchorMoved = rel !== null && rel.bubbleTop !== void 0 && previousBubbleTopRef.current !== null && Math.abs(rel.bubbleTop - previousBubbleTopRef.current) > 1;
       const scrollMoved = previousScrollTopRef.current !== null && Math.abs(scrollerTopNow - previousScrollTopRef.current) > 1;
       const frozen = anchorMoved && scrollMoved === false;
-      const needsDock = hasGeometry === false ? false : frozen ? wasDocked : wasDocked ? clearlyOut && comfortablyVisible === false : clearlyOut;
+      const needsDock = hasGeometry === false ? false : frozen ? wasDocked : wasDocked ? clearlyOut && comfortablyVisible2 === false : clearlyOut;
       const docks = hasText && needsDock;
       const dockTop = bandTop;
       const dockBottom = Math.max(bandTop, bandBottom - panelHeight);
