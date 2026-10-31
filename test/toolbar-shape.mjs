@@ -92,9 +92,14 @@ check('the divider sits in the gap, not inside the button',
   /left:-1px/.test(divider),
   'the divider is inside the button box, so the hover pill covers it')
 
-check('the divider is 8%, not the 4% token',
-  /rgba\(0,0,0,\.08\)/.test(divider) && !/--dsw-alias-border-l1/.test(divider),
-  'the divider fell back to border-l1 (4%), which is invisible on this popup background')
+check('the divider colour comes from a theme token, not a literal',
+  /var\(--dsw-alias-[a-z0-9-]+\)/.test(divider) && !/(rgba?|hsla?)\(/.test(divider) && !/#[0-9a-f]{3,8}\b/i.test(divider),
+  'a hardcoded colour cannot follow the theme: rgba(0,0,0,.08) read as 19 channel steps in light and 9 in dark, '
+  + 'because the host flips its borders to white overlays in dark mode')
+
+check('the divider uses border-l2, not the fainter border-l1',
+  /--dsw-alias-border-l2/.test(divider) && !/--dsw-alias-border-l1/.test(divider),
+  'border-l1 is 4% black / 6% white, too faint on this popup in either theme')
 
 // ── Report ───────────────────────────────────────────────────────────────
 let failed = 0

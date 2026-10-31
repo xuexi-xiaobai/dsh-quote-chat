@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:2d12c4bd3b94cd51
+ * Artifact: sha256:3c0b403689ff0a94
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -1586,12 +1586,15 @@ function __dshQuoteChatFactory(hostRequire) {
    * artefact rather than as structure. A pseudo-element can be inset from both ends, so it now stops 6px
    * short of the top and bottom and stays clear of the corners.
    *
-   * 8% rather than a token: border-l1 is 4% (too faint) and border-l2 is 10% (the same weight as the
-   * popup's own border, which would make the inside as loud as the outside). It sits in the 2px flex gap
-   * rather than inside the button, so the hover pill never covers it.
+   * The colour is the host's border-l2 token, not a literal. It was rgba(0,0,0,.08) at first, and that
+   * worked in light mode and vanished in dark: the token system flips to white overlays there
+   * (border-l1 becomes rgba(255,255,255,.06), border-l2 rgba(255,255,255,.12)), so a hardcoded black
+   * cannot follow. Measured before the change: the divider sat 19 channel steps below the popup in light
+   * and only 9 in dark; with the token it is 23 and 19. It sits in the 2px flex gap rather than inside the
+   * button, so the hover pill never covers it.
    */
   .qc-popup button+button::before{content:'';position:absolute;left:-1px;top:6px;bottom:6px;width:1px;
-    background:rgba(0,0,0,.08)}
+    background:var(--dsw-alias-border-l2)}
   .qc-popup svg{flex:none;opacity:.8}
 
   /* The compose panel: a compact dialog, larger radii to match the composer it sits above.
