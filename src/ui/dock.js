@@ -35,7 +35,7 @@ import {
 } from '../text-ranges.js'
 import {
   serializeChipForModel, CHIP_SOURCE, CHIP_TRIGGER, CHIP_PLACEHOLDER, chipRemovalSite, chipOrdinal, orphanedIds,
-  staleChipRefs, withoutChip,
+  staleChipRefs, withoutChip, chipLabel,
 } from '../chip-draft.js'
 import { useDraft, useDraftOccurrences } from './draft-hooks.js'
 import { FLASH_MS } from '../highlight.js'
@@ -75,7 +75,7 @@ export function annotationDock(deps) {
   // Flattened back to the names the body reads. Keeping the original names means the component
   // body needed no edit at all, which is what makes this change verifiable by the suites alone.
   const {
-    useAnnotations, store: annotationStore,
+    useAnnotations, store: annotationStore, persistence: annotationPersistence,
   } = annotations
   // The store's own methods, used directly: the entry's wrappers were identical pass-throughs.
   const { add: addAnnotation, remove: removeAnnotation, update: updateAnnotation } = annotationStore
@@ -329,6 +329,53 @@ export function annotationDock(deps) {
       clearFlashRange()
       setOverlay(null)
     }, [])
+
+    /**
+     * Bring back the annotations stored by the previous page load, and give their chips a payload again.
+     *
+     * The Host restores the draft, chips included, but the plugin's annotations and chip payloads were memory-only:
+     * every restored chip therefore had no owner, and the Host refuses a send containing one. Restoring the
+     * annotations is what closes that loop — `chipRegistry.register` derives a payload from an annotation, so
+     * re-registering here rebuilds exactly what the codec needs, with nothing else stored.
+     *
+     * Runs once per session, before the first paint that could serialize anything. `restoredRef` guards against a
+     * second run re-registering payloads over live ones, which would resurrect a comment the user has since edited.
+     */
+    const restoredRef = React.useRef(null)
+    React.useEffect(() => {
+      if (sessionId === undefined) return
+      if (restoredRef.current === sessionId) return
+      // Marked BEFORE the read, so the save effect below never runs for a session whose stored list has not been
+      // looked at yet — an early save would overwrite what this effect is about to load with an empty list.
+      restoredRef.current = sessionId
+      if (typeof annotationPersistence?.load !== 'function') return
+      // Only when this page has nothing for the session: the store is the live truth, and a re-mount mid-session must
+      // not overwrite edits with whatever happened to be on disk.
+      if (annotationStore.snapshot(sessionId).length > 0) return
+      const stored = annotationPersistence.load(sessionId)
+      if (stored.length === 0) return
+      annotationStore.restore(sessionId, stored)
+      // The chips are already in the draft — the Host restored them — but they have no payload on this page load, so
+      // the codec cannot resolve them. Registering rebuilds exactly that, derived from the annotation.
+      for (const annotation of stored) {
+        chipRegistry.register(annotation, chipLabel(annotation, labels))
+      }
+    }, [annotationPersistence, annotationStore, chipRegistry, labels, sessionId])
+
+    /**
+     * Save the session's annotations whenever they change.
+     *
+     * Written through the same list the UI reads, so what comes back is what was on screen. Nothing else is stored:
+     * the chip payloads are derived from these entries on the next load, so a second copy could only disagree.
+     */
+    React.useEffect(() => {
+      if (sessionId === undefined) return
+      if (typeof annotationPersistence?.save !== 'function') return
+      // Effects run in declaration order, so the restore above has already run for this session — but only once it
+      // has is this list the authoritative one. Before that it is the empty state that precedes a restore.
+      if (restoredRef.current !== sessionId) return
+      annotationPersistence.save(sessionId, annotations)
+    }, [annotations, annotationPersistence, sessionId])
 
     /**
      * Take out of the draft the chips this page load has no payload for.

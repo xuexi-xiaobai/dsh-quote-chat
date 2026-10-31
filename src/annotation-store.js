@@ -203,6 +203,33 @@ export function createAnnotationStore({ maxAnnotations } = {}) {
     },
 
     /**
+     * Install a list that came from storage.
+     *
+     * Distinct from `add` because it must not mint ids or re-run the limit: the entries already carry their ids, and
+     * the numbers they were saved with are recomputed here so a session that lost an entry to a bad write still shows
+     * 1, 2, 3 rather than a gap.
+     *
+     * Nothing is validated here — the persistence layer does that, and it is the only caller. Callers that did not
+     * validate would be able to publish an annotation with no anchor, which the marker layer reads without a guard.
+     *
+     * @param sessionId - the session key.
+     * @param list - annotations read from storage.
+     * @returns how many were installed.
+     */
+    restore(sessionId, list) {
+      if (sessionId === undefined || !Array.isArray(list) || list.length === 0) return 0
+      const state = stateFor(sessionId)
+      const capped = list.slice(0, maxAnnotations)
+      // Keep `seq` ahead of the restored ids, or the next `add` could mint an id that is already in the list.
+      for (const item of capped) {
+        const tail = /-(\d+)$/.exec(item.id)
+        if (tail !== null) state.seq = Math.max(state.seq, Number(tail[1]))
+      }
+      publish(state, renumber(capped))
+      return capped.length
+    },
+
+    /**
      * Remove every annotation of one session.
      *
      * Notifies only when the list was non-empty, so a clear on an empty session does not wake

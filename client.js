@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:a7fbf967fd54b27b
+ * Artifact: sha256:f4543f40d21f5c79
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -277,6 +277,31 @@ function __dshQuoteChatFactory(hostRequire) {
         return state.list.find((item) => item.id === id) ?? null;
       },
       /**
+       * Install a list that came from storage.
+       *
+       * Distinct from `add` because it must not mint ids or re-run the limit: the entries already carry their ids, and
+       * the numbers they were saved with are recomputed here so a session that lost an entry to a bad write still shows
+       * 1, 2, 3 rather than a gap.
+       *
+       * Nothing is validated here — the persistence layer does that, and it is the only caller. Callers that did not
+       * validate would be able to publish an annotation with no anchor, which the marker layer reads without a guard.
+       *
+       * @param sessionId - the session key.
+       * @param list - annotations read from storage.
+       * @returns how many were installed.
+       */
+      restore(sessionId, list) {
+        if (sessionId === void 0 || !Array.isArray(list) || list.length === 0) return 0;
+        const state = stateFor(sessionId);
+        const capped = list.slice(0, maxAnnotations);
+        for (const item of capped) {
+          const tail = /-(\d+)$/.exec(item.id);
+          if (tail !== null) state.seq = Math.max(state.seq, Number(tail[1]));
+        }
+        publish(state, renumber(capped));
+        return capped.length;
+      },
+      /**
        * Remove every annotation of one session.
        *
        * Notifies only when the list was non-empty, so a clear on an empty session does not wake
@@ -289,6 +314,67 @@ function __dshQuoteChatFactory(hostRequire) {
         if (state.list.length > 0) publish(state, EMPTY);
       }
     };
+  }
+
+  // src/annotation-persistence.js
+  var STORAGE_PREFIX = "dsh-quote-chat:v1:annotations:";
+  function storageKey(sessionId) {
+    return `${STORAGE_PREFIX}${sessionId}`;
+  }
+  function isAnnotation(value) {
+    if (typeof value !== "object" || value === null) return false;
+    if (typeof value.id !== "string" || value.id === "") return false;
+    if (typeof value.kind !== "string") return false;
+    if (typeof value.text !== "string") return false;
+    if (typeof value.number !== "number" || !Number.isFinite(value.number)) return false;
+    if (typeof value.anchor !== "object" || value.anchor === null) return false;
+    if (typeof value.anchor.quote !== "string") return false;
+    return true;
+  }
+  function createAnnotationPersistence({ storage = globalThis.localStorage, max = 12 } = {}) {
+    function load(sessionId) {
+      if (storage === void 0 || storage === null || sessionId === void 0) return [];
+      let raw = null;
+      try {
+        raw = storage.getItem(storageKey(sessionId));
+      } catch (failure) {
+        return [];
+      }
+      if (typeof raw !== "string" || raw === "") return [];
+      let parsed = null;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return [];
+      }
+      const list = Array.isArray(parsed) ? parsed : parsed?.annotations;
+      if (!Array.isArray(list)) return [];
+      const seen = /* @__PURE__ */ new Set();
+      const kept = [];
+      for (const entry of list) {
+        if (!isAnnotation(entry)) continue;
+        if (seen.has(entry.id)) continue;
+        seen.add(entry.id);
+        kept.push(entry);
+        if (kept.length >= max) break;
+      }
+      return kept;
+    }
+    function save(sessionId, annotations) {
+      if (storage === void 0 || storage === null || sessionId === void 0) return false;
+      try {
+        if (!Array.isArray(annotations) || annotations.length === 0) {
+          storage.removeItem(storageKey(sessionId));
+          return true;
+        }
+        storage.setItem(storageKey(sessionId), JSON.stringify(annotations.slice(0, max)));
+        return true;
+      } catch (failure) {
+        console.error("[dsh-quote-chat] annotations could not be saved:", failure);
+        return false;
+      }
+    }
+    return { load, save };
   }
 
   // src/annotation-hooks.js
@@ -3862,7 +3948,8 @@ function __dshQuoteChatFactory(hostRequire) {
     } = deps;
     const {
       useAnnotations: useAnnotations2,
-      store: annotationStore2
+      store: annotationStore2,
+      persistence: annotationPersistence2
     } = annotations;
     const { add: addAnnotation, remove: removeAnnotation, update: updateAnnotation } = annotationStore2;
     const {
@@ -4036,6 +4123,26 @@ function __dshQuoteChatFactory(hostRequire) {
         clearFlashRange();
         setOverlay(null);
       }, []);
+      const restoredRef = import_react8.default.useRef(null);
+      import_react8.default.useEffect(() => {
+        if (sessionId === void 0) return;
+        if (restoredRef.current === sessionId) return;
+        restoredRef.current = sessionId;
+        if (typeof annotationPersistence2?.load !== "function") return;
+        if (annotationStore2.snapshot(sessionId).length > 0) return;
+        const stored = annotationPersistence2.load(sessionId);
+        if (stored.length === 0) return;
+        annotationStore2.restore(sessionId, stored);
+        for (const annotation of stored) {
+          chipRegistry2.register(annotation, chipLabel(annotation, labels));
+        }
+      }, [annotationPersistence2, annotationStore2, chipRegistry2, labels, sessionId]);
+      import_react8.default.useEffect(() => {
+        if (sessionId === void 0) return;
+        if (typeof annotationPersistence2?.save !== "function") return;
+        if (restoredRef.current !== sessionId) return;
+        annotationPersistence2.save(sessionId, annotations2);
+      }, [annotations2, annotationPersistence2, sessionId]);
       import_react8.default.useEffect(() => {
         if (sessionId === void 0) return;
         const stale = staleChipRefs(occurrences, (ref) => chipRegistry2.has(ref), CHIP_SOURCE);
@@ -4662,6 +4769,7 @@ function __dshQuoteChatFactory(hostRequire) {
   });
   var highlighter = createHighlighter();
   var annotationStore = createAnnotationStore({ maxAnnotations: MAX_ANNOTATIONS });
+  var annotationPersistence = createAnnotationPersistence({ max: MAX_ANNOTATIONS });
   var useAnnotations = makeUseAnnotations(annotationStore);
   var chipRegistry = createChipRegistry();
   var chipBridge = createDraftBridge({ registry: chipRegistry, source: CHIP_SOURCE });
@@ -4688,8 +4796,8 @@ function __dshQuoteChatFactory(hostRequire) {
       NS,
       buildDock: () => annotationDock({
         ctx,
-        // The annotation lifecycle: one store, plus the React binding over it.
-        annotations: { store: annotationStore, useAnnotations },
+        // The annotation lifecycle: one store, the React binding over it, and its storage.
+        annotations: { store: annotationStore, useAnnotations, persistence: annotationPersistence },
         // Chip identity and the draft seam.
         chips: {
           registry: chipRegistry,

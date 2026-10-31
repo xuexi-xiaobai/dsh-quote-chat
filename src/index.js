@@ -46,6 +46,7 @@ const h = React.createElement
 
 import { zh, en } from './locales.js'
 import { createAnnotationStore } from './annotation-store.js'
+import { createAnnotationPersistence } from './annotation-persistence.js'
 import { makeUseAnnotations } from './annotation-hooks.js'
 import {
   serializeChipForModel, CHIP_SOURCE, CHIP_TRIGGER, CHIP_PLACEHOLDER
@@ -199,6 +200,15 @@ const highlighter = createHighlighter()
 const annotationStore = createAnnotationStore({ maxAnnotations: MAX_ANNOTATIONS })
 
 /**
+ * Keeps annotations across a reload, and rebuilds the chips that point at them.
+ *
+ * The Host persists the draft but not the plugin's side of it, so a restored chip had no payload behind it and blocked
+ * the whole send. Restoring the annotations is what makes the restored chip mean something again — the payloads are
+ * derived from them, so nothing else has to be stored.
+ */
+const annotationPersistence = createAnnotationPersistence({ max: MAX_ANNOTATIONS })
+
+/**
  * The React binding over that store.
  *
  * Built once here so the hook keeps a stable identity, and kept out of the store so the store stays
@@ -277,8 +287,8 @@ function applyImpl(ctx) {
     NS,
     buildDock: () => annotationDock({
         ctx,
-        // The annotation lifecycle: one store, plus the React binding over it.
-        annotations: { store: annotationStore, useAnnotations },
+        // The annotation lifecycle: one store, the React binding over it, and its storage.
+        annotations: { store: annotationStore, useAnnotations, persistence: annotationPersistence },
         // Chip identity and the draft seam.
         chips: {
           registry: chipRegistry, bridge: chipBridge, jumpHandler: chipJumpHandler, labelHandler: chipLabelHandler,

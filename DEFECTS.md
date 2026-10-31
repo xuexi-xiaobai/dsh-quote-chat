@@ -265,11 +265,42 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 新 bundle：芯片被移除 / 有提示 / 1 个请求 / 屏幕上没有内部 id                      （7/7）
 ```
 
-#### 没有做的事
+#### 后续：真的把刷新后保留注释做出来了
 
-把 payload 持久化（localStorage）能让刷新后**完全正常**，但那是另一个量级的功能：还要连带
-持久化注释库（气泡、悬浮卡、跳转都依赖它），否则只会得到一个"能发送但点不动"的半残状态。
-先记在这里，不并进本次修复。
+上面那一版只是"把死的芯片清掉"，属于止血。用户随后问："那能不能刷新后保留注释呢？"—— 能，
+而且比当初估计的简单，因为顺序反过来了：
+
+**当初以为要把 chip payload 也持久化。其实不用。** `chipRegistry.register` 的 payload 是从
+一条注释**推导**出来的（kind / number / text / comment / label），所以只要把注释存下来、
+加载时重新 `register`，codec 需要的东西就全齐了。存两份反而会多一个不一致的来源。
+
+- `annotation-persistence.js`（新）：`createAnnotationPersistence({ storage, max })` → `{ load, save }`。
+  版本号放在 **key 里**（`dsh-quote-chat:v1:annotations:<sessionId>`），不是放在值里 ——
+  将来改格式时旧条目自然读不到，不需要每次加载都判断和迁移。
+- `annotation-store.js`：新增 `restore(sessionId, list)`，不发 id、重算编号、
+  并把 `seq` 推到已恢复 id 的序号之后（否则下一次 `add` 可能造出一个已存在的 id）。
+- `dock.js`：挂载时恢复 + 重新注册 payload；注释变化时写盘。
+  两个 effect 的**声明顺序**是有意义的 —— 恢复先跑，保存后跑。
+- `index.js`：创建适配器并下传。
+
+读路径按"解析器"对待，每种畸形都退回空列表：
+非 JSON、JSON 但不是数组、条目缺 anchor / 缺 quote、`number` 不是数字、id 为空、id 重复
+（重复会让编号和 payload 对不上）、长度超过上限（上限调小后仍然成立）。
+**一条坏条目不连坐邻居**：丢掉那一条，其余保留。
+存储抛异常（隐私模式、配额满）不向外传播，功能退回到"只在这个页面里有效"，也就是它以前的样子。
+
+#### 真机验证（第二版）
+
+`tools/probe-stale-chip.mjs`，只换 `client.js`：
+
+```
+                    芯片   注释气泡   提示        发送
+旧 bundle（#3 修复前） 死    0 条      "已移除"    能发（注释没了）
+#3 修复版             死    0 条      "已移除"    能发（注释没了）
+本版                  活    1 条      无          能发，且带注释
+```
+
+8/8 通过。新增 `test/annotation-persistence.mjs` 33 条，测试总数 712。
 
 ### 缺陷 4：撤销把芯片放回草稿末尾，而不是原来的位置
 
@@ -422,7 +453,7 @@ QC_VIEWPORT=1440x1000 node tools/accept-lifecycle.mjs "<url>"
 
 ```
 node build.mjs --check   → sha256:5848438bdcb1ec08，通过
-npm test                 → 678/678 通过，0 失败
+npm test                 → 712/712 通过，0 失败
 ```
 
 验收套件（需要 1.1 + 1.2 的前提）：
@@ -434,7 +465,7 @@ accept-lifecycle   68/73（QC_VIEWPORT=1440x1000）
 verify-web-build   OK — Web serves the current build
 ```
 
-修任何一个缺陷后，至少要保证 `npm test` 仍 678 通过，且 `--check` 的哈希变化
+修任何一个缺陷后，至少要保证 `npm test` 仍 712 通过，且 `--check` 的哈希变化
 **只能来自源码改动**。新增测试并入 `package.json` 的 `test` 脚本（注意是长
 `&&` 链，加在末尾）。
 
