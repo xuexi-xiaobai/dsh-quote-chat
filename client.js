@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:3c0b403689ff0a94
+ * Artifact: sha256:8ed8c0753c7ba9f9
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -1592,8 +1592,14 @@ function __dshQuoteChatFactory(hostRequire) {
    * cannot follow. Measured before the change: the divider sat 19 channel steps below the popup in light
    * and only 9 in dark; with the token it is 23 and 19. It sits in the 2px flex gap rather than inside the
    * button, so the hover pill never covers it.
+   *
+   * left is -(gap + width) / 2, not -1px. The offset is measured from the second button's left edge, and the
+   * gap runs from -2px to 0 in that space, so its centre is -1px: a 1px line at left:-1px puts its own LEFT
+   * edge on the centre and the whole line in the right half, flush against the button. Half a pixel of bias,
+   * which reads as "the divider is closer to the right one". At -1.5px the line spans [-1.5, -0.5] and both
+   * sides get 0.5px. On a 2x display that half pixel is exactly one device pixel, so the line stays crisp.
    */
-  .qc-popup button+button::before{content:'';position:absolute;left:-1px;top:6px;bottom:6px;width:1px;
+  .qc-popup button+button::before{content:'';position:absolute;left:-1.5px;top:6px;bottom:6px;width:1px;
     background:var(--dsw-alias-border-l2)}
   .qc-popup svg{flex:none;opacity:.8}
 

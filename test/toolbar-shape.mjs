@@ -88,9 +88,19 @@ check('the divider stops short of both ends',
   /top:6px/.test(divider) && /bottom:6px/.test(divider),
   'the divider spans the full height again and will touch the 7px corners')
 
-check('the divider sits in the gap, not inside the button',
-  /left:-1px/.test(divider),
-  'the divider is inside the button box, so the hover pill covers it')
+// The line is anchored to the SECOND button's left edge, and the flex gap runs from -gap to 0 in that
+// space, so the centre is -gap/2. A width-w line centred there starts at -(gap + w) / 2. At left:-1px
+// with a 2px gap the line spanned [-1, 0]: its own left edge sat on the centre and the whole line fell
+// in the right half, flush against the button — measured 1px of space on the left and 0 on the right.
+const gap = Number.parseFloat(/gap:\s*(-?[\d.]+)px/.exec(ruleOf('.qc-popup'))?.[1] ?? '')
+const lineLeft = Number.parseFloat(/left:\s*(-?[\d.]+)px/.exec(divider)?.[1] ?? '')
+const lineWidth = Number.parseFloat(/[;{\s]width:\s*(-?[\d.]+)px/.exec(divider)?.[1] ?? '')
+
+check('the divider is centred in the gap, not flush against a button',
+  Number.isFinite(gap) && Number.isFinite(lineLeft) && Number.isFinite(lineWidth)
+  && Math.abs(lineLeft - -(gap + lineWidth) / 2) < 0.001,
+  `left:${lineLeft}px with gap:${gap}px and width:${lineWidth}px is off-centre; `
+  + `it should be ${Number.isFinite(gap) && Number.isFinite(lineWidth) ? -(gap + lineWidth) / 2 : '?'}px`)
 
 check('the divider colour comes from a theme token, not a literal',
   /var\(--dsw-alias-[a-z0-9-]+\)/.test(divider) && !/(rgba?|hsla?)\(/.test(divider) && !/#[0-9a-f]{3,8}\b/i.test(divider),
