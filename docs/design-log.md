@@ -44,6 +44,27 @@
   同一 stroke、且不出现"两个图标各自不同的圆角"这类偏移。
 - **副作用**：14px 线描的下限就在那里——方向 B（局部实心）能更清晰，但会比周围 UI 更"重"，
   这一条要等拍板。
+- **调研（可复现，2026-10-31）**：三个库都能直接取单个 SVG，不需要引依赖、不需要图标字体——
+  - Lucide（ISC）：`https://cdn.jsdelivr.net/npm/lucide-static@latest/icons/<name>.svg`
+  - Tabler（MIT）：`https://cdn.jsdelivr.net/npm/@tabler/icons@latest/icons/outline/<name>.svg`
+  - Phosphor（MIT）：`https://cdn.jsdelivr.net/npm/@phosphor-icons/core@latest/assets/<weight>/<name>[-<weight>].svg`
+    （`regular` 不带后缀，`bold`/`fill` 带后缀）
+
+  取了 45 个候选，按 14px / 12px / 8× 三档渲染，再塞进真实 `.qc-popup` 里复核（一次性探针
+  `tools/probe-icon-candidates.mjs`、`tools/probe-icon-live.mjs`，均已 gitignore）。
+- **调研结论**：
+  - **有效笔画不是问题所在**。现状 `1.3 × 14 ÷ 16 = 1.14px`；Lucide/Tabler 原样缩到 14px 是
+    `2 × 14 ÷ 24 = 1.17px`，两者几乎相同。Phosphor 是填充路径，Regular 在 14px 下反而更细（约 0.88px），
+    只有 Bold 站得住。所以"糊"来自构图，不来自粗细。
+  - **真正的分歧点是加号画在气泡外面**。Lucide 的 `message-square-plus` 把十字放在气泡内部（`M12 8v6` + `M9 11h6`）；
+    Tabler 的 `message-plus` 和我们现状一样放在外面（`M16 19h6` + `M19 16v6`），14px 下同样糊成一团。
+    即"附属符号压在容器笔画上"是通用失败模式，不是我们单独画坏了。
+  - 1:1 可辨性排序——注释：`message-square-plus` > `message-circle-plus` > `pencil-line` ≈ Tabler `pencil`
+    > `highlighter` > Phosphor Bold `note-pencil`；`quote`、`pilcrow`、`messages-square` 在 14px 下全糊。
+  - 侧边提问：`panel-right` > Tabler `layout-sidebar-right` > Phosphor `sidebar-simple`（分隔条靠左，方向相反）
+    > `panel-right-open`（内含箭头，14px 下像文件夹）。
+- **倾向**：注释用 Lucide `message-square-plus`、侧边提问用 Lucide `panel-right`。两者同源（同 24 网格、同 2 笔画、
+  同圆角），一次性解决"不成体系"；落地时在 `src/icons.js` 顶部保留上游版权与许可行（ISC 要求保留声明）。
 
 ### D-1 面板与作曲器之间把 8px 间距还回来（缺陷 10）
 
