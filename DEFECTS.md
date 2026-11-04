@@ -1025,6 +1025,42 @@ DPR 4（4 倍图）：设备像素列 370-373，四列满强度 Δ73
 
 ---
 
+### 缺陷 20：代码块含标题选中后，注释面板落在屏幕外（已修复，issue #28）
+
+> 追踪：issue [#28](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/28) —— **已修复**
+
+**证据强度：`[已验证]`（真实浏览器，scratch 探针 `tools/probe-code-block.mjs`，连续 3 次）**
+
+现象：从代码块标题「代码块」拖到代码内容、点「添加注释」后，面板看起来没弹出，芯片也不出现。
+只选代码内容（起点在 `pre` 内）时正常。
+
+实测（修复前）：
+
+```
+compose panel: true   {"left":569,"top":-132,"width":420,"height":123}   ← 屏幕外
+chips 1 → 1            （无法确认）
+confirm（程序化）→ chips 2
+```
+
+根因：`src/selection.js:157` 的 `block = closest(BLOCK_SELECTOR) ?? flow`。代码块结构是
+`div.md-code-block > (标题栏, 内容 > pre)`；起点在标题的 `span` 里时，`closest(BLOCK_SELECTOR)`
+（`p, li, h1..h6, pre, blockquote, table, figure`）落空 → 回退到整个 `flow` → 面板放到对话流上方，
+`top: -132`，用户看不到，也就无法确认；芯片只在确认时写入。
+
+修复：落空时先回退到**最近的代码块包裹元素**（向上找第一个包含 `pre` 的祖先），再回退到 `flow`。
+
+```js
+const block = rangeStartElement.closest(BLOCK_SELECTOR)
+  ?? codeBlockWrapper(rangeStartElement)
+  ?? flow
+```
+
+真机验证（修复后）：面板 `{"left":569,"top":154,...}`，确认后芯片 +1。
+
+测试：`test/selection-block.mjs` 钉住「codeBlockWrapper 必须在 flow 之前」以及 helper 找 `pre` 的规则。
+
+---
+
 ---
 
 ## 3. 不算缺陷，但会误导人的现状
@@ -1072,8 +1108,8 @@ esbuild 重新打印 AST 时把行尾统一成 `\n`，模板字符串也不例�
 ## 4. 当前基线（修复前请先复现这个）
 
 ```
-node build.mjs --check   → sha256:2436553f47d10836，通过
-npm test                 → 807/807 通过，0 失败
+node build.mjs --check   → sha256:d046718492f1d96f，通过
+npm test                 → 812/812 通过，0 失败
 ```
 
 验收套件（需要 1.1 + 1.2 的前提）：
@@ -1085,7 +1121,7 @@ accept-lifecycle   68/73（QC_VIEWPORT=1440x1000）
 verify-web-build   OK — Web serves the current build
 ```
 
-修任何一个缺陷后，至少要保证 `npm test` 仍 807 通过，且 `--check` 的哈希变化
+修任何一个缺陷后，至少要保证 `npm test` 仍 812 通过，且 `--check` 的哈希变化
 **只能来自源码改动**。新增测试并入 `package.json` 的 `test` 脚本（注意是长
 `&&` 链，加在末尾）。
 

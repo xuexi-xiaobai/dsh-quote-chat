@@ -86,6 +86,24 @@ export function tableToMarkdown(table) {
 }
 
 /**
+ * The nearest ancestor that wraps a code block — its title bar and its <pre>.
+ *
+ * A selection that starts on the "代码块" title has no BLOCK_SELECTOR ancestor: the title is a span inside the
+ * banner, not a p/li/pre. The block then fell back to the whole flow, so the panel was placed above the entire
+ * transcript — off-screen — and the annotation could not be confirmed (#28).
+ *
+ * @param element - the selection's start element.
+ * @returns the wrapper element, or null.
+ */
+function codeBlockWrapper(element) {
+  for (let node = element; node !== null && node !== undefined; node = node.parentElement) {
+    if (node.tagName === 'PRE') return node
+    if (typeof node.querySelector === 'function' && node.querySelector('pre') !== null) return node
+  }
+  return null
+}
+
+/**
  * Read the current selection as a quotable answer passage.
  *
  * @param pointer - where the pointer was released, in viewport coordinates; null for a keyboard
@@ -154,7 +172,9 @@ export function readSelection(pointer) {
   // The panel goes above the TOPMOST block the selection touches, which is what `range.startContainer`
   // identifies regardless of how the gesture was made.
   const rangeStartElement = elementOf(range.startContainer) ?? startElement
-  const block = rangeStartElement.closest(BLOCK_SELECTOR) ?? flow
+  const block = rangeStartElement.closest(BLOCK_SELECTOR)
+    ?? codeBlockWrapper(rangeStartElement)
+    ?? flow
   return {
     kind: 'text',
     text: text.trim(),

@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:2436553f47d10836
+ * Artifact: sha256:d046718492f1d96f
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -4864,6 +4864,13 @@ function __dshQuoteChatFactory(hostRequire) {
     const head = usable[0];
     return [line(head), `| ${pad(head).map(() => "---").join(" | ")} |`, ...usable.slice(1).map(line)].join("\n");
   }
+  function codeBlockWrapper(element) {
+    for (let node = element; node !== null && node !== void 0; node = node.parentElement) {
+      if (node.tagName === "PRE") return node;
+      if (typeof node.querySelector === "function" && node.querySelector("pre") !== null) return node;
+    }
+    return null;
+  }
   function readSelection(pointer) {
     if (typeof window === "undefined" || typeof document === "undefined") return null;
     const selection = window.getSelection();
@@ -4912,7 +4919,7 @@ function __dshQuoteChatFactory(hostRequire) {
       };
     }
     const rangeStartElement = elementOf(range.startContainer) ?? startElement;
-    const block = rangeStartElement.closest(BLOCK_SELECTOR) ?? flow;
+    const block = rangeStartElement.closest(BLOCK_SELECTOR) ?? codeBlockWrapper(rangeStartElement) ?? flow;
     return {
       kind: "text",
       text: text.trim(),
