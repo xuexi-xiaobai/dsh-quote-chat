@@ -885,6 +885,62 @@ DPR 4（4 倍图）：设备像素列 370-373，四列满强度 Δ73
 
 ---
 
+### 缺陷 16：表格的添加注释按钮在指针移上去时自己消失（已修复，issue #24）
+
+> 追踪：issue [#24](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/24) —— **已修复**（见下方「修复」）
+
+**证据强度：`[已验证]`（真实浏览器：真实 CDP 鼠标，连续 3 次；程序化 click 作对照）**
+
+用户报告："表格右上角的添加注释工具栏，鼠标移上去时频繁闪烁，点击后并没有在聊天框里加上注释芯片。"
+
+#### 实测
+
+探针 `tools/probe-table-add.mjs`（本轮新增）：
+
+```
+从表格内部向按钮中心分 12 步移动：
+  presence: 111111111100   transitions: 1   FLICKERS
+  last mousemove target: TH（仍在 flow 内）
+  mouseleave: target=DIV/mainPanel/centerCol/frame, relatedTarget=BUTTON.qc-table-add
+
+点击：the button is gone before the click — the click cannot reach it
+对照：程序化 click → compose 打开 → 确认 → 芯片 +1
+```
+
+在单元格之间横向移动（不靠近按钮）是稳定的（`1111111111111`，0 次翻转），所以闪烁集中在按钮本身。
+
+#### 根因
+
+`src/ui/table.js`：
+
+- `:82-88` `onMove` 用 `closest(FLOW_SELECTOR)` 判断；按钮 portal 到 `document.body`，指针在按钮上时
+  `flow === null` → `pending = null` → 按钮被移除
+- `:89-92` `document` 捕获阶段的 `mouseleave` 会收到每个元素的 leave；从表格移到按钮时
+  `relatedTarget` 是按钮 → 同样清空
+
+两条路径叠加：指针一碰到按钮就删自己，下一次 mousemove 又加回来 → 闪烁；点击落下时按钮已不在 →
+打不开撰写框 → 没有芯片。
+
+#### 修复
+
+- `onMove`：target 在 `.qc-table-add` 内时提前返回，保留当前 target
+- `onLeave`：`relatedTarget` 在按钮内、或在当前表格内时不清空
+- 新增 `test/table-add-guard.mjs`（6 条源码形状断言）
+
+#### 真机验证
+
+```
+修复前：presence 111111111100，transitions 1，点击落空
+修复后：presence 111111111111，transitions 0；真实点击 → compose 打开 → 确认 → 芯片 +1
+```
+
+#### 测试
+
+`test/table-add-guard.mjs`：onMove 的按钮 guard 必须出现在 flow 查询之前；onLeave 必须读
+`relatedTarget` 并保留按钮内/表格内的移动。变异验证：删掉任一 guard，立刻红。
+
+---
+
 ---
 
 ## 3. 不算缺陷，但会误导人的现状
@@ -932,8 +988,8 @@ esbuild 重新打印 AST 时把行尾统一成 `\n`，模板字符串也不例�
 ## 4. 当前基线（修复前请先复现这个）
 
 ```
-node build.mjs --check   → sha256:b96d7c852f632470，通过
-npm test                 → 792/792 通过，0 失败
+node build.mjs --check   → sha256:4f4c11b8ff258652，通过
+npm test                 → 798/798 通过，0 失败
 ```
 
 验收套件（需要 1.1 + 1.2 的前提）：
@@ -945,7 +1001,7 @@ accept-lifecycle   68/73（QC_VIEWPORT=1440x1000）
 verify-web-build   OK — Web serves the current build
 ```
 
-修任何一个缺陷后，至少要保证 `npm test` 仍 792 通过，且 `--check` 的哈希变化
+修任何一个缺陷后，至少要保证 `npm test` 仍 798 通过，且 `--check` 的哈希变化
 **只能来自源码改动**。新增测试并入 `package.json` 的 `test` 脚本（注意是长
 `&&` 链，加在末尾）。
 

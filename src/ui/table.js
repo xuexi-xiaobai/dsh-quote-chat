@@ -81,12 +81,24 @@ export function TableAddButton(props) {
     }
     const onMove = (event) => {
       const element = elementOf(event.target)
+      // The button is portaled to document.body, so it is outside the flow. Moving onto it must not be read as
+      // "the pointer left the table": that is what made the button delete itself under the cursor, which both
+      // flickered and left the click nothing to land on (#24).
+      if (element !== null && element.closest('.qc-table-add') !== null) return
       const flow = element?.closest(FLOW_SELECTOR) ?? null
       const table = flow === null || element === null ? null : element.closest('table')
       pending = table !== null && flow !== null && flow.contains(table) ? table : null
       schedule()
     }
-    const onLeave = () => {
+    const onLeave = (event) => {
+      // `mouseleave` is captured on document, so it fires for every element the pointer leaves — including the
+      // table on the way to the button. Keep the target while the pointer is only moving between the table and
+      // its button; clear it when it really leaves both.
+      const related = elementOf(event.relatedTarget)
+      const staying = related !== null
+        && (related.closest('.qc-table-add') !== null
+          || (pending !== null && pending.contains(related)))
+      if (staying) return
       pending = null
       schedule()
     }

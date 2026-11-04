@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:b96d7c852f632470
+ * Artifact: sha256:4f4c11b8ff258652
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -4752,12 +4752,16 @@ function __dshQuoteChatFactory(hostRequire) {
       };
       const onMove = (event) => {
         const element = elementOf(event.target);
+        if (element !== null && element.closest(".qc-table-add") !== null) return;
         const flow = element?.closest(FLOW_SELECTOR) ?? null;
         const table = flow === null || element === null ? null : element.closest("table");
         pending = table !== null && flow !== null && flow.contains(table) ? table : null;
         schedule();
       };
-      const onLeave = () => {
+      const onLeave = (event) => {
+        const related = elementOf(event.relatedTarget);
+        const staying = related !== null && (related.closest(".qc-table-add") !== null || pending !== null && pending.contains(related));
+        if (staying) return;
         pending = null;
         schedule();
       };
