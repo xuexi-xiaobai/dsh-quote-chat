@@ -10,13 +10,21 @@
  */
 import { readFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
+import { resolveMcpCli, resolveNode, resolveProfile } from './platform.mjs'
 
-const NODE = process.env.QC_NODE ?? 'D:\\Programs_Apps\\nodejs\\node.exe'
-const CLI = 'C:\\Users\\<user>\\AppData\\Local\\qc-playwright-mcp\\node_modules\\@playwright\\mcp\\cli.js'
+const NODE = resolveNode()
+const CLI = resolveMcpCli()
 // Attach to an existing CDP browser when one is running; otherwise let Playwright launch its
 // own. The launcher keeps a profile on disk so the DSH login survives between calls.
 const CDP = process.env.QC_CDP ?? ''
-const PROFILE = process.env.QC_PROFILE ?? 'C:\\Users\\<user>\\AppData\\Local\\qc-playwright-profile'
+const PROFILE = resolveProfile()
+
+if (CLI === undefined) {
+  console.error('this suite drives @playwright/mcp, which is not installed on this machine.')
+  console.error('  install it (npm i -g @playwright/mcp) or set QC_MCP_CLI to its cli.js')
+  process.exit(2)
+}
+
 
 const launchArgs = [CLI, '--viewport-size', '1440x900', '--user-data-dir', PROFILE]
 if (CDP !== '') launchArgs.push('--cdp-endpoint', CDP)

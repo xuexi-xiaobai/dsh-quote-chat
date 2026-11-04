@@ -27,20 +27,20 @@
  */
 import { mkdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { resolveChrome, resolvePlaywright, resolveProfile } from './platform.mjs'
 
 /**
  * Playwright is not resolvable by bare name here: it lives under a pnpm store, and `createRequire` does not look
  * through `.pnpm`. harness.mjs loads it the same way, and the path must match so both use one copy.
  */
-const PLAYWRIGHT = 'C:/Users/<user>/AppData/Local/qc-playwright-mcp/node_modules/.pnpm/playwright@1.64.0-alpha-1790635538000/node_modules/playwright/index.js'
+const PLAYWRIGHT = resolvePlaywright()
 const { chromium } = createRequire(import.meta.url)(PLAYWRIGHT)
 
 /** Where the persistent profile lives. Must match harness.mjs so the login token survives. */
-const PROFILE = 'C:/Users/<user>/AppData/Local/qc-playwright-profile'
+const PROFILE = resolveProfile()
 
 /** The browser binary harness.mjs uses. Must match, or attaching would target a different Chromium build. */
-const CHROME = process.env.QC_CHROME
-  ?? 'C:/Users/<user>/AppData/Local/ms-playwright/chromium-1248/chrome-win64/chrome.exe'
+const CHROME = resolveChrome()
 
 const port = Number(process.env.QC_CDP_PORT ?? 9222)
 const url = process.argv[2]

@@ -56,6 +56,49 @@ Two properties of the build are worth knowing, because both were once mistaken f
   in another. `absWorkingDir` now pins it, so the command is cwd-independent. Run it from
   anywhere.
 
+## Working across Windows and macOS
+
+This package is developed on both, so nothing may assume the other one's layout. Four rules, each
+of which was violated at least once:
+
+**1. No path with a user name in it.** `C:/Users/<name>/…` works on exactly one machine, and the
+publish-time scrub turned the Windows defaults into literal `<user>` strings — which is worse than
+a wrong path, because it looks like configuration. `tools/platform.mjs` resolves every external
+path from `homedir()` plus that platform's convention, and every tool imports it instead of
+declaring its own constants:
+
+```sh
+node tools/platform.mjs
+  node        …/node.exe
+  playwright  playwright
+  profile     C:\Users\<you>\AppData\Local\qc-playwright-profile
+  chrome      C:\Program Files\Google\Chrome\Application\chrome.exe
+  ffmpeg      …\Microsoft\WinGet\Links\ffmpeg.exe
+  ffprobe     …\Microsoft\WinGet\Links\ffprobe.exe
+  mcp cli     …\qc-playwright-mcp\node_modules\@playwright\mcp\cli.js
+```
+
+Each value is `QC_<NAME>` first (`QC_CHROME`, `QC_PROFILE`, `QC_PLAYWRIGHT`, `QC_FFMPEG`,
+`QC_FFPROBE`, `QC_NODE`, `QC_MCP_CLI`), then a discovered default, then `undefined` with the
+failure explained where it is used. Run that command before debugging any suite failure: it
+answers "is the toolchain there" in one line.
+
+**2. Line endings are pinned, not negotiated.** `.gitattributes` sets `* text=auto eol=lf`. Before
+it existed, five sources were committed CRLF and the rest LF, so a Windows checkout with
+`core.autocrlf=true` rewrote every LF file and `git status` reported files nobody had touched.
+The build is line-ending independent — `node build.mjs` produces byte-identical `client.js` from an
+all-CRLF tree and an all-LF tree — so normalising costs nothing. See DEFECTS.md 3.3, which
+recorded the opposite expectation before it was measured.
+
+**3. `node_modules/` does not travel.** `@esbuild/*` and the Playwright browser are per-platform
+binaries. `build.mjs` detects a foreign esbuild and prints `npm install`; `harness.mjs` reports a
+missing Playwright by name instead of `MODULE_NOT_FOUND`. After moving a checkout between machines,
+`npm install` once — that is the whole fix.
+
+**4. Output directories are package-relative.** Probes used to write into an absolute workspace
+path. They now use `join(PACKAGE_DIR, '.playwright-mcp', …)`, which `.gitignore` already covers on
+both systems.
+
 ## Update loop
 
 ```sh

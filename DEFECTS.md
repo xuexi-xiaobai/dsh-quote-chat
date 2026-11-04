@@ -848,11 +848,26 @@ DPR 4（4 倍图）：设备像素列 370-373，四列满强度 Δ73
 `hold()` 实际画在 `quote-chat-flash` 下。套件自己在输出里注明了
 `pre-existing defect, recorded`。它与本文档 5 个缺陷无关，可单独修。
 
-### 3.3 未做的技术债：`.gitattributes`
+### 3.3 `.gitattributes`（已解决，2026-11-04；原判断被实测推翻）
 
-现在加会让 5 个 CRLF 源文件（`chip-drag.js`、`layout.js`、`stylesheet.js`、
-`ui/markers.js`、`ui/popovers.js`）被规范化。**`stylesheet.js` 的 CSS 在模板字符串里，
-规范化会改变产物哈希。** 必须是独立提交，且提交后要重新构建并确认产物字节变化符合预期。
+原来这条写的是：加 `.gitattributes` 会让 5 个 CRLF 源文件（`chip-drag.js`、`layout.js`、
+`stylesheet.js`、`ui/markers.js`、`ui/popovers.js`）被规范化，而 **`stylesheet.js` 的 CSS 在模板字符串里，
+规范化会改变产物哈希**，所以必须先单独提交并核对字节变化。
+
+**这个结论是错的。** 把整棵树分别转成全 CRLF 和全 LF，各跑一次 `node build.mjs`：
+
+```
+全 CRLF  → 5030 行, 230407 字节, sha256:8199a25b5bbc5d94
+全 LF    → 5030 行, 230407 字节, sha256:8199a25b5bbc5d94
+```
+
+esbuild 重新打印 AST 时把行尾统一成 `\n`，模板字符串也不例外。所以产物与源码行尾无关，
+规范化是安全的。已加 `.gitattributes`（`* text=auto eol=lf`）并 renormalize 那 5 个文件，
+`--check` 仍是 `8199a25b5bbc5d94`。
+
+留在这里的教训：**"会改变产物哈希"这种判断必须实测**。否则一条技术债会以"有风险"的名义一直挂着，
+而它实际造成的只是 Windows 和 macOS 的工作区不一致——`git status` 报一堆没人改过的文件，
+真正的改动淹没在里面。
 
 ---
 

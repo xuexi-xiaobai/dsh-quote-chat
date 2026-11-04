@@ -19,12 +19,13 @@
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { resolveFfmpeg } from './platform.mjs'
 
 /**
  * Playwright MCP only writes inside its allowed roots (the workspace and .playwright-mcp),
  * so recordings must live there. Callers pass an output directory; this asserts it is one.
  */
-const FFMPEG = 'C:\\Users\\<user>\\AppData\\Local\\Microsoft\\WinGet\\Links\\ffmpeg.exe'
+const FFMPEG = resolveFfmpeg()
 
 /** Frames per second of the produced video; also the pause inserted after each frame. */
 const FPS = 2
@@ -83,7 +84,7 @@ export function createRecorder(page, outDir) {
   async function finish() {
     if (frames.length === 0) return null
     const video = join(outDir, 'recording.mp4')
-    if (!existsSync(FFMPEG)) return null
+    if (FFMPEG === undefined || !existsSync(FFMPEG)) return null
 
     const seqDir = join(outDir, 'seq')
     rmSync(seqDir, { recursive: true, force: true })

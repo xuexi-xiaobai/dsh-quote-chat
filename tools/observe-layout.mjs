@@ -15,12 +15,21 @@
  * Usage: node tools/observe-layout.mjs <url> [label]
  */
 import { spawn } from 'node:child_process'
+import { PACKAGE_DIR, resolveMcpCli, resolveNode, resolveProfile } from './platform.mjs'
+import { join } from 'node:path'
 import { writeFileSync } from 'node:fs'
 
-const NODE = 'D:\\Programs_Apps\\nodejs\\node.exe'
-const CLI = 'C:\\Users\\<user>\\AppData\\Local\\qc-playwright-mcp\\node_modules\\@playwright\\mcp\\cli.js'
-const PROFILE = 'C:\\Users\\<user>\\AppData\\Local\\qc-playwright-profile'
-const OUT = 'D:\\Win自带分类文件夹\\桌面\\各种乱七八糟的项目\\deepseekharness插件\\.playwright-mcp'
+const NODE = resolveNode()
+const CLI = resolveMcpCli()
+const PROFILE = resolveProfile()
+
+if (CLI === undefined) {
+  console.error('this suite drives @playwright/mcp, which is not installed on this machine.')
+  console.error('  install it (npm i -g @playwright/mcp) or set QC_MCP_CLI to its cli.js')
+  process.exit(2)
+}
+
+const OUT = join(PACKAGE_DIR, '.playwright-mcp')
 
 const URL_ARG = process.argv[2]
 const LABEL = process.argv[3] ?? 'observe'

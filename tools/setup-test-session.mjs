@@ -13,10 +13,18 @@
  *   node tools/setup-test-session.mjs <url> [prompt]
  */
 import { spawn } from 'node:child_process'
+import { resolveMcpCli, resolveNode, resolveProfile } from './platform.mjs'
 
-const NODE = process.env.QC_NODE ?? 'D:\\Programs_Apps\\nodejs\\node.exe'
-const CLI = 'C:\\Users\\<user>\\AppData\\Local\\qc-playwright-mcp\\node_modules\\@playwright\\mcp\\cli.js'
-const PROFILE = process.env.QC_PROFILE ?? 'C:\\Users\\<user>\\AppData\\Local\\qc-playwright-profile'
+const NODE = resolveNode()
+const CLI = resolveMcpCli()
+const PROFILE = resolveProfile()
+
+if (CLI === undefined) {
+  console.error('this suite drives @playwright/mcp, which is not installed on this machine.')
+  console.error('  install it (npm i -g @playwright/mcp) or set QC_MCP_CLI to its cli.js')
+  process.exit(2)
+}
+
 
 const URL_ARG = process.argv[2]
 const PROMPT = process.argv[3]

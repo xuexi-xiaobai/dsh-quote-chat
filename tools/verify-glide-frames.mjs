@@ -13,6 +13,7 @@
  */
 import { readdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import { resolveFfmpeg, resolveFfprobe } from './platform.mjs'
 
 const dir = process.argv[2]
 if (dir === undefined) {
@@ -20,8 +21,13 @@ if (dir === undefined) {
   process.exit(2)
 }
 
-const FFMPEG = 'C:/Users/<user>/AppData/Local/Microsoft/WinGet/Links/ffmpeg.exe'
-const FFMPEG_PROBE = 'C:/Users/<user>/AppData/Local/Microsoft/WinGet/Links/ffprobe.exe'
+const FFMPEG = resolveFfmpeg()
+const FFMPEG_PROBE = resolveFfprobe()
+
+if (FFMPEG === undefined || FFMPEG_PROBE === undefined) {
+  console.error('ffmpeg/ffprobe not found; install ffmpeg or set QC_FFMPEG / QC_FFPROBE')
+  process.exit(2)
+}
 
 const frames = readdirSync(dir).filter((name) => name.endsWith('.jpg')).sort()
 console.log(`\n  ${frames.length} frames in ${dir}`)

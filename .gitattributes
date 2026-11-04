@@ -1,0 +1,21 @@
+# Line endings, pinned for every platform.
+#
+# The package is developed on Windows and macOS. Without this file the two checkouts disagree:
+# five sources were committed with CRLF, the rest with LF, and a machine whose `core.autocrlf` is
+# `true` rewrites every LF file on checkout — so the same commit produces two different working
+# trees, `git status` reports files nobody touched, and a diff shows whole files as changed.
+#
+# Normalising is safe here because the built artifact does not depend on source line endings:
+# `node build.mjs` produces byte-identical `client.js` from an all-CRLF tree and an all-LF tree
+# (verified 2026-11-04, sha256:8199a25b5bbc5d94 both ways). See DEFECTS.md 3.3, which recorded the
+# opposite expectation before it was measured.
+* text=auto eol=lf
+
+# Never converted, never diffed as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.mp4 binary
+*.ico binary
+*.woff binary
+*.woff2 binary

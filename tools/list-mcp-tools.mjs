@@ -5,9 +5,10 @@
  * protocol answers this directly.
  */
 import { spawn } from 'node:child_process'
+import { resolveMcpCli, resolveNode, resolveProfile } from './platform.mjs'
 
-const CLI = 'C:\\Users\\<user>\\AppData\\Local\\qc-playwright-mcp\\node_modules\\@playwright\\mcp\\cli.js'
-const NODE = process.env.QC_NODE ?? 'D:\\Programs_Apps\\nodejs\\node.exe'
+const CLI = resolveMcpCli()
+const NODE = resolveNode()
 
 const child = spawn(NODE, [CLI, '--viewport-size', '1440x900'], { stdio: ['pipe', 'pipe', 'pipe'] })
 let buffer = ''

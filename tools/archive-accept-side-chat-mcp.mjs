@@ -17,18 +17,25 @@
  *   node tools/accept-side-chat.mjs <url> [outputDir]
  */
 import { spawn } from 'node:child_process'
+import { PACKAGE_DIR, resolveMcpCli, resolveNode, resolveProfile } from './platform.mjs'
 import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createRecorder } from './recorder.mjs'
 
-const NODE = process.env.QC_NODE ?? 'D:\\Programs_Apps\\nodejs\\node.exe'
-const CLI = 'C:\\Users\\<user>\\AppData\\Local\\qc-playwright-mcp\\node_modules\\@playwright\\mcp\\cli.js'
-const PROFILE = 'C:\\Users\\<user>\\AppData\\Local\\qc-playwright-profile'
+const NODE = resolveNode()
+const CLI = resolveMcpCli()
+const PROFILE = resolveProfile()
+
+if (CLI === undefined) {
+  console.error('this suite drives @playwright/mcp, which is not installed on this machine.')
+  console.error('  install it (npm i -g @playwright/mcp) or set QC_MCP_CLI to its cli.js')
+  process.exit(2)
+}
+
 
 const URL_ARG = process.argv[2]
-const OUT_DIR = process.argv[3]
-  ?? 'D:\\Win自带分类文件夹\\桌面\\各种乱七八糟的项目\\deepseekharness插件\\.playwright-mcp\\side-chat'
+const OUT_DIR = process.argv[3] ?? join(PACKAGE_DIR, '.playwright-mcp', 'side-chat')
 
 if (URL_ARG === undefined) {
   console.error('usage: node tools/accept-side-chat.mjs <url> [outputDir]')

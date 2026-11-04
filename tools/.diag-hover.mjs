@@ -2,9 +2,17 @@
  * Diagnostic: why does a synthetic mouseover not produce a hover card?
  */
 import { spawn } from 'node:child_process'
-const NODE='D:\\Programs_Apps\\nodejs\\node.exe'
-const CLI='C:\\Users\\<user>\\AppData\\Local\\qc-playwright-mcp\\node_modules\\@playwright\\mcp\\cli.js'
-const PROFILE='C:\\Users\\<user>\\AppData\\Local\\qc-playwright-profile'
+import { resolveMcpCli, resolveNode, resolveProfile } from './platform.mjs'
+const NODE=resolveNode()
+const CLI=resolveMcpCli()
+const PROFILE=resolveProfile()
+
+if (CLI === undefined) {
+  console.error('this suite drives @playwright/mcp, which is not installed on this machine.')
+  console.error('  install it (npm i -g @playwright/mcp) or set QC_MCP_CLI to its cli.js')
+  process.exit(2)
+}
+
 const URL_ARG=process.argv[2]
 const child=spawn(NODE,[CLI,'--viewport-size','1280x800','--user-data-dir',PROFILE],{stdio:['pipe','pipe','pipe']})
 const inbox=[];let buffer=''
