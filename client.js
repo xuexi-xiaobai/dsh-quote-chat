@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:4f4c11b8ff258652
+ * Artifact: sha256:7206a9a0b459892e
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -2503,7 +2503,10 @@ function __dshQuoteChatFactory(hostRequire) {
       return h2(
         import_react3.default.Fragment,
         null,
-        source.kind === "table" ? null : h2("textarea", {
+        // A table gets the same comment box as a passage. It used to be omitted for `source.kind === 'table'`, and the
+        // confirm handler then passed '' — so a table annotation could never carry a comment, which read as "the panel
+        // cannot add one" (#25).
+        h2("textarea", {
           ref: inputRef,
           value: comment,
           rows: 2,
@@ -2530,7 +2533,7 @@ function __dshQuoteChatFactory(hostRequire) {
             className: "qc-compose-confirm",
             title: labels.confirm,
             "aria-label": labels.confirm,
-            onClick: () => onConfirm(source.kind === "table" ? "" : comment)
+            onClick: () => onConfirm(comment)
           }, h2(IconCheck, null), h2("span", { className: "qc-compose-confirm-text" }, labels.confirm))
         )
       );
@@ -4816,7 +4819,11 @@ function __dshQuoteChatFactory(hostRequire) {
       startOffset: 0,
       endPath: path,
       endOffset: table.childNodes.length,
-      quote: table.innerText.trim()
+      // `textContent`, NOT `innerText`. The matcher compares this against `Range.toString()` (and against `textOf`,
+      // which is also `textContent`). `innerText` inserts a tab between cells and a newline between rows, and the range
+      // has none of those, so the recorded quote could never match the table it came from — the jump reported
+      // "row present, quote missing" (#25).
+      quote: table.textContent.trim()
     };
   }
 

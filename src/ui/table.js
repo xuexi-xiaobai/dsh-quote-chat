@@ -181,6 +181,10 @@ export function tableAnchor(flow, table) {
     startOffset: 0,
     endPath: path,
     endOffset: table.childNodes.length,
-    quote: table.innerText.trim(),
+    // `textContent`, NOT `innerText`. The matcher compares this against `Range.toString()` (and against `textOf`,
+    // which is also `textContent`). `innerText` inserts a tab between cells and a newline between rows, and the range
+    // has none of those, so the recorded quote could never match the table it came from — the jump reported
+    // "row present, quote missing" (#25).
+    quote: table.textContent.trim(),
   }
 }

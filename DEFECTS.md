@@ -941,6 +941,55 @@ DPR 4（4 倍图）：设备像素列 370-373，四列满强度 Δ73
 
 ---
 
+### 缺陷 17：表格注释跳转失败：锚点 quote 用 innerText，匹配用 textContent（已修复，issue #25）
+
+> 追踪：issue [#25](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/25) —— **已修复**
+
+**证据强度：`[已验证]`（真实浏览器，探针 `tools/probe-table-compose.mjs`，连续 3 次）**
+
+现象：点表格注释芯片 → "row present, quote missing (240 chars: 步骤\t结果\n克隆仓库…)"，不滚动、不高亮。
+
+根因：`src/ui/table.js` 的 `tableAnchor` 存 `table.innerText`（单元格之间 `\t`、行之间 `\n`），而
+`resolveAnchor` 拿它和 `Range.toString()` / `textOf()` 比，二者都是 `textContent`，**没有这些分隔符**。
+`squishText` 只折叠空白，不会凭空插入空格，所以两边永远不相等；`locateText` 的兜底同样在
+`textContent` 里搜带空格的引文，也搜不到 → 返回 null → `diagnoseMiss` 报「row present, quote missing」。
+
+修复：
+
+```diff
+- quote: table.innerText.trim(),
++ quote: table.textContent.trim(),
+```
+
+注释正文（`annotation.text`）仍是 Markdown 表格，不受影响。
+
+真机验证：修复前 notice 非空、highlight false；修复后 notice 为空、highlight true。
+
+测试：`test/table-annotation.mjs` 断言锚点 quote 用 `textContent` 而不是 `innerText`。
+
+---
+
+### 缺陷 18：表格的注释面板没有评论输入框（已修复，issue #26）
+
+> 追踪：issue [#26](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/26) —— **已修复**
+
+**证据强度：`[已验证]`（真实浏览器，探针 `tools/probe-table-compose.mjs`）**
+
+现象：点表格「添加注释」→ 面板 420x62，`textarea: false`，只有「N 行」提示和取消/确认两个按钮；
+确认后芯片能加，但评论恒为空。
+
+根因：`src/ui/popovers.js` 的 `ComposeBody` 对 `source.kind === 'table'` 不渲染 textarea，确认时
+`onConfirm(source.kind === 'table' ? '' : comment)` 把评论写死成空。存储层本来支持评论
+（`dock.js` 的注释写着 "A table is annotatable too: the requirement asks for a comment box on tables"）。
+
+修复：无条件渲染 textarea，确认时传 `comment`。
+
+真机验证：修复后面板 420x123，`textarea: true`，真实键盘输入「表格评论测试」生效，确认后芯片 +1。
+
+测试：`test/table-annotation.mjs` 断言 textarea 不被表格分支跳过、确认传 `comment`。
+
+---
+
 ---
 
 ## 3. 不算缺陷，但会误导人的现状
@@ -988,8 +1037,8 @@ esbuild 重新打印 AST 时把行尾统一成 `\n`，模板字符串也不例�
 ## 4. 当前基线（修复前请先复现这个）
 
 ```
-node build.mjs --check   → sha256:4f4c11b8ff258652，通过
-npm test                 → 798/798 通过，0 失败
+node build.mjs --check   → sha256:7206a9a0b459892e，通过
+npm test                 → 804/804 通过，0 失败
 ```
 
 验收套件（需要 1.1 + 1.2 的前提）：
@@ -1001,7 +1050,7 @@ accept-lifecycle   68/73（QC_VIEWPORT=1440x1000）
 verify-web-build   OK — Web serves the current build
 ```
 
-修任何一个缺陷后，至少要保证 `npm test` 仍 798 通过，且 `--check` 的哈希变化
+修任何一个缺陷后，至少要保证 `npm test` 仍 804 通过，且 `--check` 的哈希变化
 **只能来自源码改动**。新增测试并入 `package.json` 的 `test` 脚本（注意是长
 `&&` 链，加在末尾）。
 

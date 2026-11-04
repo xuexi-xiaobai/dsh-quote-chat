@@ -169,21 +169,22 @@ export function createPopovers({
 const ComposeBody = React.memo(function ComposeBody(props) {
   const { comment, inputRef, labels, onCancel, onChange, onConfirm, source } = props
   return h(React.Fragment, null,
-    source.kind === 'table'
-      ? null
-      : h('textarea', {
-        ref: inputRef,
-        value: comment,
-        rows: 2,
-        placeholder: labels.placeholder,
-        onChange,
-        onKeyDown: (event) => {
-          if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent?.isComposing) {
-            event.preventDefault()
-            onConfirm(comment)
-          }
-        },
-      }),
+    // A table gets the same comment box as a passage. It used to be omitted for `source.kind === 'table'`, and the
+    // confirm handler then passed '' — so a table annotation could never carry a comment, which read as "the panel
+    // cannot add one" (#25).
+    h('textarea', {
+      ref: inputRef,
+      value: comment,
+      rows: 2,
+      placeholder: labels.placeholder,
+      onChange,
+      onKeyDown: (event) => {
+        if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent?.isComposing) {
+          event.preventDefault()
+          onConfirm(comment)
+        }
+      },
+    }),
     h('div', { className: 'qc-compose-row' },
       h('span', { className: 'qc-compose-hint' },
         source.kind === 'table'
@@ -195,7 +196,7 @@ const ComposeBody = React.memo(function ComposeBody(props) {
         className: 'qc-compose-confirm',
         title: labels.confirm,
         'aria-label': labels.confirm,
-        onClick: () => onConfirm(source.kind === 'table' ? '' : comment),
+        onClick: () => onConfirm(comment),
       }, h(IconCheck, null), h('span', { className: 'qc-compose-confirm-text' }, labels.confirm)),
     ),
   )
