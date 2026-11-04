@@ -990,6 +990,41 @@ DPR 4（4 倍图）：设备像素列 370-373，四列满强度 Δ73
 
 ---
 
+### 缺陷 19：表格注释面板的上下吸附失效（已修复，issue #27）
+
+> 追踪：issue [#27](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/27) —— **已修复**
+
+**证据强度：`[已验证]`（真实浏览器，两个 scratch 探针，各连续 3 次）**
+
+现象（文字选区的面板正常）：
+
+1. **上区域**：面板与 header 重合时输入文字会 dock 到顶部一次，之后滚动正文**不再吸附**，停在文本流位置跟着内容滚走。
+2. **下区域**：把内容往下滚、面板越过作曲器时**根本不 dock**，直接滚到作曲器后面。
+
+实测（修复前）：
+
+```
+上：文字 84..207 PINNED / 表格 84..207 → 滚动 +120 → -36..87 not pinned（docked 属性仍是 top）
+下：文字 → docked=bottom 367..490 稳定 / 表格 → docked=false 534..657 → 654..777，已在 band 外
+```
+
+根因：`src/ui/popovers.js:337-358` 的每帧 watcher 读 `source.block`，为 `null`/`undefined` 时直接 return。
+文字路径（`src/selection.js:158`）传了活段落；表格路径的 `annotateTable`（`src/ui/dock.js:494-507`）只传了
+`rect`（点击时快照），没有 `block` → watcher 每帧空转 → 滚动后既不重算上槽位，也不重新判断下吸附。
+
+修复：`annotateTable` 补 `block: table` 与 `blockRect`，与 `readSelection` 的表格分支完全对齐。
+
+真机验证（修复后）：
+
+```
+上：表格 84..207，滚动 +120 / -120 都 PINNED
+下：表格 → docked=bottom 367..490，再滚 120px 仍稳定（与文字面板一致）
+```
+
+测试：`test/table-annotation.mjs` 新增两条——表格 source 必须带 `block`（活元素）和 `blockRect`。
+
+---
+
 ---
 
 ## 3. 不算缺陷，但会误导人的现状
@@ -1037,8 +1072,8 @@ esbuild 重新打印 AST 时把行尾统一成 `\n`，模板字符串也不例�
 ## 4. 当前基线（修复前请先复现这个）
 
 ```
-node build.mjs --check   → sha256:7206a9a0b459892e，通过
-npm test                 → 804/804 通过，0 失败
+node build.mjs --check   → sha256:2436553f47d10836，通过
+npm test                 → 807/807 通过，0 失败
 ```
 
 验收套件（需要 1.1 + 1.2 的前提）：
@@ -1050,7 +1085,7 @@ accept-lifecycle   68/73（QC_VIEWPORT=1440x1000）
 verify-web-build   OK — Web serves the current build
 ```
 
-修任何一个缺陷后，至少要保证 `npm test` 仍 804 通过，且 `--check` 的哈希变化
+修任何一个缺陷后，至少要保证 `npm test` 仍 807 通过，且 `--check` 的哈希变化
 **只能来自源码改动**。新增测试并入 `package.json` 的 `test` 脚本（注意是长
 `&&` 链，加在末尾）。
 

@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:7206a9a0b459892e
+ * Artifact: sha256:2436553f47d10836
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -4386,6 +4386,7 @@ function __dshQuoteChatFactory(hostRequire) {
         const markdown = tableToMarkdown2(table);
         if (markdown === "") return;
         const flow = findFlow();
+        const tableBox = table.getBoundingClientRect();
         setOverlay({
           kind: "compose",
           source: {
@@ -4393,7 +4394,13 @@ function __dshQuoteChatFactory(hostRequire) {
             text: markdown,
             previewHtml: "",
             previewText: markdown,
-            rect: table.getBoundingClientRect(),
+            rect: tableBox,
+            // The LIVE element, exactly like a text selection's `block`. The panel's per-frame watcher reads this to
+            // re-place itself on scroll and to re-decide the dock; without it the watcher returned early every frame,
+            // so a table panel docked once and then stayed at a fixed content position, and never docked to the bottom
+            // at all (#27).
+            block: table,
+            blockRect: tableBox,
             rows: table.rows.length,
             anchor: flow === null ? { nodeKey: "", offset: 0, quote: "" } : tableAnchor2(flow, table)
           }
