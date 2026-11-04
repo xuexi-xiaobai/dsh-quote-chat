@@ -111,6 +111,17 @@ check('the divider uses border-l2, not the fainter border-l1',
   /--dsw-alias-border-l2/.test(divider) && !/--dsw-alias-border-l1/.test(divider),
   'border-l1 is 4% black / 6% white, too faint on this popup in either theme')
 
+// ── #23: the toolbar must stay below the composer ────────────────────────
+// The composer's sticky seat is z-index 9 in the host; the transcript text is in-flow (z-index auto). The compose
+// panel already sits at 6 for the same reason. At 60 the toolbar painted over the composer's input — measured with
+// elementFromPoint at the overlap, which returned the toolbar's own button.
+const COMPOSER_LAYER = 9
+const popupZ = Number.parseInt(/z-index:\s*(-?\d+)/.exec(ruleOf('.qc-popup'))?.[1] ?? '', 10)
+
+check('the toolbar sits below the composer, not above it',
+  Number.isFinite(popupZ) && popupZ > 0 && popupZ < COMPOSER_LAYER,
+  `z-index:${popupZ} is at or above the composer's ${COMPOSER_LAYER}; the toolbar then covers the composer's input`)
+
 // ── Report ───────────────────────────────────────────────────────────────
 let failed = 0
 for (const item of cases) {

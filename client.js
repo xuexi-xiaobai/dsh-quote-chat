@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:8199a25b5bbc5d94
+ * Artifact: sha256:b96d7c852f632470
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -1571,7 +1571,14 @@ function __dshQuoteChatFactory(hostRequire) {
 
   // src/stylesheet.js
   var STYLESHEET = `
-  .qc-popup{position:fixed;z-index:60;display:flex;align-items:stretch;gap:2px;padding:3px;
+  /* The toolbar's layer: ABOVE the transcript text, BELOW the composer.
+   *
+   * The composer's sticky seat is z-index 9 in the host; the transcript text is in-flow, so any positive z-index paints
+   * over it. z-index 60 put the toolbar over the composer too: with the toolbar scrolled into the composer's strip,
+   * elementFromPoint at the overlap returned the toolbar's own button (#23). The compose panel uses 6 for the same
+   * reason — the chrome must cover plugin surfaces, not the other way round — so the toolbar uses that value as well.
+   */
+  .qc-popup{position:fixed;z-index:6;display:flex;align-items:stretch;gap:2px;padding:3px;
     border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-overlay);
     box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:12.5px;line-height:1.2;color:var(--dsw-alias-label-primary);
     animation:qc-pop .1s ease-out;box-sizing:border-box}

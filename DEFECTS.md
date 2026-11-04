@@ -827,6 +827,64 @@ DPR 4（4 倍图）：设备像素列 370-373，四列满强度 Δ73
 
 ---
 
+### 缺陷 15：划词工具栏压住作曲器，层级反了（已修复，issue #23）
+
+> 追踪：issue [#23](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/23) —— **已修复**（见下方「修复」）
+
+**证据强度：`[已验证]`（真实浏览器：真实 CDP 鼠标拖选 + 真实滚轮，连续 3 次；`elementFromPoint` 判定绘制顺序）**
+
+用户报告："选中文本松开鼠标后，弹出菜单工具栏会固定在鼠标松开的位置，并且不随屏幕滚动而变化，现在这个菜单工具栏会在移动到下方聊天框时覆盖我们的聊天框，这个层级关系搞反了。"
+
+#### 实测
+
+探针 `tools/probe-toolbar-layer.mjs`（本轮新增）：
+
+| 事实 | 值 |
+|---|---|
+| 工具栏 | `div.qc-popup`，`position:absolute`，`z-index:60`，挂载在 `div.wSkVaW_scrollBody` |
+| 作曲器 | `div.wSkVaW_composerSeat`，`position:sticky`，`z-index:9`，同一个 scroller 的第 1 个子节点 |
+| 工具栏位置 | 同一个 scroller 的第 2 个子节点（在作曲器之后） |
+| 重叠点 `elementFromPoint` | 工具栏的 `button` → 工具栏在上面 |
+
+关于"不随滚动"：**实测它是跟着文字走的**（真实滚轮 -200px → 工具栏 top +200px；程序滚动 -120px → +120px）。
+所以"钉在屏幕上不动"没有复现；能复现的是它随正文滚进作曲器区域、然后压住作曲器。
+
+#### 根因
+
+- `src/stylesheet.js:17`：`.qc-popup{...z-index:60...}`
+- `src/ui/popovers.js:151`：工具栏 portal 进 `anchored.scroller`，React 追加在作曲器之后
+- 作曲器 `z-index:9`；正文文字是 in-flow（`z-index:auto`）
+
+所以 60 > 9，工具栏直接压过作曲器。**单独把值降到 9 也不行**：工具栏在 DOM 里排在作曲器之后，
+同层时后者画在前面；而低于 9 的其它值实测仍然在正文之上（正文是 in-flow，任何正 z-index 都盖过它），
+所以 6 是安全的。
+
+#### 修复
+
+```diff
+- .qc-popup{position:fixed;z-index:60;...
++ .qc-popup{position:fixed;z-index:6;...
+```
+
+与 `.qc-compose` 同层：插件表面在正文之上、在 chrome（作曲器）之下。
+
+#### 真机验证
+
+```
+修复前：overlap → elementFromPoint = button（工具栏）              toolbar on top: true
+修复后：overlap → elementFromPoint = div.uV2eYG_row（作曲器的行）  toolbar on top: false
+        未重叠时 elementFromPoint(centre) = button（工具栏仍在正文之上）
+```
+
+探针退出码从 1 变 0。
+
+#### 测试
+
+`test/toolbar-shape.mjs` 新增一条：`.qc-popup` 的 `z-index` 必须 `> 0` 且 `< 9`（作曲器的层）。
+变异验证：把 `z-index` 改回 60，立刻红。
+
+---
+
 ---
 
 ## 3. 不算缺陷，但会误导人的现状
@@ -874,8 +932,8 @@ esbuild 重新打印 AST 时把行尾统一成 `\n`，模板字符串也不例�
 ## 4. 当前基线（修复前请先复现这个）
 
 ```
-node build.mjs --check   → sha256:04c7a2e5406edbc9，通过
-npm test                 → 761/761 通过，0 失败
+node build.mjs --check   → sha256:b96d7c852f632470，通过
+npm test                 → 792/792 通过，0 失败
 ```
 
 验收套件（需要 1.1 + 1.2 的前提）：
@@ -887,7 +945,7 @@ accept-lifecycle   68/73（QC_VIEWPORT=1440x1000）
 verify-web-build   OK — Web serves the current build
 ```
 
-修任何一个缺陷后，至少要保证 `npm test` 仍 761 通过，且 `--check` 的哈希变化
+修任何一个缺陷后，至少要保证 `npm test` 仍 792 通过，且 `--check` 的哈希变化
 **只能来自源码改动**。新增测试并入 `package.json` 的 `test` 脚本（注意是长
 `&&` 链，加在末尾）。
 
