@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:d046718492f1d96f
+ * Artifact: sha256:c57db20a562636a4
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -907,7 +907,9 @@ function __dshQuoteChatFactory(hostRequire) {
     const box = start?.closest(BLOCK_SELECTOR) ?? start;
     if (box === null || box === void 0) return raw;
     if (box.querySelector("[data-qc-ignore]") === null) return raw;
-    return textOf(box);
+    const fragment = range.cloneContents();
+    for (const node of fragment.querySelectorAll("[data-qc-ignore]")) node.remove();
+    return fragment.textContent ?? "";
   }
   function textOf(host) {
     if (host === null || host === void 0) return "";

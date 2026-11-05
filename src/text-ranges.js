@@ -391,12 +391,20 @@ export function isInsideTranscript(target) {
     export function textOfWithin(range, quote) {
       const raw = range.toString()
       if (raw === '' || raw.length < quote.length) return raw
-      // Fast path: if no plugin node sits inside the range, the raw text is correct.
+      // Fast path: if no plugin node sits inside the BLOCK, the raw text is correct.
       const start = elementOf(range.startContainer)
       const box = start?.closest(BLOCK_SELECTOR) ?? start
       if (box === null || box === undefined) return raw
       if (box.querySelector('[data-qc-ignore]') === null) return raw
-      return textOf(box)
+      // The block contains a plugin node, but that node may sit OUTSIDE the range (the common case: the bubble is
+      // mounted at the paragraph's end while the selection covers one inline code earlier in it). Returning the whole
+      // block's text would then compare the entire paragraph against the quote, fail the path check, and send
+      // resolveAnchor to the text-search fallback - where a repeated quote lands on the first occurrence and the
+      // bubble moves back and forth between the paragraph and the chat row. Strip plugin nodes from the RANGE's own
+      // contents instead, so the comparison always covers exactly the text the range says it does.
+      const fragment = range.cloneContents()
+      for (const node of fragment.querySelectorAll('[data-qc-ignore]')) node.remove()
+      return fragment.textContent ?? ''
     }
 
     /**

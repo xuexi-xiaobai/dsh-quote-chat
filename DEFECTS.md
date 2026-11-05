@@ -1061,6 +1061,57 @@ const block = rangeStartElement.closest(BLOCK_SELECTOR)
 
 ---
 
+### 缺陷 21：inline code 注释的锚点校验拿整段文字比较，气泡在段落与消息行之间闪烁（已修复，issue #29）
+
+> 追踪：issue [#29](https://github.com/xuexi-xiaobai/dsh-quote-chat/issues/29) —— **已修复**
+
+**证据强度：`[已验证]`（真实浏览器，scratch 探针 `tools/probe-inline-code.mjs`、`tools/probe-inline-inject.mjs`）**
+
+现象：选中被反引号包裹的 inline code（渲染成 `<code>` 的几个字）并添加注释后：右侧气泡闪烁；
+注释芯片定位到第一处相同文本而不是选中的那一处；之后很难再点开这条注释补评论。
+
+实测（修复前）：对新气泡连续采样 40 帧，同一个元素在两个父节点之间来回切换：
+
+```
+present 40/40
+distinct tops 2    [-202, 336]
+distinct parents 2
+  div.EvIC1a_flowItem…@-202[14:assistant-step2:3]   ← 整条消息行
+  p.qc-hosts-bubble@336[null]                       ← 正确的段落
+```
+
+用可控 fixture 复现错误定位：两个段落各注入一个相同的短 `<code>inlinetarget</code>`，
+注释**第二个**，修复前气泡落在 `top:-689`（第一个，视口上方），芯片跳转也高亮第一个。
+
+根因：`src/text-ranges.js:391` 的 `textOfWithin` 在 block 含有 `data-qc-ignore` 时返回
+**整个 block 的文本**，而不是 range 自己的文本：
+
+```js
+if (box.querySelector('[data-qc-ignore]') === null) return raw
+return textOf(box)          // 整段文字
+```
+
+插件自己的气泡就挂在段落里、带 `data-qc-ignore`，于是：气泡挂进段落 → 校验返回整段文字 → 整段文字
+≠ 引文 → 路径校验失败 → 回退到全文搜索（命中第一处相同文本或行级节点）→ 气泡移走 → 段落不再含
+`data-qc-ignore` → 校验通过 → 气泡移回 → 再失败，即闪烁。长选区不易触发（整段文字恰好等于引文），
+短 inline code 最容易命中。
+
+修复：只对 range 自己的内容做剔除，绝不回退到整个 block：
+
+```js
+const fragment = range.cloneContents()
+for (const node of fragment.querySelectorAll('[data-qc-ignore]')) node.remove()
+return fragment.textContent ?? ''
+```
+
+真机验证（修复后）：同一 fixture 中，注释第二个 code 时气泡现在落在 `top:286`（第二个所在段落），
+60 帧父节点序列全为 `P`、0 次翻转；点气泡能打开面板并输入「补充评论」；芯片跳转高亮正确。
+
+测试：`test/anchor-text.mjs`（6 项）钉住「不得 `return textOf(box)`」「必须从 `range.cloneContents()`
+剔除 `[data-qc-ignore]`」「无插件节点时仍走 raw 快路径」。
+
+---
+
 ---
 
 ## 3. 不算缺陷，但会误导人的现状
@@ -1108,8 +1159,8 @@ esbuild 重新打印 AST 时把行尾统一成 `\n`，模板字符串也不例�
 ## 4. 当前基线（修复前请先复现这个）
 
 ```
-node build.mjs --check   → sha256:d046718492f1d96f，通过
-npm test                 → 812/812 通过，0 失败
+node build.mjs --check   → sha256:c57db20a562636a4，通过
+npm test                 → 818/818 通过，0 失败
 ```
 
 验收套件（需要 1.1 + 1.2 的前提）：
@@ -1121,7 +1172,7 @@ accept-lifecycle   68/73（QC_VIEWPORT=1440x1000）
 verify-web-build   OK — Web serves the current build
 ```
 
-修任何一个缺陷后，至少要保证 `npm test` 仍 812 通过，且 `--check` 的哈希变化
+修任何一个缺陷后，至少要保证 `npm test` 仍 818 通过，且 `--check` 的哈希变化
 **只能来自源码改动**。新增测试并入 `package.json` 的 `test` 脚本（注意是长
 `&&` 链，加在末尾）。
 
