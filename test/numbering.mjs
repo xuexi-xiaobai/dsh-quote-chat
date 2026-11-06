@@ -268,12 +268,18 @@ check('the chip ordinal is drawn from an attribute',
   'no ::after rule reading data-qc-label')
 check('the ordinal is the chip position in the draft',
   /for \(let position = 0; position < ordered\.length; position \+= 1\)/.test(source)
-    && /labels\.content\.replace\('\{n\}', String\(ordinal\)\)/.test(source),
+    && /const ordinal = position \+ 1/.test(source),
   'the chip ordinal is not derived from its position')
+// The visible label is the opening of the passage now; the ordinal survives as its fallback, so a chip whose passage
+// resolved to nothing still says which annotation it is.
+check('the visible label falls back to the position-derived ordinal',
+  /chip\.dataset\.qcLabel = chipPreview\(/.test(source)
+    && /labels\.content\.replace\('\{n\}', String\(ordinal\)\)/.test(source),
+  'the chip label lost its ordinal fallback')
 check('the chip ordinal does not read annotation.number',
   /const ordinal = position \+ 1/.test(source)
-    && /chip\.dataset\.qcLabel = labels\.content\.replace\('\{n\}', String\(ordinal\)\)/.test(source),
-  'the chip still renders annotation.number')
+    && !/qcLabel[^\n]*annotation\.number/.test(source),
+  'the chip renders annotation.number instead of its position')
 check('an unrendered card shows no ordinal',
   /dangerouslySetInnerHTML/.test(source) && !/qc-card-num/.test(source),
   'the card still builds a number badge')

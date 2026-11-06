@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:cdd0de5a1199df7b
+ * Artifact: sha256:cd9308fb0c99029e
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -410,6 +410,14 @@ function __dshQuoteChatFactory(hostRequire) {
   }
   function chipLabel(annotation, labels) {
     return labels.content.replace("{n}", String(annotation.number));
+  }
+  var CHIP_PREVIEW_CHARS = 10;
+  function chipPreview(text, fallback) {
+    const flat = (typeof text === "string" ? text : "").replace(/\s+/g, " ").trim();
+    if (flat === "") return fallback;
+    const characters = [...flat];
+    if (characters.length <= CHIP_PREVIEW_CHARS) return flat;
+    return `${characters.slice(0, CHIP_PREVIEW_CHARS).join("")}…`;
   }
   function chipOrdinal(occurrences, source, ref) {
     const mine = (Array.isArray(occurrences) ? occurrences : []).filter((item) => item.source === source);
@@ -1916,7 +1924,14 @@ function __dshQuoteChatFactory(hostRequire) {
        A small em-based lift corrects it, and being em-based it survives a font-size change. */
     vertical-align:middle;
     transform:translateY(-.085em);
-    padding:0 .5em;margin:0 .3em;
+    /* The right padding is a SLOT, not breathing room.
+       The removal control sits at the trailing end, where every reference system puts it (Material's input chip, Ant's
+       Tag, Gmail's recipient chip), and the chip's children belong to the editor, so the control is an overlay. An
+       overlay needs somewhere to land that is not on top of the label, and the only way to guarantee that without
+       reflowing the line on hover is to reserve the space up front: 1.75em is .5em of ordinary padding plus the 24px
+       target the control needs at the composer's 15px. The asymmetry is invisible because the label ends in an ellipsis
+       whenever it is long enough to matter. */
+    padding:0 1.75em 0 .5em;margin:0 .3em;
     border-radius:999px;
     /* Derived from the ACCENT, not from a background layer.
        The Host's --dsw-alias-bg-layer-1/2/3 all resolve to #fff, the composer's own colour, so a layer token cannot express
@@ -1940,7 +1955,13 @@ function __dshQuoteChatFactory(hostRequire) {
   /* The children must not steal the press from the chip: they are decoration, and the chip is the handle. */
   [data-composer-chip="quote-chat"] > *,
   [data-composer-chip="quote-chat"] > * > *{pointer-events:none}
+  /* The hover tint, and why it has a second selector.
+
+     The data-qc-hover attribute is set by the component for as long as the card is open, which is not the same as
+     :hover: the × is a portal in document.body, so moving the pointer from the chip onto it drops the chip's own :hover
+     and the pill would lose its tint halfway through the gesture. The attribute keeps the tint on for the whole hover. */
   [data-composer-chip="quote-chat"]:hover,
+  [data-composer-chip="quote-chat"][data-qc-hover],
   [data-composer-chip="quote-chat"]:focus-within{
     background:color-mix(in srgb, var(--qc-accent, #4176e6) 12%, var(--qc-surface, #fff));
     border-color:color-mix(in srgb, var(--qc-accent, #4176e6) 40%, transparent)}
@@ -2007,15 +2028,11 @@ function __dshQuoteChatFactory(hostRequire) {
     -webkit-mask-position:center;mask-position:center;
     -webkit-mask-size:contain;mask-size:contain;
     transition:opacity .12s ease,visibility .12s ease}
-  /* Hovering hides the kind glyph: the × takes its place in the same slot.
+  /* The kind glyph is NOT hidden on hover any more.
 
-     The JS-driven data-qc-hover attribute is not redundant. The × is a fixed overlay in document.body (the chip's
-     children belong to the editor), so moving the pointer from the chip onto the × drops the chip's own CSS :hover —
-     the glyph would fade back in behind a transparent ×. The component already tracks the hover, so it also marks the
-     chip for as long as the hover lasts. */
-  [data-composer-chip="quote-chat"][data-qc-hover]::before,
-  [data-composer-chip="quote-chat"]:hover::before,
-  [data-composer-chip="quote-chat"]:focus-within::before{opacity:0;visibility:hidden}
+     It used to be: the × took the leading slot, so the two icons were mutually exclusive. Moving the × to the trailing
+     end removed the reason for that, and keeping the glyph is what makes a hovered chip still look like the chip beside
+     it — the earlier design swapped a document icon for a cross, so two chips in one sentence read as two components. */
   /*
    * The ordinal, drawn here rather than relying on the host's label.
    *
@@ -2065,37 +2082,42 @@ function __dshQuoteChatFactory(hostRequire) {
   }
   [data-composer-chip="quote-chat"][data-qc-kind="table"]{--qc-glyph:var(--qc-glyph-table)}
 
-  /* The × sits IN the pill, not on top of it.
+  /* The × sits at the TRAILING end of the pill, inside it.
 
-     It is still a fixed overlay pinned to the chip's rectangle — the chip's contents are the editor's and cannot be
-     written into — but it no longer paints a red disc with a white ring. That disc was the "not part of the chip"
-     problem: a saturated circle floating over the pill's left cap, visually unrelated to the chip's own accent-tinted
-     surface, and it read as a badge stuck on the chip rather than a control of it.
+     It is a fixed overlay pinned to the chip's rectangle — the chip's contents are the editor's and cannot be written
+     into — but three things about it are deliberate:
 
-     The overlay is now TRANSPARENT: the chip's background runs underneath, and the × is drawn in the same ink as the
-     chip's label. It replaces the kind glyph in the same slot on hover, so the two states look like one control with two
-     icons. The destructive colour is reserved for the × itself — red strokes on hover, no filled circle — so the pill's
-     surface stays continuous at every moment.
+     1. TRAILING, not leading. Every reference system puts a remove control at the end of the token: Material's input
+        chip (its deleteIcon), Ant's Tag (its closable close icon), Gmail's recipient chip. Leading was wrong for a second
+        reason that has nothing to do with convention: the leading slot holds the kind glyph, so the × REPLACED it and a
+        hovered chip stopped looking like the chip beside it. At the trailing end both icons stay, and the pill reads as
+        one control with a stable identity.
+
+     2. A 24px target, in PIXELS. It used to be 1.36em, which is 20.4px at the composer's 15px — under the 24x24 WCAG
+        2.2 AA minimum, and it also shrank relative to a chip rendered at any other font size. A pointer target is a
+        physical requirement, not a typographic one, so it does not scale with the text.
+
+     3. TRANSPARENT. It paints no disc and no ring: the chip's background runs underneath and the × is drawn in the
+        chip's own ink. A saturated circle over an accent-tinted pill read as a badge pasted on. Destructive red is
+        reserved for the × itself, as strokes, only while it is hovered.
 
      The cross is drawn as an SVG, not typed as a character. A text multiplication sign inherits the font's baseline and
      side bearings, which made it sit high and look undersized no matter how it was nudged; two strokes give exact
      geometry and scale with the button. */
   .qc-chip-remove{position:fixed;z-index:45;
-    --qc-chip-pad-left:.5em;
-    --qc-chip-glyph:1.12em;
     /* The overlay lives in document.body, outside the chip, so it cannot inherit the chip's palette. These are the same
        values the chip resolves, repeated here because a custom property does not cross a portal. */
     --qc-ink:#0f1115;
     --qc-surface:#fff;
-    /* Centred on the glyph slot: padding + half the glyph, measured from the chip's left edge.
-       Written as a pre-halved sum rather than glyph / 2 so the calc has no division to round: at 15px the browser was
-       landing 0.5px to the right, which is exactly the kind of sub-pixel error that leaves a visible sliver of the icon
-       showing through. Half of 1.12em is 0.56em. */
-    left:calc(var(--qc-chip-left, 0px) + var(--qc-chip-pad-left) + .56em);
+    /* Centred in the chip's reserved right padding.
+
+       Both inputs arrive as PIXELS from the component, and that is the point: the chip inherits the composer's font size
+       while this button carries its own, so expressing the slot in em here would silently drift from the slot the chip
+       actually reserved. The chip's em was 17px in the design review page and 15px in the app; a single em rule cannot be
+       right for both, and a px rule can. */
+    left:calc(var(--qc-chip-left, 0px) + var(--qc-chip-width, 0px) - var(--qc-chip-pad-right, 26px) / 2);
     top:calc(var(--qc-chip-top, 0px) + var(--qc-chip-height, 24px) / 2);
-    /* Larger than the glyph so the hit area covers the whole slot: 1.36em against a 1.12em glyph. The extra size is
-       invisible now that the button paints nothing. */
-    width:1.36em;height:1.36em;font-size:15px;
+    width:24px;height:24px;font-size:15px;
     appearance:none;box-sizing:border-box;margin:0;padding:0;border:0;
     border-radius:999px;background:transparent;
     /* The chip's label ink: the × reads as the pill's own icon, not as an alert. */
@@ -3114,7 +3136,10 @@ function __dshQuoteChatFactory(hostRequire) {
             live.add(chip);
             chip.dataset.qcNum = String(ordinal);
             chip.dataset.qcKind = annotation.kind === "table" ? "table" : "text";
-            chip.dataset.qcLabel = labels.content.replace("{n}", String(ordinal));
+            chip.dataset.qcLabel = chipPreview(
+              annotation.text,
+              labels.content.replace("{n}", String(ordinal))
+            );
             chip.dataset.qcRef = annotation.id;
             marked.add(chip);
           }
@@ -3220,13 +3245,18 @@ function __dshQuoteChatFactory(hostRequire) {
           const chip = pairs().find((pair) => pair.annotation.id === annotation.id)?.chip;
           if (chip === void 0) return;
           const rect = chip.getBoundingClientRect();
+          const padRight = snap(Number.parseFloat(getComputedStyle(chip).paddingRight) || 0);
           setHover((current) => {
-            if (current !== null && current.annotation.id === annotation.id && current.anchor.left === snap(rect.left) && current.anchor.top === snap(rect.top) && current.anchor.width === snap(rect.width) && current.anchor.height === snap(rect.height)) return current;
+            if (current !== null && current.annotation.id === annotation.id && current.anchor.left === snap(rect.left) && current.anchor.top === snap(rect.top) && current.anchor.width === snap(rect.width) && current.anchor.height === snap(rect.height) && current.anchor.padRight === padRight) return current;
             return { annotation, anchor: {
               left: snap(rect.left),
               top: snap(rect.top),
               width: snap(rect.width),
-              height: snap(rect.height)
+              height: snap(rect.height),
+              // The chip's own right padding, in pixels. The × is centred inside it, and it is passed as a NUMBER because
+              // the chip's em is not the button's em: the chip inherits the composer's font size while the button carries
+              // its own, so an em value in the button's rule would drift from the slot it is supposed to sit in.
+              padRight
             } };
           });
           startFollow();
@@ -3251,9 +3281,10 @@ function __dshQuoteChatFactory(hostRequire) {
             left: snap(rect.left),
             top: snap(rect.top),
             width: snap(rect.width),
-            height: snap(rect.height)
+            height: snap(rect.height),
+            padRight: snap(Number.parseFloat(getComputedStyle(pair.chip).paddingRight) || 0)
           };
-          if (current.anchor.left !== next.left || current.anchor.top !== next.top || current.anchor.width !== next.width || current.anchor.height !== next.height) {
+          if (current.anchor.left !== next.left || current.anchor.top !== next.top || current.anchor.width !== next.width || current.anchor.height !== next.height || current.anchor.padRight !== next.padRight) {
             setHover({ annotation: current.annotation, anchor: next });
           }
           followFrame = requestAnimationFrame(follow);
@@ -3320,7 +3351,9 @@ function __dshQuoteChatFactory(hostRequire) {
               style: {
                 "--qc-chip-left": `${hover.anchor.left}px`,
                 "--qc-chip-top": `${hover.anchor.top}px`,
-                "--qc-chip-height": `${hover.anchor.height}px`
+                "--qc-chip-height": `${hover.anchor.height}px`,
+                "--qc-chip-width": `${hover.anchor.width}px`,
+                "--qc-chip-pad-right": `${hover.anchor.padRight}px`
               },
               onMouseDown: (event) => event.preventDefault(),
               onClick: (event) => {

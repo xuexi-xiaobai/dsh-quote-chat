@@ -52,6 +52,9 @@ const HOST_CLASSES = {
 /**
  * One chip, exactly as the host renders it.
  *
+ * `label` is the VISIBLE text, which since the 2026-11-07 review is the opening of the quoted passage rather than
+ * `注释 N`; `num` stays because the ordinal still drives the gutter bubbles and the model-facing block.
+ *
  * @param options - `{ num, label, kind, ref, hovered }`.
  * @returns the chip's HTML.
  */
@@ -140,15 +143,27 @@ export function page(body, options = {}) {
 ${remove ? chipRemove() : ''}
 <script>
   // Place the × overlay from the chip's live rectangle, exactly as ChipCards does with its custom properties.
-  (() => {
+  //
+  // This is a FUNCTION, not an inline IIFE, because the stylesheet is injected after the document loads: measuring at
+  // parse time would read an unstyled chip (padding 0, width of the raw text) and place the × over the label. The spec
+  // calls it after addStyleTag, which is the same order the component runs in - it measures on hover, long after the
+  // stylesheet exists.
+  //
+  // Width and right padding are passed as PIXELS because the chip inherits the composer's font size while the button
+  // carries its own: an em value in the button's rule would not track the slot the chip reserved.
+  window.__qcPlaceRemove = () => {
     const remove = document.querySelector('[data-qc-fixture-remove]')
     const chip = document.querySelector('[data-composer-chip="quote-chat"]')
-    if (remove === null || chip === null) return
+    if (remove === null || chip === null) return null
     const box = chip.getBoundingClientRect()
+    const padRight = Number.parseFloat(getComputedStyle(chip).paddingRight) || 0
     remove.style.setProperty('--qc-chip-left', box.left + 'px')
     remove.style.setProperty('--qc-chip-top', box.top + 'px')
     remove.style.setProperty('--qc-chip-height', box.height + 'px')
-  })()
+    remove.style.setProperty('--qc-chip-width', box.width + 'px')
+    remove.style.setProperty('--qc-chip-pad-right', padRight + 'px')
+    return { width: box.width, padRight }
+  }
 </script>
 </body>
 </html>`
@@ -180,6 +195,11 @@ const parkPointer = async (page) => { await page.mouse.move(1, 1) }
 const PROSE_BEFORE = '请比较'
 const PROSE_AFTER = '这两段，重点看结论。'
 
+/** A passage short enough to fit the chip's ten-character budget. */
+const SHORT = '地铁客流数据'
+/** A passage long enough to be cut, so the ellipsis and the width budget are both visible. */
+const LONG = '面向收支平衡的城际铁路票价优化模型研究'
+
 /**
  * The states under review.
  *
@@ -189,46 +209,46 @@ const PROSE_AFTER = '这两段，重点看结论。'
 export const CHIP_STATES = [
   {
     name: 'chip-rest',
-    note: '一颗芯片，指针在远处',
-    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1 })}${PROSE_AFTER}</p>`),
+    note: '一颗芯片，指针在远处：标签是引文开头，× 在尾部槽位',
+    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, label: SHORT })}${PROSE_AFTER}</p>`),
     act: parkPointer,
   },
   {
     name: 'chip-hover',
-    note: '指针在芯片上：类型图标被 × 替换',
-    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, hovered: true })}${PROSE_AFTER}</p>`,
+    note: '指针在芯片上：类型图标保留，× 出现在尾部',
+    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, label: SHORT, hovered: true })}${PROSE_AFTER}</p>`,
       { remove: true }),
     act: hoverChip,
   },
   {
     name: 'chip-remove-hover',
-    note: '指针在 × 上：描边变红',
-    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, hovered: true })}${PROSE_AFTER}</p>`,
+    note: '指针在 × 上：描边变红，芯片底色保持',
+    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, label: SHORT, hovered: true })}${PROSE_AFTER}</p>`,
       { remove: true }),
     act: hoverRemove,
   },
   {
     name: 'chip-table',
     note: '表格注释：网格图标',
-    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, kind: 'table' })}${PROSE_AFTER}</p>`),
+    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, label: SHORT, kind: 'table' })}${PROSE_AFTER}</p>`),
     act: parkPointer,
   },
   {
-    name: 'chip-ordinal-10',
-    note: '两位数序号：宽度是否仍均匀',
-    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 10 })}${PROSE_AFTER}</p>`),
+    name: 'chip-long',
+    note: '长引文：截断到十个字符并以省略号收尾',
+    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, label: `${[...LONG].slice(0, 10).join('')}…` })}${PROSE_AFTER}</p>`),
     act: parkPointer,
   },
   {
     name: 'chip-pair',
-    note: '两颗芯片并排：是否像同一个组件',
-    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1 })}${chip({ num: 2 })}${PROSE_AFTER}</p>`),
+    note: '两颗芯片并排：宽度随引文变化',
+    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, label: SHORT })}${chip({ num: 2, label: '文献综述' })}${PROSE_AFTER}</p>`),
     act: parkPointer,
   },
   {
     name: 'chip-pair-hover-first',
     note: '并排时悬停第一颗：与第二颗的对比',
-    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, hovered: true })}${chip({ num: 2 })}${PROSE_AFTER}</p>`,
+    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, label: SHORT, hovered: true })}${chip({ num: 2, label: '文献综述' })}${PROSE_AFTER}</p>`,
       { remove: true }),
     act: hoverChip,
   },
@@ -236,14 +256,14 @@ export const CHIP_STATES = [
     name: 'chip-dark',
     note: '暗色：芯片自己的调色板',
     dark: true,
-    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1 })}${PROSE_AFTER}</p>`, { dark: true }),
+    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, label: SHORT })}${PROSE_AFTER}</p>`, { dark: true }),
     act: parkPointer,
   },
   {
     name: 'chip-dark-hover',
     note: '暗色 + 悬停',
     dark: true,
-    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, hovered: true })}${PROSE_AFTER}</p>`,
+    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, label: SHORT, hovered: true })}${PROSE_AFTER}</p>`,
       { dark: true, remove: true }),
     act: hoverChip,
   },

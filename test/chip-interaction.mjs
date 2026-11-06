@@ -1,11 +1,13 @@
 /**
  * Guard the chip's interaction contract.
  *
- * Three rules, each of which was wrong at some point and is easy to break again:
+ * Four rules, each of which was wrong at some point and is easy to break again:
  *
  * 1. The chip shows a kind glyph on its left — text vs table.
- * 2. On hover that glyph is replaced, in the same slot, by the red ×.
- * 3. The × sits INSIDE the chip's box, not floating outside it.
+ * 2. The kind glyph stays visible while the chip is hovered. It used to be swapped for the ×, which made a hovered
+ *    chip look like a different component from the one beside it.
+ * 3. The × sits at the TRAILING end, inside the chip's reserved right padding, at a 24px pointer target.
+ * 4. The × paints no body of its own: the pill's surface runs underneath.
  *
  * Run: node test/chip-interaction.mjs
  */
@@ -37,12 +39,14 @@ check('the kind attribute is set from the annotation',
   /chip\.dataset\.qcKind = annotation\.kind === 'table' \? 'table' : 'text'/.test(cardsSource),
   'data-qc-kind is not derived from annotation.kind')
 
-// ── 2. Glyph and × are mutually exclusive ──────────────────────────────────
-check('hover hides the kind glyph',
-  /\[data-composer-chip="quote-chat"\]:hover::before[\s\S]{0,120}opacity:0/.test(css),
-  'the ::before glyph is still visible on hover')
+// ── 2. The kind glyph survives hover ───────────────────────────────────────
+// The × used to take the leading slot, so the glyph had to disappear. With the × at the trailing end there is no
+// reason to hide it, and hiding it is what made two chips in one sentence read as two different components.
+check('hover does not hide the kind glyph',
+  !/\[data-composer-chip="quote-chat"\]:hover::before[\s\S]{0,120}opacity:0/.test(css),
+  'the ::before glyph is still hidden on hover, which is the icon-swap design')
 
-// ── 3. The × lives inside the chip ─────────────────────────────────────────
+// ── 3. The × lives inside the chip, at the trailing end ────────────────────
 const removeRule = /\.qc-chip-remove\{([\s\S]*?)\}/.exec(css)?.[1] ?? ''
 check('the x is a fixed overlay', removeRule.includes('position:fixed'),
   `the .qc-chip-remove rule is: ${removeRule.slice(0, 80)}`)
@@ -57,18 +61,26 @@ check('the x uses the chip ink, not white', /color:color-mix\(in srgb, var\(--qc
 check('the destructive red is reserved for the hovered x itself',
   /\.qc-chip-remove:hover\{[^}]*color:#e8291c/.test(css) && !/background:#e8291c/.test(removeRule),
   'the × should only turn red on hover, not carry a red body at rest')
-// Its centre must land on the glyph's centre. The position is no longer a JS constant: it is a CSS rule fed the chip's
-// rectangle through custom properties, so the same three numbers the chip uses (padding-left and glyph width) place the
-// button. Anchoring an edge instead of the centre is what made the cross sit visibly left of the icon.
+// The × is placed from the chip's rectangle through custom properties, and the two values that decide its horizontal
+// position arrive as PIXELS: the chip's width and its reserved right padding. Em values would drift, because the chip
+// inherits the composer's font size while the button carries its own.
 check('the x is positioned by the chip rectangle, not by an edge',
   /'--qc-chip-left': `\$\{hover\.anchor\.left\}px`/.test(cardsSource)
     && /'--qc-chip-top': `\$\{hover\.anchor\.top\}px`/.test(cardsSource),
   'the x is no longer placed from the chip rectangle')
-check('the x centre is derived from the pill padding and glyph width',
-  /left:calc\(var\(--qc-chip-left[^)]*\) \+ var\(--qc-chip-pad-left\) \+ \.56em\)/.test(css)
-    && css.includes('--qc-chip-pad-left:.5em')
-    && css.includes('--qc-chip-glyph:1.12em'),
-  'the x centre is not derived from padding-left plus half the glyph')
+check('the x is centred in the chip\'s reserved trailing padding',
+  /left:calc\(var\(--qc-chip-left[^)]*\) \+ var\(--qc-chip-width[^)]*\) - var\(--qc-chip-pad-right[^)]*\) \/ 2\)/.test(css),
+  'the x is not placed at the trailing end of the chip')
+check('the chip reserves a trailing slot for the x',
+  /\[data-composer-chip="quote-chat"\]\{[^}]*padding:0 1\.75em 0 \.5em/.test(css),
+  'without reserved right padding the x would sit on top of the label')
+check('the trailing slot and the chip width are passed in pixels',
+  /'--qc-chip-width': `\$\{hover\.anchor\.width\}px`/.test(cardsSource)
+    && /'--qc-chip-pad-right': `\$\{hover\.anchor\.padRight\}px`/.test(cardsSource),
+  'the x slot is positioned from a value that cannot track the chip')
+check('the x is a 24px pointer target, not an em-derived one',
+  /\.qc-chip-remove\{[\s\S]*?width:24px;height:24px/.test(css),
+  'the target is em-based again, so it shrinks below the 24px WCAG 2.2 AA minimum at the composer font size')
 check('the x is round like the pill',
   /\.qc-chip-remove\{[\s\S]*?border-radius:999px/.test(css),
   'the x does not share the pill radius')
@@ -87,10 +99,10 @@ check('the cross strokes meet at the exact centre',
 check('the cross is drawn with round strokes',
   /\.qc-chip-remove svg path\{[^}]*stroke:currentColor[^}]*stroke-linecap:round/.test(css),
   'the cross strokes do not inherit the control colour')
-check('the glyph stays hidden while the x is showing',
-  /\[data-composer-chip="quote-chat"\]\[data-qc-hover\]::before[\s\S]{0,200}opacity:0/.test(css)
+check('the hover tint survives the trip to the x',
+  /\[data-composer-chip="quote-chat"\]\[data-qc-hover\]/.test(css)
     && /chip\.setAttribute\('data-qc-hover', '1'\)/.test(cardsSource),
-  'moving from the chip onto the transparent × would let the kind glyph reappear behind it')
+  'the × is a portal, so the chip loses :hover while the pointer is on it; without data-qc-hover the pill drops its tint mid-gesture')
 check('the cross icon is at least 10px',
   (() => {
     const size = /\.qc-chip-remove svg\{[^}]*width:(\d+)px/.exec(css)

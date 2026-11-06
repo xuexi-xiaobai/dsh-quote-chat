@@ -23,7 +23,7 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
 import { tableHtml } from '../html.js'
-import { CHIP_SOURCE } from '../chip-draft.js'
+import { CHIP_SOURCE, chipPreview } from '../chip-draft.js'
 import { attachChipDragging } from '../chip-drag.js'
 
 /** createElement, bound once. */
@@ -183,7 +183,13 @@ export function createCards({ composerContainer }) {
       live.add(chip)
       chip.dataset.qcNum = String(ordinal)
       chip.dataset.qcKind = annotation.kind === 'table' ? 'table' : 'text'
-      chip.dataset.qcLabel = labels.content.replace('{n}', String(ordinal))
+      // The visible label is the opening of the passage, not the ordinal: the chip sits inside the sentence being
+      // typed, where "what does this refer to" is the question a reader actually has. The ordinal still drives the
+      // gutter bubbles and the model-facing block, so nothing loses its number.
+      chip.dataset.qcLabel = chipPreview(
+        annotation.text,
+        labels.content.replace('{n}', String(ordinal)),
+      )
       // The chip's identity, for the drag layer: it needs to know which annotation it is moving, and the ordinal is a
       // position that changes as soon as the draft is rewritten.
       chip.dataset.qcRef = annotation.id
@@ -384,17 +390,23 @@ export function createCards({ composerContainer }) {
     const chip = pairs().find((pair) => pair.annotation.id === annotation.id)?.chip
     if (chip === undefined) return
     const rect = chip.getBoundingClientRect()
+    const padRight = snap(Number.parseFloat(getComputedStyle(chip).paddingRight) || 0)
     setHover((current) => {
       if (current !== null && current.annotation.id === annotation.id
         && current.anchor.left === snap(rect.left)
         && current.anchor.top === snap(rect.top)
         && current.anchor.width === snap(rect.width)
-        && current.anchor.height === snap(rect.height)) return current
+        && current.anchor.height === snap(rect.height)
+        && current.anchor.padRight === padRight) return current
       return { annotation, anchor: {
         left: snap(rect.left),
         top: snap(rect.top),
         width: snap(rect.width),
         height: snap(rect.height),
+        // The chip's own right padding, in pixels. The × is centred inside it, and it is passed as a NUMBER because
+        // the chip's em is not the button's em: the chip inherits the composer's font size while the button carries
+        // its own, so an em value in the button's rule would drift from the slot it is supposed to sit in.
+        padRight,
       } }
     })
     // The chip can move without any event (typing in front of it), so following starts here and stops itself when the
@@ -434,9 +446,11 @@ export function createCards({ composerContainer }) {
       top: snap(rect.top),
       width: snap(rect.width),
       height: snap(rect.height),
+      padRight: snap(Number.parseFloat(getComputedStyle(pair.chip).paddingRight) || 0),
     }
     if (current.anchor.left !== next.left || current.anchor.top !== next.top
-      || current.anchor.width !== next.width || current.anchor.height !== next.height) {
+      || current.anchor.width !== next.width || current.anchor.height !== next.height
+      || current.anchor.padRight !== next.padRight) {
       setHover({ annotation: current.annotation, anchor: next })
     }
     followFrame = requestAnimationFrame(follow)
@@ -549,6 +563,8 @@ export function createCards({ composerContainer }) {
         '--qc-chip-left': `${hover.anchor.left}px`,
         '--qc-chip-top': `${hover.anchor.top}px`,
         '--qc-chip-height': `${hover.anchor.height}px`,
+        '--qc-chip-width': `${hover.anchor.width}px`,
+        '--qc-chip-pad-right': `${hover.anchor.padRight}px`,
       },
       onMouseDown: (event) => event.preventDefault(),
       onClick: (event) => {

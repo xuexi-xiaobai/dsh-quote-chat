@@ -56,12 +56,14 @@ export function serializeChipForModel(payload) {
 }
 
 /**
- * The label a chip shows in the composer: `注释 1`, `注释 2`, …
+ * The label a chip shows to the MODEL: `[注释 1]`, `[注释 2]`, …
  *
- * This is a named block, not a preview of the passage: the passage itself lives in the hover
- * card, and the model receives it through the codec. An earlier revision put the truncated
- * passage here after reading a screenshot too literally; the numbered block is what was asked
- * for.
+ * This is a named block, not a preview of the passage: the passage itself follows the head in
+ * `serializeChipForModel`, so repeating a truncated version of it in the head would say the same thing twice. The
+ * number is what makes the block addressable — "第 2 条注释" refers to exactly one block.
+ *
+ * The VISIBLE label is a different question, and it is answered by `chipPreview` below: what reads well as a marker
+ * the model can cite is not what reads well as a pill inside a sentence the user is typing.
  *
  * @param annotation - the annotation being placed.
  * @param labels - the active locale's card labels.
@@ -69,6 +71,43 @@ export function serializeChipForModel(payload) {
  */
 export function chipLabel(annotation, labels) {
   return labels.content.replace('{n}', String(annotation.number))
+}
+
+/**
+ * How many characters of the passage a chip shows before it is cut.
+ *
+ * Measured against the composer's 15px CJK line: ten characters is about 150px, which is wide enough to recognise a
+ * passage by its opening and still narrow enough that two chips plus prose fit one line. The chip is inline content,
+ * so every extra character pushes the user's own sentence further right.
+ */
+const CHIP_PREVIEW_CHARS = 10
+
+/**
+ * The label a chip shows to the USER: the opening of the passage it quotes.
+ *
+ * The numbered label (`注释 1`) was the earlier decision, and it was wrong for the place the chip actually lives. A
+ * chip sits INSIDE the sentence being typed, where the question the reader has is not "which annotation is this" but
+ * "what does this refer to" — and a number cannot answer that without a lookup. The opening of the passage answers it
+ * on sight.
+ *
+ * Three details, each of which is a bug if dropped:
+ *
+ *   - Whitespace is collapsed. A passage may span lines and paragraphs; a raw newline inside a pill either breaks the
+ *     line box or renders as a gap.
+ *   - Truncation counts CODE POINTS, not UTF-16 units, so an emoji or a rare CJK character is never cut in half.
+ *   - An empty passage falls back to the numbered label. Tables and selections that resolve to nothing still need a
+ *     chip that says something.
+ *
+ * @param text - the quoted passage.
+ * @param fallback - the label to use when the passage is empty (normally `chipLabel`'s output).
+ * @returns the inline label.
+ */
+export function chipPreview(text, fallback) {
+  const flat = (typeof text === 'string' ? text : '').replace(/\s+/g, ' ').trim()
+  if (flat === '') return fallback
+  const characters = [...flat]
+  if (characters.length <= CHIP_PREVIEW_CHARS) return flat
+  return `${characters.slice(0, CHIP_PREVIEW_CHARS).join('')}…`
 }
 
 /**

@@ -27,6 +27,9 @@ const render = async (page, state) => {
   await page.setContent(state.html(), { waitUntil: 'load' })
   await page.addStyleTag({ content: STYLESHEET })
   await page.evaluate(() => document.fonts.ready)
+  // AFTER the stylesheet: the × is placed from the chip's computed padding and measured width, and both are zero
+  // before the stylesheet lands. Measuring earlier puts the control on top of the label.
+  await page.evaluate(() => window.__qcPlaceRemove?.())
   await page.waitForTimeout(80)
   await state.act(page)
   // One frame for the hover transition (.12s) to land, plus a margin.
@@ -90,10 +93,6 @@ test('chip metrics: the palette is one family, not two blues', async ({ page }) 
 })
 
 test('chip metrics: the remove control paints no body of its own', async ({ page }) => {
-  // KNOWN DEFECT, recorded rather than silenced. Measured 2026-11-07: the × is 20.4 x 20.4 CSS px, under the
-  // 24 x 24 WCAG 2.2 AA minimum for a pointer target. It is 1.36em against a 15px font, so the size is inherited
-  // from a typographic choice rather than from a target-size requirement.
-  test.fail(true, 'the × is 20.4px square, under the 24px WCAG 2.2 AA pointer target')
   await render(page, CHIP_STATES[1])
   const remove = await page.evaluate(() => {
     const button = document.querySelector('.qc-chip-remove')
@@ -117,6 +116,8 @@ test('chip metrics: the remove control paints no body of its own', async ({ page
 })
 
 test('chip metrics: the chip fits its line and never clips its label', async ({ page }) => {
+  // The long-passage state: the label is cut to the budget, so this also proves the budget is enforced in the DOM
+  // rather than by a CSS ellipsis that would silently depend on the available width.
   await render(page, CHIP_STATES[4])
   const geometry = await page.evaluate(() => {
     const chip = document.querySelector('[data-composer-chip="quote-chat"]')
@@ -127,14 +128,35 @@ test('chip metrics: the chip fits its line and never clips its label', async ({ 
     return {
       chipHeight: Math.round(box.height * 10) / 10,
       lineHeight,
-      labelText: label.content,
-      // A label wider than the pill means the ordinal was squeezed into an ellipsis.
+      // `content` comes back as a quoted CSS string.
+      labelText: (label.content ?? '').replace(/^"|"$/g, ''),
+      // A label wider than the pill means the text was squeezed instead of truncated.
       overflow: chip.scrollWidth - chip.clientWidth,
     }
   })
   expect(geometry.chipHeight).toBeLessThanOrEqual(geometry.lineHeight + 1)
   expect(geometry.overflow).toBeLessThanOrEqual(1)
-  expect(geometry.labelText).toContain('10')
+  const characters = [...geometry.labelText]
+  expect(characters.length, `label ${JSON.stringify(geometry.labelText)}`)
+    .toBeLessThanOrEqual(11)
+  expect(geometry.labelText.endsWith('…'), `label ${JSON.stringify(geometry.labelText)}`).toBe(true)
+})
+
+/**
+ * The label contract, which is the change the 2026-11-07 review asked for.
+ *
+ * A chip sits inside the sentence being typed. The question a reader has there is "what does this refer to", and the
+ * ordinal cannot answer it without a lookup; the opening of the passage answers it on sight. The ordinal is still the
+ * fallback, so a chip whose passage resolved to nothing still says which annotation it is.
+ */
+test('chip metrics: the label is the passage, not the ordinal', async ({ page }) => {
+  await render(page, CHIP_STATES[0])
+  const label = await page.evaluate(() => {
+    const chip = document.querySelector('[data-composer-chip="quote-chat"]')
+    return (getComputedStyle(chip, '::after').content ?? '').replace(/^"|"$/g, '')
+  })
+  expect(label).toBe('地铁客流数据')
+  expect(label).not.toMatch(/^注释\s*\d+$/)
 })
 
 /**
