@@ -15,6 +15,16 @@ window-check.png
 tools/probe-*.mjs
 probe-*.mjs
 
+# Playwright design workbench output.
+#
+# `design/baseline/` is deliberately NOT ignored: those PNGs are the reviewed
+# design, and a baseline that is not in history cannot detect a regression.
+# Everything below is regenerable output.
+test-results/
+playwright-report/
+design/sheet.png
+design/current/
+
 # Editor and OS noise
 .vscode/
 .idea/
