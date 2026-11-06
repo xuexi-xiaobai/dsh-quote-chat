@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:c57db20a562636a4
+ * Artifact: sha256:cdd0de5a1199df7b
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -2007,7 +2007,13 @@ function __dshQuoteChatFactory(hostRequire) {
     -webkit-mask-position:center;mask-position:center;
     -webkit-mask-size:contain;mask-size:contain;
     transition:opacity .12s ease,visibility .12s ease}
-  /* Hovering hides the kind glyph: the × takes its place in the same slot. */
+  /* Hovering hides the kind glyph: the × takes its place in the same slot.
+
+     The JS-driven data-qc-hover attribute is not redundant. The × is a fixed overlay in document.body (the chip's
+     children belong to the editor), so moving the pointer from the chip onto the × drops the chip's own CSS :hover —
+     the glyph would fade back in behind a transparent ×. The component already tracks the hover, so it also marks the
+     chip for as long as the hover lasts. */
+  [data-composer-chip="quote-chat"][data-qc-hover]::before,
   [data-composer-chip="quote-chat"]:hover::before,
   [data-composer-chip="quote-chat"]:focus-within::before{opacity:0;visibility:hidden}
   /*
@@ -2059,57 +2065,54 @@ function __dshQuoteChatFactory(hostRequire) {
   }
   [data-composer-chip="quote-chat"][data-qc-kind="table"]{--qc-glyph:var(--qc-glyph-table)}
 
-  /* ── The hover removal control ───────────────────────────────────────────────
+  /* The × sits IN the pill, not on top of it.
 
-     The red × sits in the chip's left slot, replacing the kind glyph on hover.
+     It is still a fixed overlay pinned to the chip's rectangle — the chip's contents are the editor's and cannot be
+     written into — but it no longer paints a red disc with a white ring. That disc was the "not part of the chip"
+     problem: a saturated circle floating over the pill's left cap, visually unrelated to the chip's own accent-tinted
+     surface, and it read as a badge stuck on the chip rather than a control of it.
 
-     Shaped to belong to the pill: fully rounded like the chip, sized to the glyph
-     box it covers, and centred on the same point (the inline style positions it by
-     its centre).
+     The overlay is now TRANSPARENT: the chip's background runs underneath, and the × is drawn in the same ink as the
+     chip's label. It replaces the kind glyph in the same slot on hover, so the two states look like one control with two
+     icons. The destructive colour is reserved for the × itself — red strokes on hover, no filled circle — so the pill's
+     surface stays continuous at every moment.
 
-     The cross is drawn as an SVG, not typed as a character. A text multiplication
-     sign inherits the font's baseline and side bearings, which made it sit high and
-     look undersized no matter how it was nudged; two strokes give exact geometry
-     and scale with the button. */
-  /* The red × sits in the chip's left slot, replacing the kind glyph on hover.
-
-     ITS POSITION AND SIZE ARE DERIVED FROM THE CHIP'S OWN METRICS, not set independently.
-
-     The previous version hard-coded "centre at 7 + 13/2 px" and a 15px box. Both described an older chip: once the glyph
-     became 1.12em (16.8px) and the padding .5em (7.5px), the cross was measured 1.9px left of the glyph's centre and its
-     15px box was smaller than the 16.8px glyph, so a blue sliver of the icon showed around the red disc while hovering.
-     A px constant cannot track an em value.
-
-     So the three values below are the SAME ones the chip uses:
-       padding-left  .5em
-       glyph width   1.12em
-     and the button is centred on that slot by construction, and made slightly LARGER than the glyph so it covers it
-     completely rather than leaving an edge.
-
-     The chip's rectangle arrives as custom properties from the component; this rule only knows the insets. */
+     The cross is drawn as an SVG, not typed as a character. A text multiplication sign inherits the font's baseline and
+     side bearings, which made it sit high and look undersized no matter how it was nudged; two strokes give exact
+     geometry and scale with the button. */
   .qc-chip-remove{position:fixed;z-index:45;
     --qc-chip-pad-left:.5em;
     --qc-chip-glyph:1.12em;
+    /* The overlay lives in document.body, outside the chip, so it cannot inherit the chip's palette. These are the same
+       values the chip resolves, repeated here because a custom property does not cross a portal. */
+    --qc-ink:#0f1115;
+    --qc-surface:#fff;
     /* Centred on the glyph slot: padding + half the glyph, measured from the chip's left edge.
        Written as a pre-halved sum rather than glyph / 2 so the calc has no division to round: at 15px the browser was
        landing 0.5px to the right, which is exactly the kind of sub-pixel error that leaves a visible sliver of the icon
        showing through. Half of 1.12em is 0.56em. */
     left:calc(var(--qc-chip-left, 0px) + var(--qc-chip-pad-left) + .56em);
     top:calc(var(--qc-chip-top, 0px) + var(--qc-chip-height, 24px) / 2);
-    /* Larger than the glyph so it hides it entirely: 1.36em covers 1.12em with a 0.12em ring on each side, which at 15px
-       is 20.4px against a 16.8px glyph. The margin matters because the glyph is a masked image whose strokes reach the
-       very edge of its box — a button merely equal in size leaves antialiased fringe showing. */
+    /* Larger than the glyph so the hit area covers the whole slot: 1.36em against a 1.12em glyph. The extra size is
+       invisible now that the button paints nothing. */
     width:1.36em;height:1.36em;font-size:15px;
     appearance:none;box-sizing:border-box;margin:0;padding:0;border:0;
-    border-radius:999px;background:#e8291c;
+    border-radius:999px;background:transparent;
+    /* The chip's label ink: the × reads as the pill's own icon, not as an alert. */
+    color:color-mix(in srgb, var(--qc-accent, #4176e6) 78%, var(--qc-ink));
     cursor:pointer;display:flex;align-items:center;justify-content:center;
-    transform:translate(-50%,-50%);box-shadow:0 0 0 1.5px var(--dsw-alias-bg-layer-1, #f2f2f2);
-    transition:background .12s ease,transform .12s ease}
+    transform:translate(-50%,-50%);
+    transition:color .12s ease,transform .12s ease}
+  @media (prefers-color-scheme: dark){
+    .qc-chip-remove{--qc-accent:#5b8cf0;--qc-surface:#1b1d21;--qc-ink:#e7e9ee}
+  }
   .qc-chip-remove svg{display:block;width:10px;height:10px;flex:none;
     pointer-events:none}
-  .qc-chip-remove svg path{stroke:#fff;stroke-width:2.1;stroke-linecap:round;
+  .qc-chip-remove svg path{stroke:currentColor;stroke-width:2.1;stroke-linecap:round;
     fill:none;vector-effect:non-scaling-stroke}
-  .qc-chip-remove:hover{background:#c81f14;transform:translate(-50%,-50%) scale(1.1)}
+  /* Only the strokes turn red: no filled disc, so the chip's hover tint keeps running behind the control. */
+  .qc-chip-remove:hover{color:#e8291c;transform:translate(-50%,-50%) scale(1.08)}
+  .qc-chip-remove:active{color:#b42318}
 
   /* ── Dragging a chip ─────────────────────────────────────────────────────────
 
@@ -3066,6 +3069,13 @@ function __dshQuoteChatFactory(hostRequire) {
       const [hover, setHover] = import_react4.default.useState(null);
       const hoverRef = import_react4.default.useRef(null);
       hoverRef.current = hover;
+      import_react4.default.useEffect(() => {
+        if (typeof document === "undefined" || hover === null) return void 0;
+        const chip = [...document.querySelectorAll('[data-composer-chip="quote-chat"]')].find((element) => element.dataset.qcRef === hover.annotation.id) ?? null;
+        if (chip === null) return void 0;
+        chip.setAttribute("data-qc-hover", "1");
+        return () => chip.removeAttribute("data-qc-hover");
+      }, [hover]);
       const pointerRef = import_react4.default.useRef({ x: Number.NaN, y: Number.NaN, known: false, away: false });
       const suppressUntil = import_react4.default.useRef(0);
       import_react4.default.useEffect(() => {

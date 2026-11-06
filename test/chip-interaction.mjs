@@ -46,8 +46,17 @@ check('hover hides the kind glyph',
 const removeRule = /\.qc-chip-remove\{([\s\S]*?)\}/.exec(css)?.[1] ?? ''
 check('the x is a fixed overlay', removeRule.includes('position:fixed'),
   `the .qc-chip-remove rule is: ${removeRule.slice(0, 80)}`)
-check('the x is red', /background:#e[0-9a-f]{5}/i.test(removeRule) || removeRule.includes('#e8291c'),
-  'the x is not red')
+// The × used to be a solid red disc with a white ring — a badge floating over the pill rather than a control of it.
+// The integrated design paints no disc at all: the chip's own surface runs underneath and the × uses the label's ink.
+check('the x paints no separate disc', /background:transparent/.test(removeRule),
+  'the × still has a filled body of its own instead of letting the pill show through')
+check('the x has no floating ring', !/box-shadow:\s*0 0 0/.test(removeRule),
+  'the × still carries the surface-coloured ring that made it read as pasted on')
+check('the x uses the chip ink, not white', /color:color-mix\(in srgb, var\(--qc-accent/.test(removeRule),
+  'the × is not drawn in the same ink as the chip label')
+check('the destructive red is reserved for the hovered x itself',
+  /\.qc-chip-remove:hover\{[^}]*color:#e8291c/.test(css) && !/background:#e8291c/.test(removeRule),
+  'the × should only turn red on hover, not carry a red body at rest')
 // Its centre must land on the glyph's centre. The position is no longer a JS constant: it is a CSS rule fed the chip's
 // rectangle through custom properties, so the same three numbers the chip uses (padding-left and glyph width) place the
 // button. Anchoring an edge instead of the centre is what made the cross sit visibly left of the icon.
@@ -76,8 +85,12 @@ check('the cross strokes meet at the exact centre',
     && /M2\.6 2\.6 L7\.4 7\.4 M7\.4 2\.6 L2\.6 7\.4/.test(cardsSource),
   'the cross path is not symmetric about (5,5)')
 check('the cross is drawn with round strokes',
-  /\.qc-chip-remove svg path\{[^}]*stroke:#fff[^}]*stroke-linecap:round/.test(css),
-  'the cross strokes are not round white')
+  /\.qc-chip-remove svg path\{[^}]*stroke:currentColor[^}]*stroke-linecap:round/.test(css),
+  'the cross strokes do not inherit the control colour')
+check('the glyph stays hidden while the x is showing',
+  /\[data-composer-chip="quote-chat"\]\[data-qc-hover\]::before[\s\S]{0,200}opacity:0/.test(css)
+    && /chip\.setAttribute\('data-qc-hover', '1'\)/.test(cardsSource),
+  'moving from the chip onto the transparent × would let the kind glyph reappear behind it')
 check('the cross icon is at least 10px',
   (() => {
     const size = /\.qc-chip-remove svg\{[^}]*width:(\d+)px/.exec(css)

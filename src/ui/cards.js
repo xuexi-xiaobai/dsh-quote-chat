@@ -85,6 +85,22 @@ export function createCards({ composerContainer }) {
     const hoverRef = React.useRef(null)
     hoverRef.current = hover
     /**
+     * Mark the chip whose × is showing.
+     *
+     * The × is a fixed overlay in document.body, not a child of the chip, so moving the pointer from the chip onto it
+     * drops the chip's own CSS :hover and the kind glyph would fade back in behind the now-transparent ×. The hover
+     * state the component already owns is the truth; mirror it onto the chip so the glyph stays hidden for exactly as
+     * long as the × exists.
+     */
+    React.useEffect(() => {
+      if (typeof document === 'undefined' || hover === null) return undefined
+      const chip = [...document.querySelectorAll('[data-composer-chip="quote-chat"]')]
+        .find((element) => element.dataset.qcRef === hover.annotation.id) ?? null
+      if (chip === null) return undefined
+      chip.setAttribute('data-qc-hover', '1')
+      return () => chip.removeAttribute('data-qc-hover')
+    }, [hover])
+    /**
      * The pointer's last known position, in viewport pixels.
      *
      * A ref, not a closure variable: the effect below re-runs whenever the draft changes — typing does that on every
