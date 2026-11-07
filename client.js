@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:43fe18cc02528171
+ * Artifact: sha256:bd952011748df4fa
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -1915,9 +1915,17 @@ function __dshQuoteChatFactory(hostRequire) {
        An auto width lets the chip be exactly as wide as its contents. The min-width keeps a uniform look while the
        ordinals are single digits, and the small amount it grows at 10 is one 8px step, invisible in a line of prose. */
     width:auto;min-width:var(--qc-chip-w, 5.3em);
-    /* Height tracks the line, not a pixel value: 1.42em against an inherited 15px gives the 21.3px the composer's own
-       line box occupies, so a chip never makes its line taller than a plain one. */
-    height:1.42em;
+    /* Height tracks the LINE, not a pixel value, but it was too tight.
+
+       1.42em gave 21.3px at the composer's 15px, which fits the line box exactly — and that was the whole argument for
+       it. The cost was the shape: the ends are semicircles (measured against a border-radius:999px control, same
+       deviation to 0.109 CSS px), but a semicircle 21px across is 21 device pixels, and over its middle third the
+       curvature is so low that the eye reads it as a straight segment. It looked like a rounded rectangle while being a
+       capsule, which is the worst of both.
+
+       1.6em is 24px at 15px and 27.2px at the desktop composer's 17px. Both stay inside their line box (25px and 28.3px),
+       so the line still does not grow, and the ends gain 14% more diameter to read as arcs. */
+    height:1.6em;
     /* The middle value aligns the box's centre with the parent's x-height midpoint, which is NOT the optical centre of a
        line of CJK text: measured, the chip's centre sat 2.3px below the text's and its bottom edge landed exactly on the
        paragraph's, so it read as hanging off the line rather than sitting in it.
