@@ -64,9 +64,13 @@ export function chip(options = {}) {
   const kind = options.kind ?? 'text'
   const ref = options.ref ?? `qc-fixture-${num}`
   const hovered = options.hovered === true
+  // A comparison override, not a product state: the stylesheet's radius is 999px (a capsule), and the review asked to
+  // see the same chip as a rounded rectangle beside it. Applied inline so the stylesheet stays the single source.
+  const radius = options.radius === undefined ? '' : ` style="border-radius:${options.radius}"`
   return '<span data-composer-chip="quote-chat" contenteditable="false" data-lexical-decorator="true"'
     + ` data-qc-num="${num}" data-qc-kind="${kind}" data-qc-label="${label}" data-qc-ref="${ref}"`
     + (hovered ? ' data-qc-hover="1"' : '')
+    + radius
     + '>'
     + `<span class="${HOST_CLASSES.wrapper}" title="${label}">`
     + `<span class="${HOST_CLASSES.marker}" aria-hidden="true">@</span>`
@@ -145,24 +149,24 @@ ${remove ? chipRemove() : ''}
   // Place the × overlay from the chip's live rectangle, exactly as ChipCards does with its custom properties.
   //
   // This is a FUNCTION, not an inline IIFE, because the stylesheet is injected after the document loads: measuring at
-  // parse time would read an unstyled chip (padding 0, width of the raw text) and place the × over the label. The spec
-  // calls it after addStyleTag, which is the same order the component runs in - it measures on hover, long after the
-  // stylesheet exists.
+  // parse time would read an unstyled chip (padding 0, no glyph) and place the × over the label. The spec calls it after
+  // addStyleTag, which is the same order the component runs in - it measures on hover, long after the stylesheet exists.
   //
-  // Width and right padding are passed as PIXELS because the chip inherits the composer's font size while the button
+  // The leading slot's two inputs arrive as PIXELS because the chip inherits the composer's font size while the button
   // carries its own: an em value in the button's rule would not track the slot the chip reserved.
   window.__qcPlaceRemove = () => {
     const remove = document.querySelector('[data-qc-fixture-remove]')
     const chip = document.querySelector('[data-composer-chip="quote-chat"]')
     if (remove === null || chip === null) return null
     const box = chip.getBoundingClientRect()
-    const padRight = Number.parseFloat(getComputedStyle(chip).paddingRight) || 0
+    const padLeft = Number.parseFloat(getComputedStyle(chip).paddingLeft) || 0
+    const glyph = Number.parseFloat(getComputedStyle(chip, '::before').width) || 0
     remove.style.setProperty('--qc-chip-left', box.left + 'px')
     remove.style.setProperty('--qc-chip-top', box.top + 'px')
     remove.style.setProperty('--qc-chip-height', box.height + 'px')
-    remove.style.setProperty('--qc-chip-width', box.width + 'px')
-    remove.style.setProperty('--qc-chip-pad-right', padRight + 'px')
-    return { width: box.width, padRight }
+    remove.style.setProperty('--qc-chip-pad-left', padLeft + 'px')
+    remove.style.setProperty('--qc-chip-glyph', glyph + 'px')
+    return { padLeft, glyph }
   }
 </script>
 </body>
@@ -209,20 +213,20 @@ const LONG = '面向收支平衡的城际铁路票价优化模型研究'
 export const CHIP_STATES = [
   {
     name: 'chip-rest',
-    note: '一颗芯片，指针在远处：标签是引文开头，× 在尾部槽位',
+    note: '一颗芯片，指针在远处：标签是引文开头',
     html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, label: SHORT })}${PROSE_AFTER}</p>`),
     act: parkPointer,
   },
   {
     name: 'chip-hover',
-    note: '指针在芯片上：类型图标保留，× 出现在尾部',
+    note: '指针在芯片上：红色 × 占据类型图标的槽位',
     html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, label: SHORT, hovered: true })}${PROSE_AFTER}</p>`,
       { remove: true }),
     act: hoverChip,
   },
   {
     name: 'chip-remove-hover',
-    note: '指针在 × 上：描边变红，芯片底色保持',
+    note: '指针在 × 上：圆片加深',
     html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, label: SHORT, hovered: true })}${PROSE_AFTER}</p>`,
       { remove: true }),
     act: hoverRemove,
@@ -243,6 +247,18 @@ export const CHIP_STATES = [
     name: 'chip-pair',
     note: '两颗芯片并排：宽度随引文变化',
     html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, label: SHORT })}${chip({ num: 2, label: '文献综述' })}${PROSE_AFTER}</p>`),
+    act: parkPointer,
+  },
+  {
+    name: 'chip-shape-capsule',
+    note: '形状对照 A：胶囊（样式表的 999px）',
+    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, label: SHORT })}${PROSE_AFTER}</p>`),
+    act: parkPointer,
+  },
+  {
+    name: 'chip-shape-rounded',
+    note: '形状对照 B：圆角矩形 8px（内联覆盖，非产品状态）',
+    html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, label: SHORT, radius: '8px' })}${PROSE_AFTER}</p>`),
     act: parkPointer,
   },
   {

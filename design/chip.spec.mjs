@@ -92,24 +92,37 @@ test('chip metrics: the palette is one family, not two blues', async ({ page }) 
     .toBeLessThanOrEqual(40)
 })
 
-test('chip metrics: the remove control paints no body of its own', async ({ page }) => {
+test('chip metrics: the remove control is a red disc the size of the kind glyph', async ({ page }) => {
   await render(page, CHIP_STATES[1])
   const remove = await page.evaluate(() => {
     const button = document.querySelector('.qc-chip-remove')
     if (button === null) return null
     const style = getComputedStyle(button)
+    const disc = getComputedStyle(button, '::before')
     const box = button.getBoundingClientRect()
+    const chip = document.querySelector('[data-composer-chip="quote-chat"]')
+    const glyph = Number.parseFloat(getComputedStyle(chip, '::before').width) || 0
+    const chipBox = chip.getBoundingClientRect()
     return {
-      background: style.backgroundColor,
-      boxShadow: style.boxShadow,
+      // The button's own box is the hit area and paints nothing; the disc is the drawing.
+      buttonBackground: style.backgroundColor,
+      discWidth: Math.round(Number.parseFloat(disc.width) * 10) / 10,
+      discBackground: disc.backgroundColor,
+      glyph: Math.round(glyph * 10) / 10,
       width: Math.round(box.width * 10) / 10,
       height: Math.round(box.height * 10) / 10,
+      // The disc must sit on the kind glyph's slot, not somewhere else on the pill.
+      discCentre: Math.round(box.left + box.width / 2),
+      glyphCentre: Math.round(chipBox.left + (Number.parseFloat(getComputedStyle(chip).paddingLeft) || 0) + glyph / 2),
     }
   })
   expect(remove, 'the × must be mounted in the hover state').not.toBeNull()
-  // A filled disc or a surface-coloured ring is what made the control read as a badge pasted onto the pill.
-  expect(remove.background).toMatch(/rgba\(0, 0, 0, 0\)|transparent/)
-  expect(remove.boxShadow).toBe('none')
+  expect(remove.buttonBackground).toMatch(/rgba\(0, 0, 0, 0\)|transparent/)
+  // The review asked for the control to share the icon's outline: same slot, same scale.
+  expect(Math.abs(remove.discWidth - remove.glyph)).toBeLessThanOrEqual(1)
+  expect(Math.abs(remove.discCentre - remove.glyphCentre)).toBeLessThanOrEqual(1)
+  // Red, as asked. The earlier transparent treatment was rejected.
+  expect(remove.discBackground).not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/)
   // WCAG 2.2 AA target size for a pointer target.
   expect(remove.width).toBeGreaterThanOrEqual(24)
   expect(remove.height).toBeGreaterThanOrEqual(24)

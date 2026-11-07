@@ -357,14 +357,13 @@ export const STYLESHEET = `
      A small em-based lift corrects it, and being em-based it survives a font-size change. */
   vertical-align:middle;
   transform:translateY(-.085em);
-  /* The right padding is a SLOT, not breathing room.
-     The removal control sits at the trailing end, where every reference system puts it (Material's input chip, Ant's
-     Tag, Gmail's recipient chip), and the chip's children belong to the editor, so the control is an overlay. An
-     overlay needs somewhere to land that is not on top of the label, and the only way to guarantee that without
-     reflowing the line on hover is to reserve the space up front: 1.75em is .5em of ordinary padding plus the 24px
-     target the control needs at the composer's 15px. The asymmetry is invisible because the label ends in an ellipsis
-     whenever it is long enough to matter. */
-  padding:0 1.75em 0 .5em;margin:0 .3em;
+  /* Symmetric padding. The removal control lives in the LEADING slot, where the kind glyph already is, so it needs
+     no reserved space of its own — it takes the glyph's place on hover. An earlier revision moved it to the trailing
+     end and reserved 1.75em of right padding for it; the review rejected that, and the reserved slot was visibly
+     lopsided at rest. */
+  padding:0 .5em;margin:0 .3em;
+  /* A capsule: the ends are semicircles, whatever the height. 999px is the portable way to say "half the height"
+     without a calc that has to know the height. */
   border-radius:999px;
   /* Derived from the ACCENT, not from a background layer.
      The Host's --dsw-alias-bg-layer-1/2/3 all resolve to #fff, the composer's own colour, so a layer token cannot express
@@ -461,11 +460,17 @@ export const STYLESHEET = `
   -webkit-mask-position:center;mask-position:center;
   -webkit-mask-size:contain;mask-size:contain;
   transition:opacity .12s ease,visibility .12s ease}
-/* The kind glyph is NOT hidden on hover any more.
+/* The kind glyph gives its slot to the × on hover.
 
-   It used to be: the × took the leading slot, so the two icons were mutually exclusive. Moving the × to the trailing
-   end removed the reason for that, and keeping the glyph is what makes a hovered chip still look like the chip beside
-   it — the earlier design swapped a document icon for a cross, so two chips in one sentence read as two components. */
+   They are mutually exclusive because they occupy the same box: the removal control is centred on the glyph's slot at
+   the glyph's own size, so showing both would stack a red disc on a blue icon.
+
+   The data-qc-hover selector is not redundant with :hover. The × is a portal in document.body, so moving the pointer
+   from the chip onto it drops the chip's own :hover and the glyph would fade back in underneath the disc. The component
+   keeps the attribute set for as long as the control exists. */
+[data-composer-chip="quote-chat"][data-qc-hover]::before,
+[data-composer-chip="quote-chat"]:hover::before,
+[data-composer-chip="quote-chat"]:focus-within::before{opacity:0;visibility:hidden}
 /*
  * The ordinal, drawn here rather than relying on the host's label.
  *
@@ -504,70 +509,76 @@ export const STYLESHEET = `
 
 /* Glyph: a rounded rectangle holding two lines of text — a passage, abstracted.
 
-   The artwork fills the canvas on purpose. viewBox is 16x16 and the rect runs from 1 to 15 in BOTH axes, so the drawn
-   geometry is the full box; an icon that draws a small shape inside a large canvas renders visually smaller than its
-   CSS size claims, which is what made the previous glyph look like a dot next to the label.
+   The artwork fills the canvas on purpose. viewBox is 16x16 and the rect runs from 1.1 to 14.9 in BOTH axes, so the
+   drawn geometry is the full box; an icon that draws a small shape inside a large canvas renders visually smaller than
+   its CSS size claims, which is what made the previous glyph look like a dot next to the label.
 
-   Table chips get a grid glyph, drawn to the same footprint. */
+   Both glyphs must occupy the SAME footprint, because they swap in the same slot. The table glyph used to start at
+   y=1.9 and stop at 14.1 — 12.2 units against the text glyph's 13.8 — so a table chip's icon read as visibly smaller
+   than a text chip's. It now spans 1.1..14.9 as well; the grid lines were moved with it. */
 :root{
   --qc-glyph-text:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='1.1' y='1.1' width='13.8' height='13.8' rx='3.4' fill='none' stroke='black' stroke-width='1.7'/><path d='M4.6 6.1h6.4M4.6 9.9h4.2' stroke='black' stroke-width='1.6' stroke-linecap='round'/></svg>");
-  --qc-glyph-table:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='1.1' y='1.9' width='13.8' height='12.2' rx='2.6' fill='none' stroke='black' stroke-width='1.7'/><path d='M1.1 5.9h13.8M1.1 10h13.8M5.9 1.9v12.2' stroke='black' stroke-width='1.35'/></svg>");
+  --qc-glyph-table:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='1.1' y='1.1' width='13.8' height='13.8' rx='3.0' fill='none' stroke='black' stroke-width='1.7'/><path d='M1.1 5.7h13.8M1.1 10.3h13.8M5.9 1.1v13.8' stroke='black' stroke-width='1.35'/></svg>");
 }
 [data-composer-chip="quote-chat"][data-qc-kind="table"]{--qc-glyph:var(--qc-glyph-table)}
 
-/* The × sits at the TRAILING end of the pill, inside it.
+/* The × takes the kind glyph's place in the LEADING slot, and is red.
 
-   It is a fixed overlay pinned to the chip's rectangle — the chip's contents are the editor's and cannot be written
-   into — but three things about it are deliberate:
+   The review settled this after two wrong turns, so both are recorded:
 
-   1. TRAILING, not leading. Every reference system puts a remove control at the end of the token: Material's input
-      chip (its deleteIcon), Ant's Tag (its closable close icon), Gmail's recipient chip. Leading was wrong for a second
-      reason that has nothing to do with convention: the leading slot holds the kind glyph, so the × REPLACED it and a
-      hovered chip stopped looking like the chip beside it. At the trailing end both icons stay, and the pill reads as
-      one control with a stable identity.
+   1. Trailing was wrong. Material, Ant and Gmail all put a remove control at the end of a token, and that reasoning
+      was applied here — but this chip is not a token in a recipient field. It is a passage reference sitting inside a
+      sentence, and the review asked for the control to line up with the kind glyph it replaces: same slot, same
+      outline, same scale. A trailing control also needed 1.75em of reserved right padding, which made the pill
+      lopsided whenever nothing was hovered.
 
-   2. A 24px target, in PIXELS. It used to be 1.36em, which is 20.4px at the composer's 15px — under the 24x24 WCAG
-      2.2 AA minimum, and it also shrank relative to a chip rendered at any other font size. A pointer target is a
-      physical requirement, not a typographic one, so it does not scale with the text.
+   2. A transparent × was wrong. It was introduced to stop the control looking like a badge pasted onto the pill, and
+      the review rejected it: the red disc reads as a control, and the earlier "not part of the chip" complaint was
+      about its SIZE and its white ring, not about the colour.
 
-   3. TRANSPARENT. It paints no disc and no ring: the chip's background runs underneath and the × is drawn in the
-      chip's own ink. A saturated circle over an accent-tinted pill read as a badge pasted on. Destructive red is
-      reserved for the × itself, as strokes, only while it is hovered.
+   So: a red disc the size of the kind glyph (1.12em), centred in the glyph's slot, with a white cross. The disc is
+   drawn by ::before and the cross by the SVG on top of it, which keeps the button's own box free to be the hit area.
 
-   The cross is drawn as an SVG, not typed as a character. A text multiplication sign inherits the font's baseline and
-   side bearings, which made it sit high and look undersized no matter how it was nudged; two strokes give exact
-   geometry and scale with the button. */
+   THE HIT AREA IS 24px AND THE DISC IS NOT. A pointer target is a physical requirement (WCAG 2.2 AA), while the disc
+   is a drawing: it has to match the icon beside it, and the icon is 1.12em. The button is therefore transparent, 24px
+   square, and centred on the same point as the disc.
+
+   The chip's own metrics arrive as PIXELS from the component. The chip inherits the composer's font size while this
+   button carries its own, so an em value here would silently drift from the slot the chip actually reserved — measured
+   at 17px in the design workbench and 15px in the app. */
 .qc-chip-remove{position:fixed;z-index:45;
   /* The overlay lives in document.body, outside the chip, so it cannot inherit the chip's palette. These are the same
      values the chip resolves, repeated here because a custom property does not cross a portal. */
   --qc-ink:#0f1115;
   --qc-surface:#fff;
-  /* Centred in the chip's reserved right padding.
-
-     Both inputs arrive as PIXELS from the component, and that is the point: the chip inherits the composer's font size
-     while this button carries its own, so expressing the slot in em here would silently drift from the slot the chip
-     actually reserved. The chip's em was 17px in the design review page and 15px in the app; a single em rule cannot be
-     right for both, and a px rule can. */
-  left:calc(var(--qc-chip-left, 0px) + var(--qc-chip-width, 0px) - var(--qc-chip-pad-right, 26px) / 2);
+  /* Centred on the kind glyph's slot: the chip's left padding plus half the glyph, both in pixels. */
+  left:calc(var(--qc-chip-left, 0px) + var(--qc-chip-pad-left, 8px) + var(--qc-chip-glyph, 17px) / 2);
   top:calc(var(--qc-chip-top, 0px) + var(--qc-chip-height, 24px) / 2);
   width:24px;height:24px;font-size:15px;
   appearance:none;box-sizing:border-box;margin:0;padding:0;border:0;
-  border-radius:999px;background:transparent;
-  /* The chip's label ink: the × reads as the pill's own icon, not as an alert. */
-  color:color-mix(in srgb, var(--qc-accent, #4176e6) 78%, var(--qc-ink));
+  /* The button paints nothing, but it still carries the pill radius: a review surface that forces the :hover
+     declarations onto the button (rather than onto its ::before) then shows a round control instead of a square one. */
+  border-radius:999px;
+  background:transparent;
   cursor:pointer;display:flex;align-items:center;justify-content:center;
   transform:translate(-50%,-50%);
-  transition:color .12s ease,transform .12s ease}
+  transition:transform .12s ease}
+/* The disc: the kind glyph's own box, so the two states occupy the same outline. */
+.qc-chip-remove::before{content:"";position:absolute;
+  left:50%;top:50%;width:1.12em;height:1.12em;
+  transform:translate(-50%,-50%);
+  border-radius:999px;background:#e8291c;
+  transition:background .12s ease}
 @media (prefers-color-scheme: dark){
   .qc-chip-remove{--qc-accent:#5b8cf0;--qc-surface:#1b1d21;--qc-ink:#e7e9ee}
 }
 .qc-chip-remove svg{display:block;width:10px;height:10px;flex:none;
-  pointer-events:none}
-.qc-chip-remove svg path{stroke:currentColor;stroke-width:2.1;stroke-linecap:round;
+  position:relative;pointer-events:none}
+.qc-chip-remove svg path{stroke:#fff;stroke-width:2.1;stroke-linecap:round;
   fill:none;vector-effect:non-scaling-stroke}
-/* Only the strokes turn red: no filled disc, so the chip's hover tint keeps running behind the control. */
-.qc-chip-remove:hover{color:#e8291c;transform:translate(-50%,-50%) scale(1.08)}
-.qc-chip-remove:active{color:#b42318}
+.qc-chip-remove:hover{transform:translate(-50%,-50%) scale(1.08)}
+.qc-chip-remove:hover::before{background:#c81f14}
+.qc-chip-remove:active::before{background:#b42318}
 
 /* ── Dragging a chip ─────────────────────────────────────────────────────────
 

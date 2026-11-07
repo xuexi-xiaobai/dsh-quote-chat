@@ -39,51 +39,57 @@ check('the kind attribute is set from the annotation',
   /chip\.dataset\.qcKind = annotation\.kind === 'table' \? 'table' : 'text'/.test(cardsSource),
   'data-qc-kind is not derived from annotation.kind')
 
-// ── 2. The kind glyph survives hover ───────────────────────────────────────
-// The × used to take the leading slot, so the glyph had to disappear. With the × at the trailing end there is no
-// reason to hide it, and hiding it is what made two chips in one sentence read as two different components.
-check('hover does not hide the kind glyph',
-  !/\[data-composer-chip="quote-chat"\]:hover::before[\s\S]{0,120}opacity:0/.test(css),
-  'the ::before glyph is still hidden on hover, which is the icon-swap design')
+// ── 2. The × takes the kind glyph's slot ───────────────────────────────────
+// They are mutually exclusive because they occupy the same box: the disc is centred on the glyph's slot at the glyph's
+// own size, so showing both would stack a red disc on a blue icon.
+check('hover hides the kind glyph',
+  /\[data-composer-chip="quote-chat"\]:hover::before[\s\S]{0,120}opacity:0/.test(css),
+  'the ::before glyph is still visible under the red disc')
+check('the glyph stays hidden while the pointer is on the x',
+  /\[data-composer-chip="quote-chat"\]\[data-qc-hover\]::before/.test(css)
+    && /chip\.setAttribute\('data-qc-hover', '1'\)/.test(cardsSource),
+  'the × is a portal, so the chip loses :hover while the pointer is on it and the glyph would reappear under the disc')
 
-// ── 3. The × lives inside the chip, at the trailing end ────────────────────
+// ── 3. The × is a red disc in the leading slot ─────────────────────────────
 const removeRule = /\.qc-chip-remove\{([\s\S]*?)\}/.exec(css)?.[1] ?? ''
 check('the x is a fixed overlay', removeRule.includes('position:fixed'),
   `the .qc-chip-remove rule is: ${removeRule.slice(0, 80)}`)
-// The × used to be a solid red disc with a white ring — a badge floating over the pill rather than a control of it.
-// The integrated design paints no disc at all: the chip's own surface runs underneath and the × uses the label's ink.
-check('the x paints no separate disc', /background:transparent/.test(removeRule),
-  'the × still has a filled body of its own instead of letting the pill show through')
+// The button's own box is the HIT AREA and stays transparent; the disc is drawn by ::before at the kind glyph's size, so
+// the two states share an outline. The review asked for exactly this: same position, same scale as the icon, red.
+check('the button box is transparent, the disc is drawn separately',
+  /background:transparent/.test(removeRule) && /\.qc-chip-remove::before\{[^}]*background:#e8291c/.test(css),
+  'the disc is not drawn by ::before, so it cannot be sized independently of the hit area')
+check('the disc matches the kind glyph\'s box',
+  /\.qc-chip-remove::before\{[^}]*width:1\.12em;height:1\.12em/.test(css),
+  'the disc no longer matches the 1.12em glyph, so the two states have different outlines')
+check('the cross is white on the red disc',
+  /\.qc-chip-remove svg path\{[^}]*stroke:#fff/.test(css),
+  'the cross is not white')
 check('the x has no floating ring', !/box-shadow:\s*0 0 0/.test(removeRule),
-  'the × still carries the surface-coloured ring that made it read as pasted on')
-check('the x uses the chip ink, not white', /color:color-mix\(in srgb, var\(--qc-accent/.test(removeRule),
-  'the × is not drawn in the same ink as the chip label')
-check('the destructive red is reserved for the hovered x itself',
-  /\.qc-chip-remove:hover\{[^}]*color:#e8291c/.test(css) && !/background:#e8291c/.test(removeRule),
-  'the × should only turn red on hover, not carry a red body at rest')
+  'the surface-coloured ring that made the disc read as pasted on is back')
 // The × is placed from the chip's rectangle through custom properties, and the two values that decide its horizontal
-// position arrive as PIXELS: the chip's width and its reserved right padding. Em values would drift, because the chip
-// inherits the composer's font size while the button carries its own.
+// position arrive as PIXELS: the chip's left padding and the kind glyph's width. Em values would drift, because the
+// chip inherits the composer's font size while the button carries its own.
 check('the x is positioned by the chip rectangle, not by an edge',
   /'--qc-chip-left': `\$\{hover\.anchor\.left\}px`/.test(cardsSource)
     && /'--qc-chip-top': `\$\{hover\.anchor\.top\}px`/.test(cardsSource),
   'the x is no longer placed from the chip rectangle')
-check('the x is centred in the chip\'s reserved trailing padding',
-  /left:calc\(var\(--qc-chip-left[^)]*\) \+ var\(--qc-chip-width[^)]*\) - var\(--qc-chip-pad-right[^)]*\) \/ 2\)/.test(css),
-  'the x is not placed at the trailing end of the chip')
-check('the chip reserves a trailing slot for the x',
-  /\[data-composer-chip="quote-chat"\]\{[^}]*padding:0 1\.75em 0 \.5em/.test(css),
-  'without reserved right padding the x would sit on top of the label')
-check('the trailing slot and the chip width are passed in pixels',
-  /'--qc-chip-width': `\$\{hover\.anchor\.width\}px`/.test(cardsSource)
-    && /'--qc-chip-pad-right': `\$\{hover\.anchor\.padRight\}px`/.test(cardsSource),
+check('the x is centred on the leading glyph slot',
+  /left:calc\(var\(--qc-chip-left[^)]*\) \+ var\(--qc-chip-pad-left[^)]*\) \+ var\(--qc-chip-glyph[^)]*\) \/ 2\)/.test(css),
+  'the x is not centred on the slot the kind glyph occupies')
+check('the leading slot is passed in pixels',
+  /'--qc-chip-pad-left': `\$\{hover\.anchor\.padLeft\}px`/.test(cardsSource)
+    && /'--qc-chip-glyph': `\$\{hover\.anchor\.glyph\}px`/.test(cardsSource),
   'the x slot is positioned from a value that cannot track the chip')
+check('the chip reserves no trailing slot',
+  /\[data-composer-chip="quote-chat"\]\{[^}]*padding:0 \.5em;/.test(css),
+  'the pill still carries the lopsided right padding that the trailing design needed')
 check('the x is a 24px pointer target, not an em-derived one',
   /\.qc-chip-remove\{[\s\S]*?width:24px;height:24px/.test(css),
   'the target is em-based again, so it shrinks below the 24px WCAG 2.2 AA minimum at the composer font size')
 check('the x is round like the pill',
-  /\.qc-chip-remove\{[\s\S]*?border-radius:999px/.test(css),
-  'the x does not share the pill radius')
+  /\.qc-chip-remove::before\{[^}]*border-radius:999px/.test(css),
+  'the disc does not share the pill radius')
 
 // The cross is drawn, not typed. A text multiplication sign carries the font's
 // baseline and side bearings, so it sat high and looked undersized no matter how
@@ -97,8 +103,8 @@ check('the cross strokes meet at the exact centre',
     && /M2\.6 2\.6 L7\.4 7\.4 M7\.4 2\.6 L2\.6 7\.4/.test(cardsSource),
   'the cross path is not symmetric about (5,5)')
 check('the cross is drawn with round strokes',
-  /\.qc-chip-remove svg path\{[^}]*stroke:currentColor[^}]*stroke-linecap:round/.test(css),
-  'the cross strokes do not inherit the control colour')
+  /\.qc-chip-remove svg path\{[^}]*stroke:#fff[^}]*stroke-linecap:round/.test(css),
+  'the cross strokes are not round white')
 check('the hover tint survives the trip to the x',
   /\[data-composer-chip="quote-chat"\]\[data-qc-hover\]/.test(css)
     && /chip\.setAttribute\('data-qc-hover', '1'\)/.test(cardsSource),

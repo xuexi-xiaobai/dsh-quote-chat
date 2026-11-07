@@ -29,6 +29,25 @@ import { attachChipDragging } from '../chip-drag.js'
 /** createElement, bound once. */
 const h = React.createElement
 
+/**
+ * The chip metrics the removal control is placed from, in pixels.
+ *
+ * The chip inherits the composer's font size while the button carries its own, so an em value in the button's rule
+ * would drift from the slot the chip actually reserved — measured at 17px in the design workbench and 15px in the app.
+ * Reading the chip's own computed values keeps the control on its slot at any font size.
+ *
+ * @param chip - the chip element.
+ * @returns `{ padLeft, glyph }`, both in CSS pixels.
+ */
+const removeGeometry = (chip) => {
+  const snap = (value) => Math.round(value * 100) / 100
+  return {
+    padLeft: snap(Number.parseFloat(getComputedStyle(chip).paddingLeft) || 0),
+    // The kind glyph's box: the × is drawn at exactly this size so the two states share an outline.
+    glyph: snap(Number.parseFloat(getComputedStyle(chip, '::before').width) || 0),
+  }
+}
+
 /** How long the card waits after the pointer leaves before it starts closing. */
 const HOVER_LINGER_MS = 260
 
@@ -390,23 +409,23 @@ export function createCards({ composerContainer }) {
     const chip = pairs().find((pair) => pair.annotation.id === annotation.id)?.chip
     if (chip === undefined) return
     const rect = chip.getBoundingClientRect()
-    const padRight = snap(Number.parseFloat(getComputedStyle(chip).paddingRight) || 0)
+    const geometry = removeGeometry(chip)
     setHover((current) => {
       if (current !== null && current.annotation.id === annotation.id
         && current.anchor.left === snap(rect.left)
         && current.anchor.top === snap(rect.top)
         && current.anchor.width === snap(rect.width)
         && current.anchor.height === snap(rect.height)
-        && current.anchor.padRight === padRight) return current
+        && current.anchor.padLeft === geometry.padLeft
+        && current.anchor.glyph === geometry.glyph) return current
       return { annotation, anchor: {
         left: snap(rect.left),
         top: snap(rect.top),
         width: snap(rect.width),
         height: snap(rect.height),
-        // The chip's own right padding, in pixels. The × is centred inside it, and it is passed as a NUMBER because
-        // the chip's em is not the button's em: the chip inherits the composer's font size while the button carries
-        // its own, so an em value in the button's rule would drift from the slot it is supposed to sit in.
-        padRight,
+        // The leading slot the × takes over: the chip's left padding and the kind glyph's box, both as NUMBERS.
+        padLeft: geometry.padLeft,
+        glyph: geometry.glyph,
       } }
     })
     // The chip can move without any event (typing in front of it), so following starts here and stops itself when the
@@ -441,16 +460,18 @@ export function createCards({ composerContainer }) {
       return
     }
     const rect = pair.chip.getBoundingClientRect()
+    const geometry = removeGeometry(pair.chip)
     const next = {
       left: snap(rect.left),
       top: snap(rect.top),
       width: snap(rect.width),
       height: snap(rect.height),
-      padRight: snap(Number.parseFloat(getComputedStyle(pair.chip).paddingRight) || 0),
+      padLeft: geometry.padLeft,
+      glyph: geometry.glyph,
     }
     if (current.anchor.left !== next.left || current.anchor.top !== next.top
       || current.anchor.width !== next.width || current.anchor.height !== next.height
-      || current.anchor.padRight !== next.padRight) {
+      || current.anchor.padLeft !== next.padLeft || current.anchor.glyph !== next.glyph) {
       setHover({ annotation: current.annotation, anchor: next })
     }
     followFrame = requestAnimationFrame(follow)
@@ -563,8 +584,8 @@ export function createCards({ composerContainer }) {
         '--qc-chip-left': `${hover.anchor.left}px`,
         '--qc-chip-top': `${hover.anchor.top}px`,
         '--qc-chip-height': `${hover.anchor.height}px`,
-        '--qc-chip-width': `${hover.anchor.width}px`,
-        '--qc-chip-pad-right': `${hover.anchor.padRight}px`,
+        '--qc-chip-pad-left': `${hover.anchor.padLeft}px`,
+        '--qc-chip-glyph': `${hover.anchor.glyph}px`,
       },
       onMouseDown: (event) => event.preventDefault(),
       onClick: (event) => {
