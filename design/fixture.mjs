@@ -42,12 +42,34 @@ export const COMPOSER = {
   surface: '#fff',
 }
 
-/** The host's decorator class names, as observed. Opaque to us; kept so the replica looks like the real thing. */
+/**
+ * The host's decorator class names, taken from the shipped bundle.
+ *
+ * They are the CSS-module hashes in `dsh-client-ui-conversation`'s `ReferenceChip.module.css`, read out of
+ * `app.asar`. The previous values (`q44v1G_reference yAWgPa_chip`) appear in NO archived file - they were stale, so
+ * the host's own rules never applied to this replica and its "the plugin neutralises the host wrapper" claim was never
+ * actually exercised. The host's rules are reproduced below for that reason.
+ */
 const HOST_CLASSES = {
-  wrapper: 'q44v1G_reference yAWgPa_chip',
-  marker: 'yAWgPa_marker',
-  label: 'yAWgPa_label',
+  wrapper: 'M7q97W_chip',
+  marker: 'M7q97W_marker',
+  label: 'M7q97W_label',
 }
+
+/**
+ * The host's `ReferenceChip.module.css`, verbatim.
+ *
+ * The plugin hides the wrapper (`position:absolute; width:0; height:0; overflow:hidden; font-size:0; line-height:0`),
+ * so these declarations must not reach the rendered chip. Including them is what proves that: with them present, a
+ * regression in the neutralising rule shows up as a changed baseline instead of passing silently.
+ */
+const HOST_CHIP_CSS = `
+.M7q97W_chip{max-width:240px;color:var(--dsw-alias-state-business-primary);user-select:none;
+  align-items:baseline;gap:3px;display:inline-flex}
+.M7q97W_marker{flex:none;font-weight:500}
+.M7q97W_icon{flex:none;align-self:center}
+.M7q97W_label{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}
+`
 
 /**
  * One chip, exactly as the host renders it.
@@ -137,6 +159,8 @@ export function page(body, options = {}) {
     outline: none;
   }
   .qc-composer p { margin: 0; }
+  /* The host's own chip rules, so the replica is subject to them exactly as the real chip is. */
+  ${HOST_CHIP_CSS}
 </style>
 </head>
 <body>

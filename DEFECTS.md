@@ -1417,6 +1417,60 @@ C 会让作曲器的行变高（26px > 25px 行高）；D 仍在 25px 行内，�
 
 ---
 
+### 缺陷 28：设计 fixture 用了错误的宿主类名，宿主的芯片 CSS 从未被验证过（已修复，2026-11-07）
+
+**证据强度：`[已验证]`（`app.asar` 全文检索 + 基线不变）**
+
+评审问：「你确定现在插件里的注释芯片的前端样式跟这个一样吗？」从代码查，发现我自己有个漏洞。
+
+**芯片的 DOM 是谁建的？** 宿主的 Lexical 装饰器：
+
+```js
+// dsh-client-ui-conversation
+createDOM(_config) {
+  const el = document.createElement("span");
+  el.setAttribute("data-composer-chip", this.__source);
+  el.setAttribute("contenteditable", "false");
+  return el;
+}
+```
+
+**裸 span，不带任何 class。** 内层由宿主的 `ReferenceChip` 渲染。
+
+**宿主对芯片有 CSS**（`ReferenceChip.module.css`）：
+
+```css
+.M7q97W_chip{ max-width:240px; color:var(--dsw-alias-state-business-primary);
+              user-select:none; align-items:baseline; gap:3px; display:inline-flex }
+.M7q97W_marker{ flex:none; font-weight:500 }
+.M7q97W_label{ text-overflow:ellipsis; white-space:nowrap; overflow:hidden }
+```
+
+**插件用一条规则把它中和掉**：
+
+```css
+[data-composer-chip="quote-chat"] > span,
+[data-composer-chip="quote-chat"] > span > span:last-child{
+  position:absolute;width:0;height:0;overflow:hidden;font-size:0;line-height:0 }
+```
+
+**但我的 fixture 里写的是 `q44v1G_reference yAWgPa_chip`——在 `app.asar` 的 22425 个文件里 0 命中。**
+也就是说：宿主那段 CSS 从来没进过 fixture，「插件中和了宿主样式」这个结论**从来没被验证过**。
+
+**修复**：
+1. fixture 的类名改成真实的 `M7q97W_chip` / `M7q97W_marker` / `M7q97W_label`。
+2. 把宿主那段 CSS 原样加进 fixture 的 `<style>`。
+3. 重跑：**11 张基线全部不变** → 中和规则确实生效。
+
+**同时确认的其他事实**（都从代码读的，不是猜的）：
+- 宿主没有针对 `[data-composer-chip]` 本身的 CSS，只有 composer 根上的 `[data-composer-chip-selected]{caret-color:#0000}`。
+- 插件不给芯片写内联样式（`chip.style` 只在拖拽 ghost 上出现）。
+- 插件的 11 条芯片规则全是 `[data-composer-chip="quote-chat"]` 全局选择器，**没有 composer 作用域**，所以 fixture 里的渲染和真机是同一套规则。
+
+**结论**：样式一样，而且现在有证据。
+
+---
+
 ---
 
 ## 3. 不算缺陷，但会误导人的现状
