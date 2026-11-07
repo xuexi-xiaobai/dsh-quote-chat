@@ -1388,6 +1388,43 @@ C 会让作曲器的行变高（26px > 25px 行高）；D 仍在 25px 行内，�
 **结论**：几何上，左右两侧的曲率半径是常数，等于高度的一半。24px 高的半圆只有 24 个设备像素，
 这是观感问题的来源，不是几何问题。
 
+---
+
+### 缺陷 29：宿主给所有元素设了 `corner-shape: superellipse(1.5)`，芯片的圆角不是圆弧（已修复，2026-11-07）
+
+**证据强度：`[已验证]`（真实应用内测量 + 对照实验）**
+
+评审第五次说「曲率半径不是常数」。**这次是对的，而且原因在宿主，不在插件。**
+
+在应用里枚举命中芯片的 CSS 规则，找到一条全局规则：
+
+```css
+*, ::before, ::after { corner-shape: var(--dsw-corner-shape); }
+```
+
+`--dsw-corner-shape` 解析为 **`superellipse(1.5)`**。`corner-shape` 是 CSS Borders 4 的属性，
+把圆角从圆弧改成超椭圆。**`superellipse(1.5)` 比圆（`superellipse(2)`）更方，曲率半径沿途变化。**
+
+实测（真实应用，8 倍设备像素，用「半径 = 半高」的圆做种子算残差）：
+
+| `corner-shape` | 圆拟合残差 | 判定 |
+|---|---|---|
+| `superellipse(1.5)`（宿主默认） | **1.445 CSS px** | 曲率半径变化 |
+| `round` | **0.103 CSS px** | 曲率半径恒定 |
+| `superellipse(2)` | 2.421 CSS px | 曲率半径变化 |
+
+**为什么我之前量不出来**：我的设计 fixture 是一个独立页面，**没有 `corner-shape`**，所以渲染的是圆弧；
+应用里是超椭圆。两边计算值都是 `border-radius:999px` / `height:24px`，但画出来不一样。
+我一直在 fixture 里量，量的是一个应用里不存在的形状。
+
+**修复两处**：
+1. `src/stylesheet.js`：芯片加 `corner-shape:round`——退回 CSS 初始值，不是新设计。只作用于芯片，
+   界面其余部分保留宿主的形状。
+2. `design/fixture.mjs`：加入 `*, ::before, ::after { corner-shape: superellipse(1.5) }`，让 fixture 复现宿主环境。
+
+**验证**：fixture 里芯片残差 **0.104**（恒定），而同样 `border-radius:999px` 但没有 opt-out 的对照 div
+残差 **1.382**（变化）。对照组的差异正好证明了 opt-out 是必需的，也是有效的。
+
 **真正的修复：边框改成不透明。**
 
 评审问「这张图里的完美胶囊和我们的芯片有什么区别」。回到代码逐属性对比后，决定几何的三个属性
@@ -1518,7 +1555,7 @@ esbuild 重新打印 AST 时把行尾统一成 `\n`，模板字符串也不例�
 ## 4. 当前基线（修复前请先复现这个）
 
 ```
-node build.mjs --check   → sha256:7452901be37c6596，通过
+node build.mjs --check   → sha256:0206fe534ee23512，通过
 npm test                 → 全绿（38 个套件）
 npm run design           → 16 项，其中 1 项为已记录的已知缺陷（色板两种蓝）
 ```

@@ -72,6 +72,21 @@ const HOST_CHIP_CSS = `
 `
 
 /**
+ * The host's global corner shape, which the fixture was missing.
+ *
+ * DSH sets `corner-shape: var(--dsw-corner-shape)` on every element and the variable resolves to
+ * `superellipse(1.5)`. A superellipse flatter than a circle has a radius of curvature that varies along the curve, so
+ * the same `border-radius: 999px` paints a visibly squarer end than a circular arc does. Without this rule the fixture
+ * rendered circular corners and disagreed with the app on the one property the review kept pointing at.
+ *
+ * The plugin opts the chip back out with `corner-shape: round`; this rule is what proves that opt-out is needed and
+ * that it works.
+ */
+const HOST_CORNER_SHAPE = `
+*, ::before, ::after { corner-shape: superellipse(1.5); }
+`
+
+/**
  * One chip, exactly as the host renders it.
  *
  * `label` is the VISIBLE text, which since the 2026-11-07 review is the opening of the quoted passage rather than
@@ -161,6 +176,8 @@ export function page(body, options = {}) {
   .qc-composer p { margin: 0; }
   /* The host's own chip rules, so the replica is subject to them exactly as the real chip is. */
   ${HOST_CHIP_CSS}
+  /* The host's global corner shape. */
+  ${HOST_CORNER_SHAPE}
 </style>
 </head>
 <body>
@@ -281,7 +298,7 @@ export const CHIP_STATES = [
   },
   {
     name: 'chip-shape-rounded',
-    note: '形状对照 B：圆角矩形 8px（内联覆盖，非产品状态）',
+    note: '形状对照 B：圆角矩形 4px（内联覆盖，非产品状态）',
     html: () => page(`<p dir="auto">${PROSE_BEFORE}${chip({ num: 1, label: SHORT, radius: '8px' })}${PROSE_AFTER}</p>`),
     act: parkPointer,
   },

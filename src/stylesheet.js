@@ -386,6 +386,19 @@ export const STYLESHEET = `
      The accent at full strength is the same colour the label already uses, so the border reads as the pill's own
      outline rather than as a new element. */
   border:1px solid var(--qc-accent, #4176e6);
+  /* OPT OUT of the Host's corner shape.
+
+     DSH sets corner-shape: var(--dsw-corner-shape) on every element, and the variable resolves to
+     superellipse(1.5). A superellipse flatter than a circle - superellipse(2) is a circle - has a radius of
+     curvature that varies along the curve, so border-radius: 999px alone does NOT produce semicircular ends.
+     Measured on the running app, the chip's left edge against a fitted circle of radius half the height:
+
+       superellipse(1.5)  residual 1.445 CSS px   varying curvature
+       round              residual 0.103 CSS px   constant curvature
+
+     round is the CSS initial value, so this is the chip asking for the default rather than a new design. It is set
+     here rather than globally because the rest of the interface is meant to keep the Host's shape. */
+  corner-shape:round;
   background:color-mix(in srgb, var(--qc-accent, #4176e6) 7%, var(--qc-surface, #fff));
   /* The label uses the accent pressed darker: pure #4176e6 does not carry enough contrast as body text. */
   color:color-mix(in srgb, var(--qc-accent, #4176e6) 78%, var(--qc-ink, #0f1115));
