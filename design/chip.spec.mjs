@@ -99,33 +99,45 @@ test('chip metrics: the remove control is a red disc the size of the kind glyph'
     if (button === null) return null
     const style = getComputedStyle(button)
     const disc = getComputedStyle(button, '::before')
+    const pad = getComputedStyle(button, '::after')
     const box = button.getBoundingClientRect()
     const chip = document.querySelector('[data-composer-chip="quote-chat"]')
     const glyph = Number.parseFloat(getComputedStyle(chip, '::before').width) || 0
     const chipBox = chip.getBoundingClientRect()
     return {
-      // The button's own box is the hit area and paints nothing; the disc is the drawing.
+      // The button's own box is the drawing; it paints nothing itself and the disc fills it.
       buttonBackground: style.backgroundColor,
-      discWidth: Math.round(Number.parseFloat(disc.width) * 10) / 10,
+      buttonWidth: Math.round(box.width * 10) / 10,
+      buttonHeight: Math.round(box.height * 10) / 10,
       discBackground: disc.backgroundColor,
+      // The invisible pad that keeps the pointer target at 24px without enlarging the drawing.
+      padWidth: Math.round(Number.parseFloat(pad.width) * 10) / 10,
       glyph: Math.round(glyph * 10) / 10,
-      width: Math.round(box.width * 10) / 10,
-      height: Math.round(box.height * 10) / 10,
       // The disc must sit on the kind glyph's slot, not somewhere else on the pill.
       discCentre: Math.round(box.left + box.width / 2),
       glyphCentre: Math.round(chipBox.left + (Number.parseFloat(getComputedStyle(chip).paddingLeft) || 0) + glyph / 2),
+      // A point outside the drawing but inside the 24px pad must still hit the button: the pad is what carries the
+      // pointer target, so if it does not hit-test, the WCAG size exists only on paper.
+      padHit: (() => {
+        const cx = box.left + box.width / 2
+        const cy = box.top + box.height / 2
+        // 10px from the centre: outside the 8.4px-radius drawing, inside the 12px-radius pad.
+        const hit = document.elementFromPoint(cx + 10, cy)
+        return hit === button || button.contains(hit)
+      })(),
     }
   })
   expect(remove, 'the × must be mounted in the hover state').not.toBeNull()
   expect(remove.buttonBackground).toMatch(/rgba\(0, 0, 0, 0\)|transparent/)
-  // The review asked for the control to share the icon's outline: same slot, same scale.
-  expect(Math.abs(remove.discWidth - remove.glyph)).toBeLessThanOrEqual(1)
+  // The review asked whether the control and the icon are the same size. Now they are, in both axes.
+  expect(Math.abs(remove.buttonWidth - remove.glyph)).toBeLessThanOrEqual(1)
+  expect(Math.abs(remove.buttonHeight - remove.glyph)).toBeLessThanOrEqual(1)
   expect(Math.abs(remove.discCentre - remove.glyphCentre)).toBeLessThanOrEqual(1)
   // Red, as asked. The earlier transparent treatment was rejected.
   expect(remove.discBackground).not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/)
-  // WCAG 2.2 AA target size for a pointer target.
-  expect(remove.width).toBeGreaterThanOrEqual(24)
-  expect(remove.height).toBeGreaterThanOrEqual(24)
+  // WCAG 2.2 AA target size, carried by the invisible pad rather than by the drawing.
+  expect(remove.padWidth).toBeGreaterThanOrEqual(24)
+  expect(remove.padHit, 'the 24px pad must hit-test, or the target size is only nominal').toBe(true)
 })
 
 test('chip metrics: the chip fits its line and never clips its label', async ({ page }) => {

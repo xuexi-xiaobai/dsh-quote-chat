@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:feb89751f4e7e86b
+ * Artifact: sha256:ba52251693fcc16b
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -2121,7 +2121,18 @@ function __dshQuoteChatFactory(hostRequire) {
     /* Centred on the kind glyph's slot: the chip's left padding plus half the glyph, both in pixels. */
     left:calc(var(--qc-chip-left, 0px) + var(--qc-chip-pad-left, 8px) + var(--qc-chip-glyph, 17px) / 2);
     top:calc(var(--qc-chip-top, 0px) + var(--qc-chip-height, 24px) / 2);
-    width:24px;height:24px;font-size:15px;
+    /* THE BUTTON IS THE ICON'S BOX.
+
+       The review asked whether the removal control and the kind glyph are the same size. They were not: the button was a
+       24px square while the glyph is 1.12em, so the control's box was 24px against a 19px icon at the workbench's 17px
+       and 16.8px at the composer's 15px. The disc matched; the control did not.
+
+       The size now comes from the chip as a PIXEL value, which is the only way the two can be equal at any font size: the
+       chip inherits the composer's font size while this button carries its own, so an em here would drift.
+
+       The 24px pointer target has not been given up — see ::after. */
+    width:var(--qc-chip-glyph, 1.12em);height:var(--qc-chip-glyph, 1.12em);
+    font-size:15px;
     appearance:none;box-sizing:border-box;margin:0;padding:0;border:0;
     /* The button paints nothing, but it still carries the pill radius: a review surface that forces the :hover
        declarations onto the button (rather than onto its ::before) then shows a round control instead of a square one. */
@@ -2130,10 +2141,17 @@ function __dshQuoteChatFactory(hostRequire) {
     cursor:pointer;display:flex;align-items:center;justify-content:center;
     transform:translate(-50%,-50%);
     transition:transform .12s ease}
-  /* The disc: the kind glyph's own box, so the two states occupy the same outline. */
-  .qc-chip-remove::before{content:"";position:absolute;
-    left:50%;top:50%;width:1.12em;height:1.12em;
-    transform:translate(-50%,-50%);
+  /* The pointer target is still 24px.
+
+     A pointer target is a physical requirement (WCAG 2.2 AA), while the button is a drawing that has to match the icon
+     beside it. This pad is invisible and extends the hit area past the drawing, so both hold at once: the control is the
+     icon's size to look at and 24px to click. Pseudo-elements hit-test as part of their element, so a click anywhere in
+     the pad activates the button. */
+  .qc-chip-remove::after{content:"";position:absolute;
+    left:50%;top:50%;width:24px;height:24px;
+    transform:translate(-50%,-50%);border-radius:999px}
+  /* The disc fills the button exactly, so there is one size to keep right instead of two. */
+  .qc-chip-remove::before{content:"";position:absolute;inset:0;
     border-radius:999px;background:#e8291c;
     transition:background .12s ease}
   @media (prefers-color-scheme: dark){

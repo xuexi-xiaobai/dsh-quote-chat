@@ -60,8 +60,9 @@ check('the button box is transparent, the disc is drawn separately',
   /background:transparent/.test(removeRule) && /\.qc-chip-remove::before\{[^}]*background:#e8291c/.test(css),
   'the disc is not drawn by ::before, so it cannot be sized independently of the hit area')
 check('the disc matches the kind glyph\'s box',
-  /\.qc-chip-remove::before\{[^}]*width:1\.12em;height:1\.12em/.test(css),
-  'the disc no longer matches the 1.12em glyph, so the two states have different outlines')
+  /\.qc-chip-remove::before\{[^}]*inset:0/.test(css)
+    && /width:var\(--qc-chip-glyph, 1\.12em\);height:var\(--qc-chip-glyph, 1\.12em\)/.test(removeRule),
+  'the control is not sized from the kind glyph, so the two states have different outlines')
 check('the cross is white on the red disc',
   /\.qc-chip-remove svg path\{[^}]*stroke:#fff/.test(css),
   'the cross is not white')
@@ -84,9 +85,10 @@ check('the leading slot is passed in pixels',
 check('the chip reserves no trailing slot',
   /\[data-composer-chip="quote-chat"\]\{[^}]*padding:0 \.5em;/.test(css),
   'the pill still carries the lopsided right padding that the trailing design needed')
-check('the x is a 24px pointer target, not an em-derived one',
-  /\.qc-chip-remove\{[\s\S]*?width:24px;height:24px/.test(css),
-  'the target is em-based again, so it shrinks below the 24px WCAG 2.2 AA minimum at the composer font size')
+check('the x is the icon\'s size, and still a 24px pointer target',
+  /width:var\(--qc-chip-glyph, 1\.12em\);height:var\(--qc-chip-glyph, 1\.12em\)/.test(removeRule)
+    && /\.qc-chip-remove::after\{[^}]*width:24px;height:24px/.test(css),
+  'either the control no longer matches the icon, or the 24px WCAG 2.2 AA hit area is gone')
 check('the x is round like the pill',
   /\.qc-chip-remove::before\{[^}]*border-radius:999px/.test(css),
   'the disc does not share the pill radius')
