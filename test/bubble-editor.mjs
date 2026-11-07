@@ -305,8 +305,14 @@ check('the chip surface is themed, not a literal',
     && /var\(--qc-surface/.test(chipRule),
   'the chip hard-codes a light grey and breaks in dark mode')
 check('the chip has a visible outline so the pill reads in dark mode',
-  /border:1px solid color-mix\(in srgb, var\(--qc-accent/.test(chipRule),
+  /border:1px solid var\(--qc-accent/.test(chipRule),
   'the chip has no outline and disappears against a dark background')
+// The outline must be OPAQUE. At 26% of the accent it was a soft gradient rather than a line, and a soft 12px arc
+// reads as a rounded corner even though the geometry is a capsule.
+check('the chip outline is opaque, not a gradient',
+  /border:1px solid var\(--qc-accent/.test(chipRule)
+    && !/border:1px solid color-mix\(in srgb, var\(--qc-accent[^)]*\) \d+%, transparent\)/.test(chipRule),
+  'the border is translucent again, which softens the edge until the capsule ends read as corners')
 check('the chip text is themed, not hard-coded ink',
   /color:color-mix\(in srgb, var\(--qc-accent/.test(chipRule)
     && /var\(--qc-ink/.test(chipRule),

@@ -377,7 +377,15 @@ export const STYLESHEET = `
      The Host's --dsw-alias-bg-layer-1/2/3 all resolve to #fff, the composer's own colour, so a layer token cannot express
      "slightly raised": that is exactly why the chip used to have no body of its own. Mixing the accent into the surface
      gives a tint that is distinct in light mode and, with the dark-mode values below, in dark mode too. */
-  border:1px solid color-mix(in srgb, var(--qc-accent, #4176e6) 26%, transparent);
+  /* OPAQUE, because a translucent border hides the shape.
+
+     It was 26% of the accent, which reads as a soft edge: the boundary is a gradient from the fill to the page rather
+     than a line. On a pill this short the ends are 12px arcs, and a soft 12px arc is indistinguishable from a rounded
+     corner - the shape measured as a capsule while looking like a rectangle, which is the worst of both.
+
+     The accent at full strength is the same colour the label already uses, so the border reads as the pill's own
+     outline rather than as a new element. */
+  border:1px solid var(--qc-accent, #4176e6);
   background:color-mix(in srgb, var(--qc-accent, #4176e6) 7%, var(--qc-surface, #fff));
   /* The label uses the accent pressed darker: pure #4176e6 does not carry enough contrast as body text. */
   color:color-mix(in srgb, var(--qc-accent, #4176e6) 78%, var(--qc-ink, #0f1115));
