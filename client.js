@@ -5,7 +5,7 @@
  * Source: src/, assembled by build.mjs. Run `node build.mjs` after changing any source
  * module; `node build.mjs --check` fails when this file has drifted from src/.
  *
- * Artifact: sha256:ba52251693fcc16b
+ * Artifact: sha256:43fe18cc02528171
  */
 function __dshQuoteChatFactory(hostRequire) {
   let module = { exports: {} }
@@ -2014,7 +2014,9 @@ function __dshQuoteChatFactory(hostRequire) {
         size it occupied 62% of the height. The rect now spans 1..15 vertically, and the box size was chosen to match the
         measured ink height rather than guessed. */
   [data-composer-chip="quote-chat"]::before{content:"";
-    flex:none;width:1.12em;height:1.12em;
+    /* A variable, so a review surface can hold the pill and change only the icon's share of it. The default is the
+       shipping size; nothing reads the variable unless something sets it. */
+    flex:none;width:var(--qc-glyph-size, 1.12em);height:var(--qc-glyph-size, 1.12em);
     /* The ONLY spacing between the icon and the label. It used to be the flex gap on the parent, which also applied
        around the host's wrapper span — and that wrapper, though emptied by the rules below, still occupied 8px of
        flex space. The visible gap measured 17px: 4.5 + 8 + 4.5. Spending the spacing here instead of on the gap
